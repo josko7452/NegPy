@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:00 | **Last Commit:** `_ backend: add process and exposure config DTOs`
+**Last Updated:** 2026-11-12 20:20 | **Last Commit:** `_ backend: add image-editing config DTOs`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -28,6 +28,11 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   `AppConfig` lands here because override needs it; D2 extends `domain/`.
 - D2a `backend/src/domain/migrations.rs`: every key rename, value rewrite and dropped
   key for persisted configs, over a JSON field map. 20 tests.
+- D2b `backend/src/domain/models/{string_enum,process,exposure}.rs`: the `string_enum!`
+  macro (StrEnum + `_missing_` coercion), Process and Exposure DTOs, the legacy grade
+  conversion and the bool->float cast-removal adapter. 9 tests.
+- D2c image-editing DTOs: geometry, lab, local, retouch, altprocess, toning, finish,
+  flatfield. 8 tests.
 
 ## Next Steps (Ordered)
 1. [ ] D2 `domain.models` (WorkspaceConfig serde DTOs) + `domain.tokens`

@@ -8,11 +8,27 @@
 
 mod string_enum;
 
+pub mod altprocess;
 pub mod exposure;
+pub mod finish;
+pub mod flatfield;
+pub mod geometry;
+pub mod lab;
+pub mod local;
 pub mod process;
+pub mod retouch;
+pub mod toning;
 
+pub use altprocess::{AltProcess, AltProcessConfig, Sensitizer};
 pub use exposure::{BwFilter, ExposureConfig, RenderIntent};
+pub use finish::FinishConfig;
+pub use flatfield::FlatFieldConfig;
+pub use geometry::{AspectRatio, AutocropMode, GeometryConfig};
+pub use lab::{LabConfig, SharpenMethod};
+pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
 pub use process::{DemosaicMode, ProcessConfig, ProcessMode, SensorUnmix, SourceEncoding};
+pub use retouch::RetouchConfig;
+pub use toning::ToningConfig;
 
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
