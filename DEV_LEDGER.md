@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 09:00 | **Last Commit:** `HEAD backend: add runtime lens metadata model`
+**Last Updated:** 2026-11-13 10:00 | **Last Commit:** `c1cf2ada backend: add runtime lens metadata model`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -19,6 +19,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D13/E1-E8: absent desktop state glue and the egui UI.
 
 ## Completed (This Session)
+- D12: Positive-frame auto-meter migration (tests green).
 - `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
 - `d9c0ce50` D12: hash rehome and ambiguity.
 - `cf05350b` D12: normalization-roll baselines.

@@ -8,4 +8,5 @@ pub mod cast_removal;
 mod common;
 pub mod hash;
 pub mod normalization_roll;
+pub mod positive_auto;
 pub mod source_color;
