@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:04 | **Last Commit:** `69340bb4 backend: wire the exposure pipeline`
+**Last Updated:** 2026-11-12 23:30 | **Last Commit:** `pending color-space`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 are complete. D7 process-mode detection and the
-exposure kernels have landed; processor wiring is next.
+Phases A–C, D1–D5 and D6 are complete. D7 is complete. D8 ports the
+geometry, lab, local, retouch, toning and finish kernels over ten commits.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -23,9 +23,18 @@ exposure kernels have landed; processor wiring is next.
 - D7: photometric print curve, split grade and B&W collapse.
 - D7: NPZ print-LUT loading through `zip` and `npyz`.
 - D7: exposure pipeline entry point normalizes then prints a frame.
+- D8: shared Adobe RGB Lab spaces, gamma and clip helper.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port geometry, lab and local feature kernels
+1. [ ] D8: port the Lab stage
+2. [ ] D8: port chemical and split toning
+3. [ ] D8: port finish vignette and carrier
+4. [ ] D8: port geometry transforms and crops
+5. [ ] D8: port geometry detection
+6. [ ] D8: port local masks
+7. [ ] D8: port retouch detection and IR
+8. [ ] D8: port retouch repair and clone
+9. [ ] D8: wire the D8 stage order and verify
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.

@@ -10,6 +10,11 @@ pub const LUMA_G: f32 = 0.6273;
 pub const LUMA_B: f32 = 0.0753;
 pub const LUMA_COEFFS: [f32; 3] = [LUMA_R, LUMA_G, LUMA_B];
 
+/// The Lab luminance row from `features/lab/logic.py` (`LUM_R`, `LUM_G`, `LUM_B`).
+pub const LUM_R: f32 = 0.2973769;
+pub const LUM_G: f32 = 0.6273491;
+pub const LUM_B: f32 = 0.0752741;
+
 /// A region of interest as `(y1, y2, x1, x2)`.
 pub type Roi = (i64, i64, i64, i64);
 
