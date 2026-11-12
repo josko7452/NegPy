@@ -3,6 +3,7 @@
 pub mod bw_filter;
 pub mod constants;
 pub mod curve;
+pub mod lut;
 pub mod metering;
 pub mod normalization;
 pub mod papers;
