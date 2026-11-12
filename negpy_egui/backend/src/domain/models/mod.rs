@@ -39,7 +39,11 @@ pub use hdr::{HdrConfig, hdr_active, hdr_merge_token, hdr_name, hdr_stem, hdr_to
 pub use lab::{LabConfig, SharpenMethod};
 pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
 pub use metadata::{MetadataConfig, normalize_description_fields};
-pub use process::{DemosaicMode, ProcessConfig, ProcessMode, SensorUnmix, SourceEncoding};
+pub use process::{
+    DemosaicMode, ProcessConfig, ProcessMode, SensorUnmix, SourceEncoding, auto_meter_for_mode,
+    cast_removal_for_mode, with_film_fields, with_positive_source, with_process_mode,
+    with_slide_bw, with_source_encoding,
+};
 pub use retouch::RetouchConfig;
 pub use rgbscan::{RgbScanConfig, is_rgb_triplet, rgbscan_token};
 pub use stitch::{StitchConfig, stitch_active, stitch_has_triplets, stitch_name, stitch_token};

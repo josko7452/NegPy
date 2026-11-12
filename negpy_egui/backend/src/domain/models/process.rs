@@ -219,6 +219,152 @@ impl ProcessConfig {
     }
 }
 
+/// The Cast Removal strength `mode` starts at, keeping a strength the user chose.
+#[must_use]
+pub fn cast_removal_for_mode(mode: ProcessMode, strength: f64) -> f64 {
+    let default = crate::domain::models::exposure::ExposureConfig::default().cast_removal_strength;
+    if mode == ProcessMode::E6 {
+        if strength == default { 0.0 } else { strength }
+    } else if strength == 0.0 {
+        default
+    } else {
+        strength
+    }
+}
+
+/// The Auto Density/Auto Grade value a switch into `mode` carries, keeping a user choice.
+#[must_use]
+pub fn auto_meter_for_mode(mode: ProcessMode, current: bool) -> bool {
+    let (negative_default, slide_default) = (true, false);
+    if mode == ProcessMode::E6 {
+        if current == negative_default {
+            slide_default
+        } else {
+            current
+        }
+    } else if current == slide_default {
+        negative_default
+    } else {
+        current
+    }
+}
+
+fn invalidate_local_bounds(process: &ProcessConfig) -> (bool, [f64; 3], [f64; 3]) {
+    if process.lock_bounds {
+        (false, process.local_floors, process.local_ceils)
+    } else {
+        (true, [0.0; 3], [0.0; 3])
+    }
+}
+
+/// A frame switched to Film Mode `mode`, with the mode-dependent defaults moved with it.
+#[must_use]
+pub fn with_process_mode(
+    config: crate::domain::models::workspace::WorkspaceConfig,
+    mode: ProcessMode,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    let mut config = config;
+    if mode == config.process.process_mode {
+        return config;
+    }
+    config.exposure.cast_removal_strength =
+        cast_removal_for_mode(mode, config.exposure.cast_removal_strength);
+    config.exposure.auto_exposure = auto_meter_for_mode(mode, config.exposure.auto_exposure);
+    config.exposure.auto_normalize_contrast =
+        auto_meter_for_mode(mode, config.exposure.auto_normalize_contrast);
+    let slide = mode == ProcessMode::E6;
+    let (invalidate, floors, ceils) = invalidate_local_bounds(&config.process);
+    config.process.process_mode = mode;
+    if !slide {
+        config.process.positive_source = false;
+        config.process.slide_bw = false;
+    }
+    if invalidate {
+        config.process.local_floors = floors;
+        config.process.local_ceils = ceils;
+    }
+    config
+}
+
+/// A frame with Positive set, unchanged outside Slide.
+#[must_use]
+pub fn with_positive_source(
+    mut config: crate::domain::models::workspace::WorkspaceConfig,
+    checked: bool,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    if config.process.process_mode != ProcessMode::E6 || config.process.positive_source == checked {
+        return config;
+    }
+    let (invalidate, floors, ceils) = invalidate_local_bounds(&config.process);
+    config.process.positive_source = checked;
+    if invalidate {
+        config.process.local_floors = floors;
+        config.process.local_ceils = ceils;
+    }
+    config
+}
+
+/// A frame with Slide B&W set, unchanged outside Slide.
+#[must_use]
+pub fn with_slide_bw(
+    mut config: crate::domain::models::workspace::WorkspaceConfig,
+    checked: bool,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    if config.process.process_mode == ProcessMode::E6 {
+        config.process.slide_bw = checked;
+    }
+    config
+}
+
+/// A frame decoding by `encoding`; its local bounds were measured on the old decode.
+#[must_use]
+pub fn with_source_encoding(
+    mut config: crate::domain::models::workspace::WorkspaceConfig,
+    encoding: SourceEncoding,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    if config.process.source_encoding == encoding {
+        return config;
+    }
+    let (invalidate, floors, ceils) = invalidate_local_bounds(&config.process);
+    config.process.source_encoding = encoding;
+    if invalidate {
+        config.process.local_floors = floors;
+        config.process.local_ceils = ceils;
+    }
+    config
+}
+
+/// Apply the Film card's fields and remove them from `fields`, which the caller overlays next.
+#[must_use]
+pub fn with_film_fields(
+    config: crate::domain::models::workspace::WorkspaceConfig,
+    fields: &mut serde_json::Map<String, serde_json::Value>,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    let mut config = config;
+    if let Some(value) = fields
+        .remove("process_mode")
+        .and_then(|value| value.as_str().map(str::to_string))
+    {
+        config = with_process_mode(config, ProcessMode::coerce(&value));
+    }
+    if let Some(value) = fields
+        .remove("positive_source")
+        .and_then(|value| value.as_bool())
+    {
+        config = with_positive_source(config, value);
+    }
+    if let Some(value) = fields.remove("slide_bw").and_then(|value| value.as_bool()) {
+        config = with_slide_bw(config, value);
+    }
+    if let Some(value) = fields
+        .remove("source_encoding")
+        .and_then(|value| value.as_str().map(str::to_string))
+    {
+        config = with_source_encoding(config, SourceEncoding::coerce(&value));
+    }
+    config
+}
+
 const fn default_analysis_buffer() -> f64 {
     0.05
 }
