@@ -45,7 +45,10 @@ fn is_tiff_header(header: &[u8]) -> bool {
     matches!(header, b"II*\0" | b"MM\0*" | b"II+\0" | b"MM\0+")
 }
 
-fn directory_dimensions(decoder: &mut Decoder<File>, directory: &tiff::Directory) -> Option<(u64, u64)> {
+fn directory_dimensions(
+    decoder: &mut Decoder<File>,
+    directory: &tiff::Directory,
+) -> Option<(u64, u64)> {
     let mut tags = decoder.read_directory_tags(directory);
     let width = tags.find_tag_unsigned::<u32>(Tag::ImageWidth).ok()??;
     let height = tags.find_tag_unsigned::<u32>(Tag::ImageLength).ok()??;

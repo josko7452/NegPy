@@ -5,7 +5,9 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::infrastructure::loaders::constants::{is_hidden_path, is_image_name, is_ir_sidecar_path};
+use crate::infrastructure::loaders::constants::{
+    is_hidden_path, is_image_name, is_ir_sidecar_path,
+};
 
 /// The images directly inside `path`, excluding hidden names and IR sidecars.
 #[must_use]
