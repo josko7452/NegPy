@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 22:15 | **Last Commit:** `_ backend: add JSON sidecars`
+**Last Updated:** 2026-11-12 22:20 | **Last Commit:** `_ backend: add preset files`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -25,13 +25,15 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   cache as `None` until the stat changes.
 - D5 `services/assets/sidecar.rs`: atomic `.negpy` write, bounds-version
   migration and round-trip; `ProcessConfig::is_local_initialized`.
+- D5 `services/assets/presets.rs`: filename sanitization, atomic JSON writes,
+  case-folded existence and reserved notes.
 
 ## Next Steps (Ordered)
-1. [ ] D5 `services/assets/presets.rs`
-2. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
-3. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
-4. [ ] D4/D5 finish SQLite settings persistence and asset-store cache tests
-5. [ ] D4/D5 finish storage schema parity tests
+1. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
+2. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
+3. [ ] D4/D5 finish SQLite settings persistence and asset-store cache tests
+4. [ ] D4/D5 finish storage schema parity tests
+5. [ ] D4/D5 add database reset and global-setting cache tests
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
