@@ -147,3 +147,35 @@ fn deleting_an_edit_drops_its_history_and_work_prints() {
     assert!(repo.history_step("h", 0).unwrap().is_none());
     assert!(repo.work_prints("h").unwrap().is_empty());
 }
+
+#[test]
+fn embeddings_round_trip_by_model_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_embedding("h1", &[1.0, 2.0], "v1", "/a/1.nef")
+        .unwrap();
+    repo.save_embedding("h2", &[3.0, 4.0], "v1", "/a/2.nef")
+        .unwrap();
+    repo.save_embedding("h3", &[5.0, 6.0], "v2", "/a/3.nef")
+        .unwrap();
+
+    let hashes = vec!["h1".to_string(), "h2".to_string(), "missing".to_string()];
+    let loaded = repo.embeddings_for(&hashes, "v1").unwrap();
+    assert_eq!(loaded.len(), 2);
+    assert_eq!(loaded["h1"], vec![1.0, 2.0]);
+    assert_eq!(repo.all_embeddings("v1").unwrap()["h2"].1, vec![3.0, 4.0]);
+    assert!(!repo.all_embeddings("v1").unwrap().contains_key("h3"));
+}
+
+#[test]
+fn work_prints_can_be_renamed_and_deleted() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    let config = WorkspaceConfig::default();
+    repo.save_work_print("h", "draft", &config).unwrap();
+    repo.rename_work_print("h", "draft", "final").unwrap();
+    assert!(repo.work_print("h", "draft").unwrap().is_none());
+    assert!(repo.work_print("h", "final").unwrap().is_some());
+    repo.delete_work_print("h", "final").unwrap();
+    assert!(repo.work_prints("h").unwrap().is_empty());
+}

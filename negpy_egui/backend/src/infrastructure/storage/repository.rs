@@ -337,6 +337,104 @@ impl StorageRepository {
             .map(|flat| WorkspaceConfig::from_flat_dict(&flat)))
     }
 
+    /// Rename a stored work print.
+    pub fn rename_work_print(
+        &self,
+        file_hash: &str,
+        name: &str,
+        new_name: &str,
+    ) -> rusqlite::Result<()> {
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "UPDATE work_prints SET name = ?1 WHERE file_hash = ?2 AND name = ?3",
+            params![new_name, file_hash, name],
+        )?;
+        Ok(())
+    }
+
+    /// Delete a stored work print.
+    pub fn delete_work_print(&self, file_hash: &str, name: &str) -> rusqlite::Result<()> {
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "DELETE FROM work_prints WHERE file_hash = ?1 AND name = ?2",
+            params![file_hash, name],
+        )?;
+        Ok(())
+    }
+
+    /// Store one semantic-search vector for a frame.
+    pub fn save_embedding(
+        &self,
+        file_hash: &str,
+        vector: &[f32],
+        model_version: &str,
+        file_path: &str,
+    ) -> rusqlite::Result<()> {
+        let bytes: Vec<u8> = vector
+            .iter()
+            .flat_map(|value| value.to_le_bytes())
+            .collect();
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO image_embeddings (file_hash, embedding, model_version, file_path)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![file_hash, bytes, model_version, file_path],
+        )?;
+        Ok(())
+    }
+
+    /// Cached vectors for `hashes` under one model version.
+    pub fn embeddings_for(
+        &self,
+        hashes: &[String],
+        model_version: &str,
+    ) -> rusqlite::Result<HashMap<String, Vec<f32>>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut out = HashMap::new();
+        for chunk in hashes.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT file_hash, embedding FROM image_embeddings WHERE model_version = ? AND file_hash IN ({placeholders})"
+            );
+            let mut statement = connection.prepare(&sql)?;
+            let mut binds: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(chunk.len() + 1);
+            binds.push(&model_version);
+            binds.extend(chunk.iter().map(|hash| hash as &dyn rusqlite::ToSql));
+            let rows = statement.query_map(binds.as_slice(), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })?;
+            for row in rows {
+                let (hash, bytes) = row?;
+                out.insert(hash, bytes_to_f32(&bytes));
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every vector under `model_version`, with its stored path.
+    pub fn all_embeddings(
+        &self,
+        model_version: &str,
+    ) -> rusqlite::Result<HashMap<String, (String, Vec<f32>)>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT file_hash, file_path, embedding FROM image_embeddings WHERE model_version = ?1",
+        )?;
+        let rows = statement.query_map([model_version], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+            ))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (hash, path, bytes) = row?;
+            out.insert(hash, (path, bytes_to_f32(&bytes)));
+        }
+        Ok(out)
+    }
+
     /// Look up a whole-file edit by path. Half-frame rows (`<hash>#<n>`) are excluded.
     pub fn load_file_settings_by_path(
         &self,
@@ -462,4 +560,13 @@ impl From<rusqlite::Error> for RepositoryError {
     fn from(err: rusqlite::Error) -> Self {
         Self::Sqlite(err)
     }
+}
+
+fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|chunk| f32::from_le_bytes(*chunk))
+        .collect()
 }
