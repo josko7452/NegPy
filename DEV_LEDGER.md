@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 18:45 | **Last Commit:** `cf5ec6f0 backend: add roll defaults and card locks`
+**Last Updated:** 2026-11-12 19:20 | **Last Commit:** `16133076 backend: add roll membership and path lookup`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -19,8 +19,7 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D4: shared dependency-graph gate for the backend and GUI crates.
 
 ## Next Steps (Ordered)
-1. [ ] D5 folder recognition and discovery
-2. [ ] D5 scene grouping and baseline resolution
+1. [ ] D5 scene grouping and baseline resolution
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -56,3 +55,5 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   Roll records stay flat JSON; resolved defaults apply only to modeled sections.
 - D5: virtual rolls, membership, exclusions, sorting and home-roll lookup are in;
   `library.rs` holds the shared image and IR-sidecar filters.
+- D5: folder recognition, nested import naming, discovery filters and pruning are in.
+  D5 remains on scene grouping and stale-baseline checks.

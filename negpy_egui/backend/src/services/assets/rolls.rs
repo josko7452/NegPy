@@ -628,6 +628,474 @@ pub fn virtual_rolls(repo: &StorageRepository) -> Vec<(String, Value)> {
         .collect()
 }
 
+/// `text` as a folder name a scan's roll can use. Blank becomes `Roll001`.
+#[must_use]
+pub fn roll_folder_name(text: &str) -> Option<String> {
+    let name = text.trim();
+    let name = if name.is_empty() { "Roll001" } else { name };
+    if name == "." || name == ".." || name.contains(['/', '\\', '\0']) {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// The roll name that follows `name`, skipping every name `taken` accepts.
+#[must_use]
+pub fn next_roll_name(name: &str, taken: impl Fn(&str) -> bool) -> String {
+    let split = name
+        .char_indices()
+        .rev()
+        .find(|(_, character)| !character.is_ascii_digit())
+        .map_or(0, |(index, _)| index + 1);
+    let (stem, digits) = name.split_at(split);
+    let padded = digits.len() > 1 && digits.starts_with('0');
+    let counter = digits.is_empty()
+        || (!padded && !stem.is_empty() && !"_- .".contains(stem.chars().last().unwrap()));
+    let (stem, mut number, width) = if counter {
+        (format!("{name}_"), 1, 1)
+    } else {
+        (
+            stem.to_string(),
+            digits.parse::<u64>().unwrap_or(0),
+            digits.len(),
+        )
+    };
+    loop {
+        number += 1;
+        let candidate = format!("{stem}{number:0width$}");
+        if !taken(&candidate) {
+            return candidate;
+        }
+    }
+}
+
+/// Mark `path` as a recognized folder roll; idempotent, keeping an existing name.
+pub fn recognize_folder(repo: &mut StorageRepository, path: &str, name: Option<&str>) -> String {
+    undismiss(repo, path);
+    if let Some(existing) = folder_roll_id_for_path(repo, path) {
+        return existing;
+    }
+    let roll_id = uuid::Uuid::new_v4().simple().to_string();
+    let roll_name = name
+        .filter(|name| !name.is_empty())
+        .map_or_else(|| folder_roll_name(repo, path), str::to_string);
+    let mut store = read(repo);
+    store.insert(
+        roll_id.clone(),
+        json!({
+            "kind": "folder",
+            "name": roll_name,
+            "folder_path": path,
+            "extra_paths": [],
+            "created_at": now_seconds(),
+        }),
+    );
+    write(repo, store);
+    roll_id
+}
+
+/// The one folder every path sits directly in, and that folder's images not in `paths`.
+#[must_use]
+pub fn folder_scope(paths: &[String]) -> (Option<String>, Vec<String>) {
+    let folders: Vec<String> = paths
+        .iter()
+        .filter_map(|path| parent_dir(path))
+        .map(|folder| folder_key(&folder))
+        .collect();
+    let unique: Vec<&String> = folders.iter().fold(Vec::new(), |mut unique, folder| {
+        if !unique.contains(&folder) {
+            unique.push(folder);
+        }
+        unique
+    });
+    if unique.len() != 1 {
+        return (None, Vec::new());
+    }
+    let folder = paths
+        .first()
+        .and_then(|path| parent_dir(path))
+        .unwrap_or_default();
+    let have: Vec<String> = paths.iter().map(|path| folder_key(path)).collect();
+    let missing =
+        crate::services::assets::library::folder_image_paths(std::path::Path::new(&folder))
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .filter(|path| !have.contains(&folder_key(path)))
+            .collect();
+    (Some(folder), missing)
+}
+
+/// A new folder roll that leaves out `excluded`; the folder must have no roll yet.
+pub fn create_folder_roll(repo: &mut StorageRepository, path: &str, excluded: &[String]) -> String {
+    let roll_id = recognize_folder(repo, path, None);
+    if !excluded.is_empty() {
+        let mut store = read(repo);
+        if let Some(Value::Object(entry)) = store.get_mut(&roll_id) {
+            entry.insert("excluded_paths".into(), json!(excluded));
+            write(repo, store);
+        }
+    }
+    roll_id
+}
+
+/// Make virtual roll `roll_id` the folder roll of `folder` in place.
+pub fn convert_to_folder_roll(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    folder: &str,
+    excluded: &[String],
+) -> String {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return String::new();
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("virtual") {
+        return String::new();
+    }
+    undismiss(repo, folder);
+    let name = folder_roll_name(repo, folder);
+    entry.remove("member_paths");
+    entry.insert("kind".into(), json!("folder"));
+    entry.insert("name".into(), json!(name));
+    entry.insert("folder_path".into(), json!(folder));
+    entry.insert("extra_paths".into(), json!([]));
+    entry.insert("excluded_paths".into(), json!(excluded));
+    write(repo, store);
+    name
+}
+
+/// The paths a folder roll cannot hold: those not directly in its folder.
+#[must_use]
+pub fn outside_folder(repo: &StorageRepository, roll_id: &str, paths: &[String]) -> Vec<String> {
+    let Some(entry) = roll_for_id(repo, roll_id) else {
+        return Vec::new();
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("folder") {
+        return Vec::new();
+    }
+    let folder = folder_key(
+        entry
+            .get("folder_path")
+            .and_then(Value::as_str)
+            .unwrap_or(""),
+    );
+    paths
+        .iter()
+        .filter(|path| parent_dir(path).is_none_or(|parent| folder_key(&parent) != folder))
+        .cloned()
+        .collect()
+}
+
+fn now_seconds() -> f64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
+}
+
+fn undismiss(repo: &mut StorageRepository, path: &str) {
+    let dismissed = import_sources_of(repo, DISMISSED_FOLDERS_KEY);
+    let key = folder_key(path);
+    if !dismissed.iter().any(|folder| folder_key(folder) == key) {
+        return;
+    }
+    let kept: Vec<String> = dismissed
+        .into_iter()
+        .filter(|folder| folder_key(folder) != key)
+        .collect();
+    let mut settings = Map::new();
+    settings.insert(DISMISSED_FOLDERS_KEY.into(), json!(kept));
+    let _ = repo.save_global_settings(&settings);
+}
+
+/// The name a folder roll takes: its path from the import source, else its folder name.
+#[must_use]
+pub fn folder_roll_name(repo: &StorageRepository, path: &str) -> String {
+    let imported = import_name(repo, path);
+    if !imported.is_empty() {
+        return imported;
+    }
+    path.trim_end_matches(['/', '\\'])
+        .replace('\\', "/")
+        .rsplit('/')
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn import_name(repo: &StorageRepository, path: &str) -> String {
+    let key = folder_key(path);
+    let sources: Vec<String> = import_sources(repo)
+        .into_iter()
+        .filter(|source| key != folder_key(source) && under(&key, &folder_key(source)))
+        .collect();
+    let Some(source) = sources.into_iter().max_by_key(String::len) else {
+        return String::new();
+    };
+    let source_name = source
+        .trim_end_matches(['/', '\\'])
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(&source);
+    let relative = relative_to(path, &source);
+    let mut parts = vec![source_name.to_string()];
+    parts.extend(relative.split(['/', '\\']).map(str::to_string));
+    parts.join("/")
+}
+
+fn relative_to(path: &str, source: &str) -> String {
+    let path = std::path::Path::new(path);
+    let source = std::path::Path::new(source);
+    path.strip_prefix(source)
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default()
+}
+
+fn under(key: &str, folder: &str) -> bool {
+    key == folder
+        || key.starts_with(&format!(
+            "{}{}",
+            folder.trim_end_matches(['/', '\\']),
+            std::path::MAIN_SEPARATOR
+        ))
+}
+
+/// The parents imported as Roll folders.
+#[must_use]
+pub fn import_sources(repo: &StorageRepository) -> Vec<String> {
+    import_sources_of(repo, IMPORT_SOURCES_KEY)
+}
+
+/// Folder-name filters discovery skips.
+#[must_use]
+pub fn discovery_filters(repo: &StorageRepository) -> Vec<String> {
+    match repo.global_setting(DISCOVERY_FILTERS_KEY).ok().flatten() {
+        Some(Value::Array(filters)) => filters
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        _ => DEFAULT_DISCOVERY_FILTERS
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect(),
+    }
+}
+
+/// Replace the folder-name filters, trimming blanks.
+pub fn set_discovery_filters(repo: &mut StorageRepository, filters: &[String]) {
+    let kept: Vec<String> = filters
+        .iter()
+        .map(|filter| filter.trim().to_string())
+        .filter(|filter| !filter.is_empty())
+        .collect();
+    let mut settings = Map::new();
+    settings.insert(DISCOVERY_FILTERS_KEY.into(), json!(kept));
+    let _ = repo.save_global_settings(&settings);
+}
+
+/// Whether a folder name matches a discovery filter. A `*` filter matches the whole
+/// name; a filter without one matches any part. Case is ignored.
+#[must_use]
+pub fn matches_discovery_filter(name: &str, filters: &[String]) -> bool {
+    let name = name.to_lowercase();
+    filters.iter().any(|filter| {
+        let filter = filter.to_lowercase();
+        if filter.contains('*') {
+            wildcard_match(&name, &filter)
+        } else {
+            name.contains(&filter)
+        }
+    })
+}
+
+fn wildcard_match(name: &str, pattern: &str) -> bool {
+    let (name, pattern) = (name.as_bytes(), pattern.as_bytes());
+    let (mut star, mut retry) = (None, 0);
+    let (mut name_at, mut pattern_at) = (0, 0);
+    while name_at < name.len() {
+        if pattern_at < pattern.len() && pattern[pattern_at] == name[name_at] {
+            name_at += 1;
+            pattern_at += 1;
+        } else if pattern_at < pattern.len() && pattern[pattern_at] == b'*' {
+            star = Some(pattern_at);
+            pattern_at += 1;
+            retry = name_at;
+        } else if let Some(star_at) = star {
+            pattern_at = star_at + 1;
+            retry += 1;
+            name_at = retry;
+        } else {
+            return false;
+        }
+    }
+    while pattern_at < pattern.len() && pattern[pattern_at] == b'*' {
+        pattern_at += 1;
+    }
+    pattern_at == pattern.len()
+}
+
+/// Every folder at or under `parent` that holds images directly.
+///
+/// The walk does not enter a roll folder, so its own subfolders never become rolls.
+#[must_use]
+pub fn discover_roll_folders(parent: &str, filters: &[String]) -> Vec<String> {
+    let mut found = Vec::new();
+    let mut stack = vec![std::path::PathBuf::from(parent)];
+    while let Some(folder) = stack.pop() {
+        let (images, _) = crate::services::assets::library::folder_counts(&folder);
+        if images > 0 {
+            found.push(folder.to_string_lossy().into_owned());
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&folder) else {
+            continue;
+        };
+        let mut children: Vec<String> = entries
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+            .filter_map(|entry| entry.file_name().to_str().map(str::to_string))
+            .filter(|name| !name.starts_with('.') && !matches_discovery_filter(name, filters))
+            .collect();
+        children.sort();
+        for child in children.into_iter().rev() {
+            stack.push(folder.join(child));
+        }
+    }
+    found.sort();
+    found
+}
+
+/// Recognize every roll folder under `parent` and remember it as an import source.
+pub fn import_subfolders_as_rolls(
+    repo: &mut StorageRepository,
+    parent: &str,
+    skip_dismissed: bool,
+) -> Vec<String> {
+    let parent = normalize_path(parent);
+    let filters = discovery_filters(repo);
+    let mut paths = discover_roll_folders(&parent, &filters);
+    if paths.is_empty() {
+        return Vec::new();
+    }
+    let sources = import_sources(repo);
+    if !sources
+        .iter()
+        .any(|source| folder_key(source) == folder_key(&parent))
+    {
+        let mut settings = Map::new();
+        let mut updated = sources;
+        updated.push(parent.clone());
+        settings.insert(IMPORT_SOURCES_KEY.into(), json!(updated));
+        let _ = repo.save_global_settings(&settings);
+    }
+    if skip_dismissed {
+        let dismissed: Vec<String> = import_sources_of(repo, DISMISSED_FOLDERS_KEY)
+            .iter()
+            .map(|folder| folder_key(folder))
+            .collect();
+        paths.retain(|path| !dismissed.contains(&folder_key(path)));
+    }
+    let base = std::path::Path::new(&parent)
+        .parent()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    paths
+        .into_iter()
+        .map(|path| {
+            let name = std::path::Path::new(&path)
+                .strip_prefix(&base)
+                .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_default();
+            recognize_folder(repo, &path, Some(&name))
+        })
+        .collect()
+}
+
+fn normalize_path(path: &str) -> String {
+    std::path::Path::new(path)
+        .components()
+        .collect::<std::path::PathBuf>()
+        .to_string_lossy()
+        .into_owned()
+}
+
+/// Drop folder rolls under an import source whose path matches a discovery filter.
+pub fn prune_filtered_rolls(repo: &mut StorageRepository) -> usize {
+    let filters = discovery_filters(repo);
+    let sources: Vec<String> = import_sources(repo)
+        .iter()
+        .map(|source| folder_key(source))
+        .collect();
+    let mut store = read(repo);
+    let mut dropped = Vec::new();
+    for (roll_id, entry) in &store {
+        if entry.get("kind").and_then(Value::as_str) != Some("folder") {
+            continue;
+        }
+        let key = folder_key(
+            entry
+                .get("folder_path")
+                .and_then(Value::as_str)
+                .unwrap_or(""),
+        );
+        for source in &sources {
+            if key == *source || !under(&key, source) {
+                continue;
+            }
+            let relative = relative_to(
+                std::path::Path::new(&key).to_string_lossy().as_ref(),
+                source,
+            );
+            if relative
+                .split(['/', '\\'])
+                .any(|part| matches_discovery_filter(part, &filters))
+            {
+                dropped.push(roll_id.clone());
+            }
+            break;
+        }
+    }
+    for roll_id in &dropped {
+        store.remove(roll_id);
+    }
+    if !dropped.is_empty() {
+        write(repo, store);
+    }
+    dropped.len()
+}
+
+/// Forget import sources at or under `folders` that no remaining folder roll uses.
+pub fn forget_import_sources(repo: &mut StorageRepository, folders: &[String]) {
+    let keys: Vec<String> = folders.iter().map(|folder| folder_key(folder)).collect();
+    let remaining: Vec<String> = read(repo)
+        .into_values()
+        .filter(|entry| entry.get("kind").and_then(Value::as_str) == Some("folder"))
+        .filter_map(|entry| {
+            entry
+                .get("folder_path")
+                .and_then(Value::as_str)
+                .map(folder_key)
+        })
+        .collect();
+    let sources = import_sources(repo);
+    let kept: Vec<String> = sources
+        .iter()
+        .filter(|source| {
+            let key = folder_key(source);
+            !(keys.iter().any(|folder| under(&key, folder))
+                && !remaining.iter().any(|roll| under(roll, &key)))
+        })
+        .cloned()
+        .collect();
+    if kept.len() != sources.len() {
+        let mut settings = Map::new();
+        settings.insert(IMPORT_SOURCES_KEY.into(), json!(kept));
+        let _ = repo.save_global_settings(&settings);
+    }
+}
+
 fn parent_dir(path: &str) -> Option<String> {
     std::path::Path::new(path)
         .parent()
