@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 01:20 | **Last Commit:** `pending backend: collapse B&W exposure channels`
+**Last Updated:** 2026-11-13 01:45 | **Last Commit:** `121072a7 backend: collapse B&W exposure channels`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -21,13 +21,12 @@ landed; exposure kernels are in progress.
 - D6: `factory::load` dispatches every format through one call.
 - D7: process-mode detection ports the Python crop, stats and thresholds.
 - D7: B&W collapse, filter weights and printed-exposure filtering are ported.
+- D7: log-density bounds, ROI metering and luma/color mixing are ported.
 
 ## Next Steps (Ordered)
-1. [ ] D7: exposure normalization and print curve
-2. [ ] D7: exposure feature kernels
-3. [ ] D7: paper profiles and dye matrices
-4. [ ] D7: auto exposure and grade
-5. [ ] D7: exposure processor wiring
+1. [ ] D7: paper profiles and dye matrices
+2. [ ] D7: auto exposure and grade
+3. [ ] D7: print curve and exposure processor
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
