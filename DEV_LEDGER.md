@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 02:10 | **Last Commit:** `e9eb36bb backend: port exposure normalization bounds`
+**Last Updated:** 2026-11-13 03:00 | **Last Commit:** `010d0e30 backend: port exposure curve and holds`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -23,10 +23,11 @@ landed; exposure kernels are in progress.
 - D7: B&W collapse, filter weights and printed-exposure filtering are ported.
 - D7: log-density bounds, ROI metering and luma/color mixing are ported.
 - D7: paper registry, tonal overrides and density matrices are ported.
+- D7: grade, pivot, shadow/highlight holds and the print wrapper are ported.
 
 ## Next Steps (Ordered)
-1. [ ] D7: auto exposure and grade
-2. [ ] D7: print curve and exposure processor
+1. [ ] D7: port the processor orchestration over the kernels
+2. [ ] D7: add NPZ print-LUT loading
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
@@ -41,7 +42,6 @@ landed; exposure kernels are in progress.
 - D1: i18n embeds `../negpy/translations/` with `include_str!`; no copy.
 - D2: composite tokens use canonical JSON, stable here but not Python-interchangeable.
 - D2: flat `to_dict` emits JSON in section order; Python uses `json.dumps` defaults.
-- D5: `edited_file_names_under` returns a `Vec`; callers compare as sets.
 - D5: roll records stay flat JSON; only modeled sections take resolved defaults.
 - D6: `tiff_walker::read_ifds` marks SubIFDs; keep top-level and SubIFD rules
   separate for NEF and FFF.
