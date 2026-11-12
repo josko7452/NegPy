@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 14:20 | **Last Commit:** `592eb3d9 A2 backend negpy_core dep`
+**Last Updated:** 2026-11-12 14:35 | **Last Commit:** `50e2fb3a A3 desktop crate`
 
 ## Current Goal
 Stand up the `negpy_egui/` workspace and port the `negpy/` Python layer to Rust
@@ -10,14 +10,14 @@ session). `MIGRATION_PLAN.md` is advisory. Start with Phase A (scaffolding).
 - A1 workspace manifest + toolchain pin + empty backend/desktop members.
 - A2 backend crate consumes negpy_core (no pyo3/numpy in its tree).
 - A3 desktop crate: eframe/egui/wgpu + negpy-backend (no pyo3).
+- A4 CI `negpy_egui` job + `make rust-egui` (fmt/clippy/test/headless gate).
 
 ## Next Steps (Ordered)
-1. [ ] A4 `backend: add CI dependency-graph gate` (dep: A2, A3)
-2. [ ] A5 `plan: record Phase A completion in DEV_LEDGER` (dep: A4)
-3. [ ] B1 audit `negpy_core` pub visibility (Layer 1)
-4. [ ] C1 define `BackendEvent`/`BackendCommand` enums (BEFORE controller port)
-5. [ ] D1–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
-6. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
+1. [ ] A5 `plan: record Phase A completion in DEV_LEDGER` (dep: A4)
+2. [ ] B1 audit `negpy_core` pub visibility (Layer 1)
+3. [ ] C1 define `BackendEvent`/`BackendCommand` enums (BEFORE controller port)
+4. [ ] D1–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
+5. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.

@@ -34,6 +34,19 @@ rust:
 	@$(CARGO) clippy --all-targets --all-features -- -D warnings
 	@$(CARGO) test
 
+# Rust checks for the negpy_egui workspace, plus the gate that keeps GUI and
+# Python crates out of the headless backend graph.
+.PHONY: rust-egui
+rust-egui:
+	@echo "Running negpy_egui Rust checks (cargo fmt, clippy, test)..."
+	@cd negpy_egui && cargo fmt --check
+	@cd negpy_egui && cargo clippy --workspace --all-targets -- -D warnings
+	@cd negpy_egui && cargo test --workspace
+	@echo "Checking that negpy-backend stays headless..."
+	@cd negpy_egui && if cargo tree -p negpy-backend --prefix none | grep -qE '^(pyo3|numpy|eframe|egui)'; then \
+		echo "negpy-backend pulls in a GUI or Python crate" >&2; exit 1; \
+	fi
+
 .PHONY: translations translations-check
 translations:
 	@$(UV) python scripts/extract_translations.py
