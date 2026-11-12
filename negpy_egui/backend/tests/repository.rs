@@ -2,6 +2,7 @@
 
 use negpy_backend::domain::models::workspace::WorkspaceConfig;
 use negpy_backend::infrastructure::storage::repository::StorageRepository;
+use rusqlite::Connection;
 use serde_json::json;
 
 fn repository(dir: &std::path::Path) -> StorageRepository {
@@ -227,4 +228,105 @@ fn reset_keeps_the_schema_and_empties_both_databases() {
     assert!(repo.load_file_settings("h").unwrap().is_none());
     assert_eq!(repo.global_setting("rolls").unwrap(), None);
     repo.save_global_settings(&values).unwrap();
+}
+
+#[test]
+fn statistics_on_an_empty_database_are_zero() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    let stats = repo.database_stats().unwrap();
+    assert_eq!(stats.file_settings, 0);
+    assert_eq!(stats.edit_history, 0);
+    assert_eq!(stats.work_prints, 0);
+    assert_eq!(stats.file_marks, 0);
+    assert_eq!(stats.export_presets, 0);
+    assert_eq!(stats.app_preferences, 0);
+    assert!(stats.edits_db_bytes > 0);
+    assert!(stats.settings_db_bytes > 0);
+}
+
+#[test]
+fn app_preferences_count_every_global_row_except_presets() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let mut values = serde_json::Map::new();
+    values.insert("export_presets".into(), json!([{"name": "JPEG"}]));
+    values.insert("rolls_by_id".into(), json!({"r1": {"kind": "virtual"}}));
+    values.insert("window_geometry".into(), json!([0, 0, 800, 600]));
+    values.insert("last_open_folder".into(), json!("/photos"));
+    repo.save_global_settings(&values).unwrap();
+
+    let stats = repo.database_stats().unwrap();
+    assert_eq!(stats.export_presets, 1);
+    assert_eq!(stats.app_preferences, 3);
+}
+
+#[test]
+fn clearing_saved_edits_keeps_rig_and_app_preferences() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    repo.save_file_settings("h", &WorkspaceConfig::default(), "/photos/1.raw")
+        .unwrap();
+    repo.save_history_step("h", 0, &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_file_mark("h", Some("keeper"), "/photos/1.raw")
+        .unwrap();
+    let mut values = serde_json::Map::new();
+    values.insert("rolls_by_id".into(), json!({"r1": {"defaults": {}}}));
+    values.insert("export_presets".into(), json!([{"name": "JPEG"}]));
+    repo.save_global_settings(&values).unwrap();
+
+    repo.clear_saved_edits().unwrap();
+
+    let stats = repo.database_stats().unwrap();
+    assert_eq!(stats.file_settings, 0);
+    assert_eq!(stats.edit_history, 0);
+    assert_eq!(stats.file_marks, 0);
+    assert_eq!(stats.export_presets, 1);
+    assert_eq!(stats.app_preferences, 1);
+    assert_eq!(
+        repo.global_setting("rolls_by_id").unwrap(),
+        Some(json!({"r1": {"defaults": {}}}))
+    );
+    assert!(
+        repo.load_file_settings_by_path("/photos/1.raw")
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[test]
+fn the_repository_stays_usable_after_a_full_reset() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    repo.save_file_settings("old", &WorkspaceConfig::default(), "/photos/old.raw")
+        .unwrap();
+    repo.reset_everything().unwrap();
+
+    repo.save_file_settings("new", &WorkspaceConfig::default(), "/photos/new.raw")
+        .unwrap();
+    assert!(repo.load_file_settings("new").unwrap().is_some());
+    assert_eq!(repo.database_stats().unwrap().file_settings, 1);
+}
+
+#[test]
+fn clear_and_reset_accept_an_empty_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    repo.clear_saved_edits().unwrap();
+    repo.reset_everything().unwrap();
+    assert_eq!(repo.database_stats().unwrap().file_settings, 0);
+}
+
+#[test]
+fn both_databases_use_write_ahead_logging() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    for path in [&repo.edits_db_path, &repo.settings_db_path] {
+        let connection = Connection::open(path).unwrap();
+        let mode: String = connection
+            .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(mode.to_lowercase(), "wal");
+    }
 }

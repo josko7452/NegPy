@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:41 | **Last Commit:** `483f962e backend: add database statistics`
+**Last Updated:** 2026-11-12 23:55 | **Last Commit:** `9a3d8856 backend: add database statistics`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -16,9 +16,9 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   local asset store, stats and reset.
 
 ## Next Steps (Ordered)
-1. [ ] D4 repository parity tests for stats/reset and WAL behavior
-2. [ ] D5 roll/composite integration against the repository
-3. [ ] D5 roll fork helpers and tests
+1. [ ] D5 roll/composite integration against the repository
+2. [ ] D5 roll fork helpers and tests
+3. [ ] D5 repository helpers for batch reads and path rehoming
 4. [ ] D5 sidecar promotion batch parity test
 5. [ ] D4 CI dependency-graph parity closeout
 
