@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:10 | **Last Commit:** `2e302bfa docs: record High Efficiency NEF unblock`
+**Last Updated:** 2026-11-12 20:35 | **Last Commit:** `e1add263 backend: decode camera RAW with rawler`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Camera RAW decoding is complete;
-next is JPEG XL.
+Phases A–C, D1–D5 and D6 start are complete. Camera RAW and JPEG XL decoding
+are complete; next is Pakon.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -17,10 +17,11 @@ next is JPEG XL.
 - D6: TIFF/JPEG decoders, IR sidecars and the positive decode.
 - `2e302bfa` D6: HE NEF reason check reads compressed SubIFD strip heads.
 - D6: camera RAW decodes through `rawler` behind `RawDecoder`.
+- D6: JPEG XL decodes 8-bit floats and keeps 16-bit samples.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: JXL decoder
-2. [ ] D6 loaders: Pakon decoder
+1. [ ] D6 loaders: Pakon decoder
+2. [ ] D6 loaders: Noritsu decoder
 3. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
 4. [ ] D6 loaders: loader factory wiring
 
@@ -51,6 +52,8 @@ next is JPEG XL.
   a 64-byte `INTOPIX` head.
 - D6: `RawlerDecoder` keeps sensor RGB; apply as-shot WB only when valid and
   carry `rgb_xyz_matrix` to the transparency transfer.
+- D6: JXL fixtures were written with `imagecodecs`; the loader keeps 8-bit
+  samples and stores 16-bit as `source_u16`.
 - Clippy `-D warnings` fails on existing storage/rolls code, so use
   `cargo check --workspace` plus focused tests as the gate.
 - D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;

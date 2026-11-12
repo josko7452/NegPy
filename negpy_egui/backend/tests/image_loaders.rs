@@ -4,6 +4,7 @@ use std::fs::File;
 
 use negpy_backend::domain::models::SourceEncoding;
 use negpy_backend::infrastructure::loaders::jpeg_loader;
+use negpy_backend::infrastructure::loaders::jxl_loader;
 use negpy_backend::infrastructure::loaders::tiff_loader;
 use tiff::encoder::colortype::{RGB16, RGBA8};
 use tiff::encoder::{TiffEncoder, TiffKindStandard};
@@ -89,4 +90,38 @@ fn a_positive_jpeg_always_decodes_as_auto() {
     image.save(&path).unwrap();
     let loaded = jpeg_loader::load(&path, Some(SourceEncoding::Linear)).unwrap();
     assert_eq!(loaded.source_encoding.as_deref(), Some("srgb"));
+}
+
+#[test]
+fn an_eight_bit_jxl_stays_linear() {
+    let path = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/jxl_rgb8.jxl"
+    ));
+    let loaded = jxl_loader::load(path).unwrap();
+    assert_eq!(loaded.orientation, 1);
+    assert_eq!(loaded.color_space, None);
+    assert_eq!(loaded.icc_profile, None);
+    let image = loaded.image.unwrap();
+    assert_eq!((image.width, image.height), (24, 16));
+    assert!(image.source_u16.is_none());
+    let start = (3 * 24 + 5) * 3;
+    assert!((image.pixels[start] - 55.0 / 255.0).abs() < 1e-3);
+    assert!((image.pixels[start + 1] - 51.0 / 255.0).abs() < 1e-3);
+    assert!((image.pixels[start + 2] - 127.0 / 255.0).abs() < 1e-3);
+}
+
+#[test]
+fn a_sixteen_bit_jxl_keeps_its_samples() {
+    let path = std::path::Path::new(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/jxl_rgb16.jxl"
+    ));
+    let loaded = jxl_loader::load(path).unwrap();
+    let image = loaded.image.unwrap();
+    assert!(image.pixels.is_empty());
+    let samples = image.source_u16.unwrap();
+    assert_eq!(samples.len(), 24 * 16 * 3);
+    let start = (3 * 24 + 5) * 3;
+    assert_eq!(&samples[start..start + 3], &[14246, 13107, 32767]);
 }

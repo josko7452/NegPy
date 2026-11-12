@@ -2378,6 +2378,7 @@ dependencies = [
  "dirs",
  "fern",
  "image",
+ "jxl-oxide",
  "libc",
  "log",
  "negpy_core",
