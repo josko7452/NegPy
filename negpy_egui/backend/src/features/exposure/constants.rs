@@ -52,6 +52,43 @@ pub const PAPER_MIDTONE_GAMMA: f64 = 0.05;
 pub const PAPER_GAMMA_WIDTH: f64 = 0.6;
 pub const SEPARATION_DAMPING_REF_SPREAD: f64 = 0.35;
 
+/// Linear level the scan-exposure warning counts as sensor white.
+pub const SCAN_CLIP_LEVEL: f32 = 0.99;
+/// Grid side the block-median prefilter targets.
+pub const ANALYSIS_GRID: usize = 1024;
+/// Activity gate block side, density span and voter fraction.
+pub const ACTIVITY_BLOCK: usize = 8;
+pub const ACTIVITY_GATE_DENSITY: f32 = 0.05;
+pub const ACTIVITY_MIN_FRACTION: f64 = 0.05;
+/// Per-tail percentile trim of the anchor meter.
+pub const ANCHOR_TRIM_CLIP: f64 = 5.0;
+/// Safety band and pull toward the metered anchor.
+pub const ANCHOR_METER_BAND: f64 = 0.12;
+pub const ANCHOR_METER_STRENGTH: f64 = 0.2;
+/// Percentile clip of the textural range meter.
+pub const TEXTURAL_RANGE_CLIP: f64 = 10.0;
+/// Textured-tail percentiles for Shadow Reach and Highlight Hold.
+pub const SHADOW_REACH_PERCENTILE: f64 = 99.0;
+pub const HIGHLIGHT_HOLD_PERCENTILE: f64 = 2.0;
+
+/// Neutral-axis bands in normalized luma.
+pub const NEUTRAL_AXIS_HIGHLIGHT_BAND: (f32, f32) = (0.10, 0.30);
+pub const NEUTRAL_AXIS_MID_BAND: (f32, f32) = (0.40, 0.60);
+pub const NEUTRAL_AXIS_SHADOW_BAND: (f32, f32) = (0.72, 0.92);
+/// Lowest-chroma fraction of each band kept as the near-neutral set.
+pub const NEUTRAL_AXIS_CHROMA_QUANTILE: f64 = 0.30;
+/// Chroma ceilings: pass 2 and pass 1.
+pub const NEUTRAL_AXIS_CHROMA_CAP: f64 = 0.29;
+pub const NEUTRAL_AXIS_FIRST_PASS_CAP: f64 = 0.55;
+pub const NEUTRAL_AXIS_MIN_PIXELS: usize = 64;
+/// Foliage and sky sectors: chroma floor and hue range in degrees.
+pub const NEUTRAL_AXIS_FOLIAGE: (f32, f32, f32) = (0.03, -25.0, 80.0);
+pub const NEUTRAL_AXIS_SKY: (f32, f32, f32) = (0.06, -150.0, -60.0);
+/// Confidence sample-size half-point and the agreement and width roll-offs.
+pub const NEUTRAL_AXIS_CONFIDENCE_N0: f64 = 256.0;
+pub const NEUTRAL_AXIS_AGREEMENT: (f64, f64) = (0.10, 0.20);
+pub const NEUTRAL_AXIS_WIDTH: (f64, f64) = (0.15, 0.30);
+
 /// Luminance row of Adobe RGB (1998), the working space.
 pub const LUMA_R: f64 = 0.2974;
 pub const LUMA_G: f64 = 0.6273;

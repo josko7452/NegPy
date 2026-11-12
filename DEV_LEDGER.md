@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 03:20 | **Last Commit:** `4ff81167 backend: port exposure curve and holds`
+**Last Updated:** 2026-11-13 04:05 | **Last Commit:** `pending backend: port exposure metering`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -18,11 +18,13 @@ exposure kernels have landed; processor wiring is next.
 - D7: paper registry, tonal overrides and density matrices.
 - D7: grade, pivot, shadow/highlight holds and the print wrapper.
 - D7: preflash parameters and value math.
+- D7: exposure metering, analysis regions and crosstalk unmix.
 
 ## Next Steps (Ordered)
-1. [ ] D7: port the processor orchestration over the kernels
-2. [ ] D7: add NPZ print-LUT loading
-3. [ ] D7: wire exposure stages into `DarkroomEngine`
+1. [ ] D7: port normalization orchestration
+2. [ ] D7: port the photometric processor
+3. [ ] D7: add NPZ print-LUT loading
+4. [ ] D7: wire exposure stages into `DarkroomEngine`
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
