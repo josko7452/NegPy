@@ -23,6 +23,7 @@ pub mod retouch;
 pub mod rgbscan;
 pub mod stitch;
 pub mod toning;
+pub mod workspace;
 
 pub use altprocess::{AltProcess, AltProcessConfig, Sensitizer};
 pub use export::{
@@ -43,6 +44,10 @@ pub use retouch::RetouchConfig;
 pub use rgbscan::{RgbScanConfig, is_rgb_triplet, rgbscan_token};
 pub use stitch::{StitchConfig, stitch_active, stitch_has_triplets, stitch_name, stitch_token};
 pub use toning::ToningConfig;
+pub use workspace::{
+    WorkspaceConfig, flat_export_config, flat_export_preset, flat_master_config,
+    resolve_preset_export,
+};
 
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};

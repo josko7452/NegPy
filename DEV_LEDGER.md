@@ -1,49 +1,27 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 21:00 | **Last Commit:** `_ backend: add assembly configs and source tokens`
+**Last Updated:** 2026-11-12 21:20 | **Last Commit:** `_ backend: add the workspace config flat namespace`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **Phase D1 is complete. D2 is in progress**: `types` and `migrations` landed;
-  `models` DTOs are landing; `tokens` follows.
+  **Phase D1 is complete. D2 is complete**: `types`, `migrations` and the full
+  `models` DTO set landed; **D3 (`kernel.system.config`) is next**.
 
 ## Completed (Recent)
-- A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
-- B1–B3 `negpy_core` visibility audit: verify-only, every pure kernel already `pub`,
-  so no promotion; `histogram::Samples` and the config structs are `pub`. Smoke test
-  calls `stats::percentiles`, `color::rgb_to_lab`, `convert::to_uint` on `&[f32]`.
-- C1–C4 `backend/src/{event,channel,render}.rs`: the frozen event/command contract + the
-  456-signal table (`negpy_egui/docs/EVENT_CONTRACT.md`), the `std::sync::mpsc` pair with
-  a `Wake` for `request_repaint`, and the render thread (latest-wins, ≤1600 px proxy).
-- D1a `backend/src/kernel/system/{paths,user_directory}.rs`: resource and user-dir
-  resolution, atomic replace, safe unlink, umask mode. 15 tests ported.
-- D1b `backend/src/kernel/system/{i18n,text}.rs`: language resolution, the catalog
-  loader with placeholder validation, the `str.format` subset, `plural`/`count_of`/
-  `human_bytes`. 17 tests ported.
-- D1c `backend/src/kernel/system/logging.rs`: `setup_logging` via `fern`, console plus
-  a rotating `negpy.log` under the user dir, and the `negpy.<module>` target. 3 tests.
-- D1d `backend/src/kernel/system/override_config.rs` + `domain/types.rs`: `override.toml`
-  load/parse/apply, the cache recommendation, the stored-preference merge. 23 tests.
-  `AppConfig` lands here because override needs it; D2 extends `domain/`.
-- D2a `backend/src/domain/migrations.rs`: every key rename, value rewrite and dropped
-  key for persisted configs, over a JSON field map. 20 tests.
-- D2b `backend/src/domain/models/{string_enum,process,exposure}.rs`: the `string_enum!`
-  macro (StrEnum + `_missing_` coercion), Process and Exposure DTOs, the legacy grade
-  conversion and the bool->float cast-removal adapter. 9 tests.
-- D2c image-editing DTOs: geometry, lab, local, retouch, altprocess, toning, finish,
-  flatfield. 8 tests.
-- D2d export + metadata DTOs: `ExportConfig`/`ExportPreset` (with the `userDir` key spelling
-  and the JXL block rule), `MetadataConfig` and the format/description helpers. 7 tests.
-- D2e `domain/models/{hdr,rgbscan,stitch}.rs` + `domain/tokens.rs`: the assembly configs,
-  their `*_token`/`*_active` predicates, and `composite_token`. 10 tests.
-  Divergence: `composite_token` uses a 64-bit FNV-1a over canonical JSON, not the Python
-  sha256 — the token is a cache key that is never persisted, and no hash crate is available
-  offline. Same tokens iff same JSON.
+- A1–A5 Phase A scaffolding; B1–B3 `negpy_core` verify-only audit; C1–C4 the frozen
+  event/command contract, `std::sync::mpsc` channels and the render thread.
+- D1a–d `kernel/system/{paths,user_directory,i18n,text,logging,override_config}.rs`
+  and `domain/types.rs` (`AppConfig`). 58 tests.
+- D2 `domain/`: `migrations.rs` (key renames, value rewrites, dropped keys);
+  `models/{string_enum,process,exposure,geometry,lab,local,retouch,altprocess,toning,
+  finish,flatfield,export,metadata,hdr,rgbscan,stitch,workspace}.rs` and `tokens.rs`.
+  `WorkspaceConfig` flattens to one key namespace via `to_dict`/`from_flat_dict`.
+  46 tests, incl. a 0.63.0 sidecar fixture round-trip. 134 tests total, green.
 
 ## Next Steps (Ordered)
-1. [ ] D2 `domain.models` (WorkspaceConfig serde DTOs) + `domain.tokens`
-2. [ ] D3–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
+1. [ ] D3 `kernel.system.config` (TOML, shipped defaults) + `override` sync
+2. [ ] D4–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -65,3 +43,6 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D1 divergence: i18n embeds the catalogs from `../negpy/translations/` with
   `include_str!` instead of copying them to `backend/src/assets/translations/`.
   One source, no 1.9 MB duplicate; the Python tree is read-only here.
+- D2: crates.io is offline; `serde`, `serde_json` (preserve_order) and `uuid` are in the
+  local registry. No `sha2`/`blake3`, so `composite_token` uses FNV-1a (see D2e). The flat
+  `to_dict` emits JSON in section order; Python emits with `json.dumps` defaults.
