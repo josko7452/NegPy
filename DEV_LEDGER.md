@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:45 | **Last Commit:** `pending finish`
+**Last Updated:** 2026-11-13 01:10 | **Last Commit:** `pending geometry transform`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -27,10 +27,10 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 - D8: Lab stage order, sharpening, saturation, denoise, glow and CLAHE.
 - D8: chemical toning, lith overrides and split tinting.
 - D8: finish vignette, carrier tables and carrier composition.
+- D8: geometry transforms, crop resolution and coordinate mapping.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port geometry transforms and crops
-2. [ ] D8: port geometry detection
+1. [ ] D8: port geometry detection
 3. [ ] D8: port local masks
 4. [ ] D8: port retouch detection and IR
 5. [ ] D8: port retouch repair and clone
@@ -38,6 +38,7 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
+- User override 2026-11-13: this session runs 10 commits for the full D8 scope.
 - Targeted tests per commit; full `cargo test --workspace` only after commit 5.
 - Last full workspace test: 2026-11-12 23:04, passed with `CARGO_BUILD_JOBS=1`.
 - Never edit `negpy/`; `pub` promotion in `negpy_core/src/*.rs` needs human approval.
