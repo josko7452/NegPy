@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:25 | **Last Commit:** `ed1167a2 backend: test batch sidecar promotion`
+**Last Updated:** 2026-11-12 17:35 | **Last Commit:** `fc822fd9 negpy_egui: gate GUI dependency graphs in CI`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -19,10 +19,9 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D4: shared dependency-graph gate for the backend and GUI crates.
 
 ## Next Steps (Ordered)
-1. [ ] D5 repository helpers for batch reads and path rehoming
-2. [ ] D5 roll-wide defaults and card locks
-3. [ ] D5 roll membership and folder recognition
-4. [ ] D5 scene grouping and baseline resolution
+1. [ ] D5 roll-wide defaults and card locks
+2. [ ] D5 roll membership and folder recognition
+3. [ ] D5 scene grouping and baseline resolution
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -52,3 +51,5 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   are canonical JSON, not Python's `repr(astuple)`, so a token is not interchangeable with
   Python's — it is a cache key never persisted, so it only has to be stable here. The flat
   `to_dict` emits JSON in section order; Python emits with `json.dumps` defaults.
+- D5: repository batch reads and path rehoming are in; `edited_file_names_under`
+  returns a sorted-free `Vec`, callers compare as sets.

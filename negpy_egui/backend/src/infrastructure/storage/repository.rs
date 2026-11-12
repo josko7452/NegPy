@@ -155,6 +155,54 @@ impl StorageRepository {
         Ok(saved)
     }
 
+    /// The saved edits among `hashes`, in one connection.
+    ///
+    /// A hash with no saved edit is absent, which marks its frame as never edited.
+    pub fn load_file_settings_many(
+        &self,
+        hashes: &[String],
+    ) -> rusqlite::Result<HashMap<String, WorkspaceConfig>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut out = HashMap::new();
+        for chunk in hashes.chunks(500) {
+            let placeholders = vec!["?"; chunk.len()].join(",");
+            let sql = format!(
+                "SELECT file_hash, settings_json FROM file_settings WHERE file_hash IN ({placeholders})"
+            );
+            let mut statement = connection.prepare(&sql)?;
+            let rows = statement.query_map(rusqlite::params_from_iter(chunk), |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (hash, json) = row?;
+                if let Ok(flat) = serde_json::from_str::<Map<String, Value>>(&json) {
+                    out.insert(hash, WorkspaceConfig::from_flat_dict(&flat));
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Every saved edit that knows its path, keyed by that path.
+    pub fn load_settings_by_path(&self) -> rusqlite::Result<HashMap<String, WorkspaceConfig>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT file_path, settings_json FROM file_settings
+             WHERE file_path IS NOT NULL AND file_path != ''",
+        )?;
+        let rows = statement.query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        let mut out = HashMap::new();
+        for row in rows {
+            let (path, json) = row?;
+            if let Ok(flat) = serde_json::from_str::<Map<String, Value>>(&json) {
+                out.insert(path, WorkspaceConfig::from_flat_dict(&flat));
+            }
+        }
+        Ok(out)
+    }
+
     /// Persist a triage mark. `None` clears it.
     pub fn save_file_mark(
         &self,
@@ -460,7 +508,7 @@ impl StorageRepository {
         }))
     }
 
-    /// Move a saved edit and its path from one hash to another.
+    /// Move a saved edit, its history, work prints and triage mark to another hash.
     pub fn rehome_file_settings(
         &self,
         old_hash: &str,
@@ -491,12 +539,83 @@ impl StorageRepository {
         let Some(json) = json else {
             return Ok(());
         };
-        connection.execute(
+        let transaction = connection.unchecked_transaction()?;
+        transaction.execute(
             "INSERT OR REPLACE INTO file_settings (file_hash, settings_json, file_path)
              VALUES (?1, ?2, ?3)",
             params![new_hash, json, file_path],
         )?;
-        connection.execute("DELETE FROM file_settings WHERE file_hash = ?1", [old_hash])?;
+        transaction.execute("DELETE FROM file_settings WHERE file_hash = ?1", [old_hash])?;
+        for table in ["edit_history", "work_prints", "file_marks"] {
+            transaction.execute(
+                &format!("UPDATE OR REPLACE {table} SET file_hash = ?1 WHERE file_hash = ?2"),
+                params![new_hash, old_hash],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
+    /// Base names of edited files saved directly under `folder`.
+    pub fn edited_file_names_under(&self, folder: &str) -> rusqlite::Result<Vec<String>> {
+        let separator = std::path::MAIN_SEPARATOR;
+        let under = format!("{}{separator}", folder.trim_end_matches(['/', '\\']));
+        let key = path_key(&under);
+        let prefix_len = under.len();
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT file_path FROM file_settings
+             WHERE lower(substr(file_path, 1, ?1)) = lower(?2)",
+        )?;
+        let rows = statement.query_map(params![prefix_len as i64, under], |row| {
+            row.get::<_, String>(0)
+        })?;
+        let mut names = Vec::new();
+        let case_insensitive = cfg!(windows);
+        for row in rows {
+            let path = row?;
+            let Some(rest) = path.get(prefix_len..) else {
+                continue;
+            };
+            let prefix = &path[..prefix_len];
+            let matches = if case_insensitive {
+                prefix.eq_ignore_ascii_case(key.trim_end_matches(['/', '\\']))
+            } else {
+                path_key(prefix) == key
+            };
+            if matches && !rest.contains(['/', '\\']) {
+                if let Some(name) = path.rsplit(['/', '\\']).next() {
+                    if !names.iter().any(|known| known == name) {
+                        names.push(name.to_string());
+                    }
+                }
+            }
+        }
+        Ok(names)
+    }
+
+    /// Repoint every path-keyed row under one folder prefix to another.
+    pub fn rehome_path_prefix(&self, old_prefix: &str, new_prefix: &str) -> rusqlite::Result<()> {
+        let under = format!("{old_prefix}{}", std::path::MAIN_SEPARATOR);
+        let connection = self.connect(&self.edits_db_path)?;
+        let transaction = connection.unchecked_transaction()?;
+        for table in ["file_settings", "file_marks", "image_embeddings"] {
+            let sql = format!(
+                "UPDATE {table} SET file_path = ?1 || substr(file_path, ?2)
+                 WHERE file_path = ?3 OR substr(file_path, 1, ?4) = ?5"
+            );
+            transaction.execute(
+                &sql,
+                params![
+                    new_prefix,
+                    old_prefix.len() as i64 + 1,
+                    old_prefix,
+                    under.len() as i64,
+                    under
+                ],
+            )?;
+        }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -602,6 +721,16 @@ fn db_size_bytes(path: &str) -> u64 {
         .filter_map(|suffix| fs::metadata(format!("{path}{suffix}")).ok())
         .map(|metadata| metadata.len())
         .sum()
+}
+
+/// The path form two spellings of one path share on this platform.
+fn path_key(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    if cfg!(windows) {
+        trimmed.replace('/', "\\").to_lowercase()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn wipe(path: &str, tables: &[&str]) -> Result<(), RepositoryError> {

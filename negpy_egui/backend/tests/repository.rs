@@ -50,6 +50,44 @@ fn saved_hashes_are_the_rows_that_exist() {
 }
 
 #[test]
+fn many_edits_load_in_one_read_and_skip_missing_hashes() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    for index in 0..501 {
+        let mut config = WorkspaceConfig::default();
+        config.exposure.density = index as f64;
+        repo.save_file_settings(&format!("h{index}"), &config, "")
+            .unwrap();
+    }
+    let mut hashes: Vec<String> = (0..501).map(|index| format!("h{index}")).collect();
+    hashes.push("missing".into());
+
+    let loaded = repo.load_file_settings_many(&hashes).unwrap();
+
+    assert_eq!(loaded.len(), 501);
+    assert_eq!(loaded["h500"].exposure.density, 500.0);
+    assert!(!loaded.contains_key("missing"));
+    assert!(repo.load_file_settings_many(&[]).unwrap().is_empty());
+}
+
+#[test]
+fn settings_by_path_skip_rows_without_a_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    let mut config = WorkspaceConfig::default();
+    config.exposure.density = 0.7;
+    repo.save_file_settings("h1", &config, "/photos/1.nef")
+        .unwrap();
+    repo.save_file_settings("h2", &WorkspaceConfig::default(), "")
+        .unwrap();
+
+    let by_path = repo.load_settings_by_path().unwrap();
+
+    assert_eq!(by_path.len(), 1);
+    assert_eq!(by_path["/photos/1.nef"].exposure.density, 0.7);
+}
+
+#[test]
 fn rehoming_moves_the_row_and_never_clobbers_a_live_hash() {
     let dir = tempfile::tempdir().unwrap();
     let repo = repository(dir.path());
@@ -59,6 +97,8 @@ fn rehoming_moves_the_row_and_never_clobbers_a_live_hash() {
         .unwrap();
     assert!(repo.load_file_settings("old").unwrap().is_none());
     assert!(repo.load_file_settings("new").unwrap().is_some());
+    repo.save_history_step("old", 0, &WorkspaceConfig::default())
+        .unwrap();
 
     repo.rehome_file_settings("live", "target", "/photos/2.nef")
         .unwrap();
@@ -66,6 +106,75 @@ fn rehoming_moves_the_row_and_never_clobbers_a_live_hash() {
         .unwrap();
     assert!(repo.load_file_settings("live").unwrap().is_none());
     assert!(repo.load_file_settings("target").unwrap().is_some());
+}
+
+#[test]
+fn rehoming_moves_history_work_prints_and_marks() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_file_settings("old", &WorkspaceConfig::default(), "/photos/1.nef")
+        .unwrap();
+    repo.save_history_step("old", 0, &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_work_print("old", "print", &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_file_mark("old", Some("keeper"), "/photos/1.nef")
+        .unwrap();
+
+    repo.rehome_file_settings("old", "new", "/photos/2.nef")
+        .unwrap();
+
+    assert!(repo.history_step("new", 0).unwrap().is_some());
+    assert_eq!(repo.work_prints("new").unwrap(), vec!["print"]);
+    assert_eq!(
+        repo.file_marks().unwrap().get("new").map(String::as_str),
+        Some("keeper")
+    );
+}
+
+#[test]
+fn a_path_rehome_moves_rows_under_one_folder_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_file_settings("a", &WorkspaceConfig::default(), "/old/a.nef")
+        .unwrap();
+    repo.save_file_settings("b", &WorkspaceConfig::default(), "/old/b.nef")
+        .unwrap();
+    repo.save_file_settings("c", &WorkspaceConfig::default(), "/older/c.nef")
+        .unwrap();
+    repo.save_file_mark("a", Some("keeper"), "/old/a.nef")
+        .unwrap();
+    repo.save_embedding("a", &[1.0], "v1", "/old/a.nef")
+        .unwrap();
+
+    repo.rehome_path_prefix("/old", "/new").unwrap();
+
+    assert_eq!(
+        repo.path_for_file_hash("a").unwrap().as_deref(),
+        Some("/new/a.nef")
+    );
+    assert_eq!(repo.file_marks_by_path().unwrap()["/new/a.nef"], "keeper");
+    assert_eq!(repo.all_embeddings("v1").unwrap()["a"].0, "/new/a.nef");
+    assert_eq!(
+        repo.path_for_file_hash("c").unwrap().as_deref(),
+        Some("/older/c.nef")
+    );
+}
+
+#[test]
+fn edited_names_are_the_files_directly_under_a_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_file_settings("a", &WorkspaceConfig::default(), "/photos/a.nef")
+        .unwrap();
+    repo.save_file_settings("b", &WorkspaceConfig::default(), "/photos/sub/b.nef")
+        .unwrap();
+
+    let mut names = repo.edited_file_names_under("/photos").unwrap();
+    names.sort();
+
+    assert_eq!(names, vec!["a.nef"]);
+    assert!(repo.edited_file_names_under("/photo").unwrap().is_empty());
 }
 
 #[test]
