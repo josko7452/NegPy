@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 21:20 | **Last Commit:** `_ backend: add the workspace config flat namespace`
+**Last Updated:** 2026-11-12 21:45 | **Last Commit:** `_ build: fetch crates into the shared registry`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -43,6 +43,11 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D1 divergence: i18n embeds the catalogs from `../negpy/translations/` with
   `include_str!` instead of copying them to `backend/src/assets/translations/`.
   One source, no 1.9 MB duplicate; the Python tree is read-only here.
-- D2: crates.io is offline; `serde`, `serde_json` (preserve_order) and `uuid` are in the
-  local registry. No `sha2`/`blake3`, so `composite_token` uses FNV-1a (see D2e). The flat
+- Crates: crates.io is reachable from the host, but the coding sandbox has no network and a
+  read-only `~/.cargo`. Run `make fetch-crates` from a networked shell after any
+  Cargo.toml/Cargo.lock change; it repopulates the shared `~/.cargo/registry` and sandboxed
+  builds then resolve from cache. No registry mirror or vendoring is needed.
+- D2: `composite_token` hashes with `sha2` (16 hex digits, like Python). The digested bytes
+  are canonical JSON, not Python's `repr(astuple)`, so a token is not interchangeable with
+  Python's — it is a cache key never persisted, so it only has to be stable here. The flat
   `to_dict` emits JSON in section order; Python emits with `json.dumps` defaults.

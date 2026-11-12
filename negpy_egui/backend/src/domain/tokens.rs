@@ -4,16 +4,12 @@
 //! needs a re-decode or only a re-render. It is built from the whole config rather than a
 //! hand-picked list of fields, because a field left out is invisible until a stale buffer is
 //! served for the setting the user just changed.
-//!
-//! The digest is a 64-bit FNV-1a over the config's canonical JSON, not the Python sha256:
-//! the token is a cache key that is never persisted, so the Python bytes are not a contract,
-//! and no hash crate is available in this offline build. Two configs share a token only if
-//! they serialize to the same JSON.
 
 use std::path::Path;
 use std::time::UNIX_EPOCH;
 
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 
 /// ``|kind:path:size:mtime_ns:...:digest`` for an assembled source, or `""` when one part is
 /// unreachable.
@@ -45,15 +41,19 @@ pub fn composite_token<T: Serialize>(kind: &str, config: &T, paths: &[&str]) -> 
     format!("|{kind}{stamps}:{digest}")
 }
 
-/// A stable 64-bit FNV-1a over the config's canonical JSON, as 16 hex digits.
+/// The first 16 hex digits of the SHA-256 of the config's canonical JSON, the same
+/// algorithm and truncation Python uses. The digested bytes are not the Python `repr`, so a
+/// token is not interchangeable with the Python one; it is a cache key that is never
+/// persisted, so it only has to be stable within this process.
 fn config_digest<T: Serialize>(config: &T) -> String {
     let text = serde_json::to_string(config).unwrap_or_default();
-    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
-    for byte in text.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    let digest = Sha256::digest(text.as_bytes());
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
     }
-    format!("{hash:016x}")
+    hex.truncate(16);
+    hex
 }
 
 /// A path's identity for a token, or `""` when it is unreachable. A bare string, not a full

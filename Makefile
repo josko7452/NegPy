@@ -34,6 +34,13 @@ rust:
 	@$(CARGO) clippy --all-targets --all-features -- -D warnings
 	@$(CARGO) test
 
+# Download every negpy_egui pinned crate into the shared registry cache. Run this from a
+# networked shell after Cargo.toml/Cargo.lock changes, so offline sandbox builds can resolve
+# them. Needs the network; the codex sandbox cannot reach crates.io.
+.PHONY: fetch-crates
+fetch-crates:
+	@negpy_egui/scripts/fetch-crates.sh
+
 # Rust checks for the negpy_egui workspace, plus the gate that keeps GUI and
 # Python crates out of the headless backend graph.
 .PHONY: rust-egui
