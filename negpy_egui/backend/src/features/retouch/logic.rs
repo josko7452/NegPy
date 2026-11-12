@@ -2,7 +2,10 @@
 //!
 //! Repair and clone land in the next commit; this module owns the measured inputs they read.
 
-use negpy_core::retouch::{self, CleanBase, DustStats, GammaFit, LumaDetect, RatioNorm};
+use negpy_core::retouch::{
+    self, CleanBase, CloneStroke, DustStats, GammaFit, HealSearch, LumaDetect, RatioNorm,
+    ScoreRepair,
+};
 
 use crate::domain::models::RetouchConfig;
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -86,6 +89,16 @@ pub const HAIR_INPAINT_PAD: usize = 16;
 pub const HAIR_TILE_PX: usize = 1024;
 pub const HAIR_TILE_HALO: usize = 32;
 pub const HAIR_RANGE_SAMPLE_PX: usize = 1 << 20;
+pub const MANUAL_WIN_FACTOR: f64 = 3.0;
+pub const MANUAL_Z_MIN: f64 = 5.0;
+pub const MANUAL_Z_HI: f64 = 8.0;
+pub const MANUAL_Z_GROW: f64 = 2.0;
+pub const MANUAL_Z_GROW_FRAC: f64 = 0.25;
+pub const MANUAL_RIM_PX: f32 = 1.5;
+pub const IR_FILL_SCALES: [usize; 3] = [9, 5, 3];
+pub const IR_FILL_TAU: f32 = 0.15;
+pub const IR_WRITE_HI: f32 = 0.85;
+pub const IR_WRITE_LO: f32 = 0.40;
 
 /// `_density`: log density of luminance, exposure-invariant.
 #[must_use]
@@ -720,4 +733,556 @@ pub fn trace_scratch(
 
 fn scratch_band_rows(z: &[f32], w: usize) -> usize {
     z.len() / w.max(1)
+}
+
+/// `exclusion_cover`: the band every exclusion stroke sweeps.
+#[must_use]
+pub fn exclusion_cover(strokes: &[(Vec<[f64; 2]>, f64)], height: usize, width: usize) -> Vec<u8> {
+    let mut cover = vec![0u8; height * width];
+    let scale = height.max(width) as f64 / HEAL_SIZE_REF as f64;
+    for (points, size) in strokes {
+        let radius = (size * scale * 0.5).round().max(1.0) as i64;
+        let mut chain: Vec<(f64, f64)> = points
+            .iter()
+            .map(|p| (p[0] * width as f64, p[1] * height as f64))
+            .collect();
+        if chain.len() >= 3 {
+            chain = crate::features::geometry::mapping::smooth_polyline(&chain, false, 16);
+        }
+        let path: Vec<(i64, i64)> = chain
+            .iter()
+            .map(|(x, y)| (x.round() as i64, y.round() as i64))
+            .collect();
+        negpy_core::shapes::stroke_cover(
+            &mut cover,
+            width,
+            height,
+            &path,
+            radius,
+            (2 * radius).max(1),
+        );
+    }
+    cover
+}
+
+/// `drop_exclusions`: release the detection under the exclusion strokes.
+#[must_use]
+pub fn drop_exclusions(
+    score: Option<Vec<f32>>,
+    hair_mask: Option<Vec<u8>>,
+    strokes: &[(Vec<[f64; 2]>, f64)],
+    height: usize,
+    width: usize,
+) -> (Option<Vec<f32>>, Option<Vec<u8>>) {
+    if strokes.is_empty() || (score.is_none() && hair_mask.is_none()) {
+        return (score, hair_mask);
+    }
+    let cover = exclusion_cover(strokes, height, width);
+    let score = score.and_then(|mut s| {
+        negpy_core::retouch::release_score(&mut s, &cover, (height, width), MANUAL_RIM_PX)
+            .then_some(s)
+    });
+    let hair_mask = hair_mask.and_then(|mut h| {
+        for (m, c) in h.iter_mut().zip(&cover) {
+            if *c != 0 {
+                *m = 0;
+            }
+        }
+        h.iter().any(|v| *v != 0).then_some(h)
+    });
+    (score, hair_mask)
+}
+
+/// `strokes_to_score`: painted heal strokes to a shared defect score.
+#[must_use]
+pub fn strokes_to_score(
+    img: &ImageBuffer,
+    strokes: &[(Vec<[f64; 2]>, f64)],
+    legacy_spots: &[[f64; 3]],
+) -> Option<Vec<f32>> {
+    if strokes.is_empty() && legacy_spots.is_empty() {
+        return None;
+    }
+    let (h, w) = (img.height, img.width);
+    let mut score = vec![1.0f32; h * w];
+    let scale = h.max(w) as f64 / HEAL_SIZE_REF as f64;
+    let dens = density(img);
+    let mut touched = false;
+    let mut entries: Vec<(Vec<[f64; 2]>, f64)> = strokes.to_vec();
+    entries.extend(legacy_spots.iter().map(|p| (vec![[p[0], p[1]]], p[2])));
+    for (points, size) in entries {
+        let radius = (size * scale * 0.5).max(1.0);
+        let mut chain: Vec<(f64, f64)> = points
+            .iter()
+            .map(|p| (p[0] * w as f64, p[1] * h as f64))
+            .collect();
+        if chain.len() >= 3 {
+            chain = crate::features::geometry::mapping::smooth_polyline(&chain, false, 16);
+        }
+        if chain.is_empty() {
+            continue;
+        }
+        let win = (3.0f64.max(radius * MANUAL_WIN_FACTOR) as usize) * 2 + 1;
+        let pad = radius as usize + win;
+        let min_x = chain.iter().map(|p| p.0).fold(f64::INFINITY, f64::min) as i64;
+        let max_x = chain.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max) as i64;
+        let min_y = chain.iter().map(|p| p.1).fold(f64::INFINITY, f64::min) as i64;
+        let max_y = chain.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max) as i64;
+        let x0 = (min_x - pad as i64).max(0) as usize;
+        let y0 = (min_y - pad as i64).max(0) as usize;
+        let x1 = (max_x + pad as i64 + 1).min(w as i64) as usize;
+        let y1 = (max_y + pad as i64 + 1).min(h as i64) as usize;
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        let path: Vec<(i64, i64)> = chain
+            .iter()
+            .map(|(x, y)| (x.round() as i64 - x0 as i64, y.round() as i64 - y0 as i64))
+            .collect();
+        let cw = x1 - x0;
+        let ch = y1 - y0;
+        let mut crop_dens = vec![0.0; ch * cw];
+        for y in 0..ch {
+            let src = (y0 + y) * w + x0;
+            crop_dens[y * cw..(y + 1) * cw].copy_from_slice(&dens[src..src + cw]);
+        }
+        let c = HealSearch {
+            win,
+            z_min: MANUAL_Z_MIN,
+            z_hi: MANUAL_Z_HI,
+            z_grow: MANUAL_Z_GROW,
+            z_grow_frac: MANUAL_Z_GROW_FRAC,
+            pad_px: DETECT_PAD_PX * film_scale(h, w),
+            score_floor: IR_SCORE_FLOOR,
+            rim: MANUAL_RIM_PX,
+        };
+        let Some(region) = negpy_core::retouch::heal_region(
+            &crop_dens,
+            (ch, cw),
+            &path,
+            (
+                radius.max(1.0) as i64,
+                (2.0 * radius).round().max(1.0) as i64,
+            ),
+            &c,
+        ) else {
+            continue;
+        };
+        for y in 0..ch {
+            for x in 0..cw {
+                let d = (y0 + y) * w + x0 + x;
+                score[d] = score[d].min(region[y * cw + x]);
+            }
+        }
+        touched = true;
+    }
+    touched.then_some(score)
+}
+
+/// `lines_to_score`: traced scratch lines to a defect score.
+#[must_use]
+pub fn lines_to_score(img: &ImageBuffer, lines: &[[f64; 5]], threshold: f64) -> Option<Vec<f32>> {
+    if lines.is_empty() {
+        return None;
+    }
+    let (h, w) = (img.height, img.width);
+    let bar = scratch_detect_bar(threshold);
+    let scale = film_scale(h, w);
+    let mut mask = vec![0u8; h * w];
+    let mut touched = false;
+    for line in lines {
+        let (nx0, ny0, nx1, ny1, _) = (line[0], line[1], line[2], line[3], line[4]);
+        let (x0, x1) = (nx0 * w as f64, nx1 * w as f64);
+        let (y0, y1) = (ny0 * h as f64, ny1 * h as f64);
+        if (x1 - x0).abs() < 1.0 {
+            continue;
+        }
+        let slope = (y1 - y0) / (x1 - x0);
+        let max_half = (0.5 * SCRATCH_WIDTH_MAX * scale).round().max(1.0) as i64;
+        let row = y0.round() as i64;
+        if row < 0 || row >= h as i64 {
+            continue;
+        }
+        let reach = max_half + (slope.abs() * x0.max(w as f64 - x0)).ceil() as i64 + 2;
+        let (z, z0, _) = scratch_ridge_rows(img, row - reach, row + reach + 1);
+        let sheared = shear_rows(&z, img.width, img.height.min(z.len() / w.max(1)), slope, x0);
+        let r = (row - z0 as i64) as usize;
+        if r >= h {
+            continue;
+        }
+        let row_values = &sheared[r * w..(r + 1) * w];
+        let sign = if row_values.iter().sum::<f32>() >= 0.0 {
+            1.0
+        } else {
+            -1.0
+        };
+        let on: Vec<f32> = row_values
+            .iter()
+            .map(|v| f32::from(v * sign > bar as f32))
+            .collect();
+        let mut run = vec![0.0; on.len()];
+        negpy_core::filter::box_filter(
+            &on,
+            &mut run,
+            (1, w, 1),
+            (SCRATCH_RUN_WIN, 1),
+            true,
+            negpy_core::filter::Border::Reflect101,
+        )?;
+        let lo = x0.min(x1).max(0.0) as usize;
+        let hi = (x0.max(x1) as usize + 1).min(w);
+        let keep: Vec<usize> = (lo..hi).filter(|&x| run[x] >= SCRATCH_RUN_FRAC).collect();
+        if keep.is_empty() {
+            continue;
+        }
+        let band = grow_band(
+            &sheared,
+            r,
+            &keep,
+            max_half as usize,
+            sign as f64,
+            bar as f32,
+            h,
+            w,
+        );
+        for (local_row, col) in band {
+            let cy = (y0 + slope * (col as f64 - x0)).round() as i64;
+            let target = cy + local_row as i64 - max_half;
+            if target >= 0 && target < h as i64 {
+                mask[target as usize * w + col] = 1;
+            }
+        }
+        touched = true;
+    }
+    touched.then(|| {
+        negpy_core::distance::mask_to_score(&mask, h, w, DETECT_PAD_PX * scale, IR_SCORE_FLOOR)
+    })
+}
+
+fn shear_rows(z: &[f32], width: usize, height: usize, slope: f64, about_x: f64) -> Vec<f32> {
+    let m = [1.0, 0.0, 0.0, -slope, 1.0, slope * about_x];
+    let img = negpy_core::warp::Image {
+        data: z,
+        h: height,
+        w: width,
+        cn: 1,
+    };
+    let mut out = vec![0.0; z.len()];
+    negpy_core::warp::warp_affine(
+        &img,
+        (
+            negpy_core::warp::Interp::Linear,
+            negpy_core::warp::Border::Replicate,
+        ),
+        m,
+        false,
+        width,
+        &mut out,
+    );
+    out
+}
+
+fn grow_band(
+    sheared: &[f32],
+    row: usize,
+    xs: &[usize],
+    max_half: usize,
+    sign: f64,
+    bar: f32,
+    h: usize,
+    w: usize,
+) -> Vec<(usize, usize)> {
+    let mut out = Vec::new();
+    for &x in xs {
+        out.push((max_half, x));
+        for direction in [-1i64, 1] {
+            let mut alive = true;
+            for step in 1..=max_half as i64 {
+                let r = row as i64 + direction * step;
+                if r < 0 || r >= h as i64 {
+                    break;
+                }
+                alive &= sheared[r as usize * w + x] * sign as f32 > bar;
+                if !alive {
+                    break;
+                }
+                out.push(((max_half as i64 + direction * step) as usize, x));
+            }
+        }
+    }
+    out
+}
+
+fn fill_supports(buffer_long_edge: usize, factor: f64) -> Vec<usize> {
+    let fine: Vec<usize> = IR_FILL_SCALES
+        .iter()
+        .map(|k| ((*k as f64 * factor).round() as usize) | 1)
+        .collect();
+    let film = factor.max(buffer_long_edge as f64 / IR_DETECT_REF);
+    let mut supports = vec![((IR_FILL_SCALES[0] as f64 * film).round() as usize) | 1];
+    supports.extend(fine);
+    supports.sort_unstable();
+    supports.dedup();
+    supports
+}
+
+fn score_repair_constants() -> ScoreRepair {
+    ScoreRepair {
+        score_floor: IR_SCORE_FLOOR as f32,
+        tau: IR_FILL_TAU,
+        write_hi: IR_WRITE_HI,
+        write_span: IR_WRITE_HI - IR_WRITE_LO,
+    }
+}
+
+/// `apply_score_repair`: one score over the whole frame.
+#[must_use]
+pub fn apply_score_repair(
+    img: &ImageBuffer,
+    score_det: &[f32],
+    score_h: usize,
+    score_w: usize,
+    floor: bool,
+    long_edge: Option<usize>,
+) -> ImageBuffer {
+    let (h, w) = (img.height, img.width);
+    let (score, factor) = if (score_h, score_w) == (h, w) {
+        (score_det.to_vec(), 1.0)
+    } else {
+        let factor = (h as f64 / score_h as f64).max(w as f64 / score_w as f64);
+        let mut s = vec![0.0; h * w];
+        negpy_core::resize::resize_linear(score_det, (score_h, score_w, 1), (h, w), false, &mut s)
+            .expect("positive dimensions");
+        (s, factor)
+    };
+    let supports = fill_supports(long_edge.unwrap_or(h.max(w)), factor);
+    let mut out = vec![0.0; img.pixels.len()];
+    let c = score_repair_constants();
+    negpy_core::retouch::apply_score_repair(
+        &img.pixels,
+        &score,
+        (h, w),
+        &supports,
+        floor,
+        factor.max(1.0),
+        &c,
+        &mut out,
+    )
+    .expect("the score matches the frame");
+    ImageBuffer::from_rgb(w, h, out)
+}
+
+/// `repair_components`: the same repair per component.
+#[must_use]
+pub fn repair_components(
+    img: &ImageBuffer,
+    score_det: &[f32],
+    score_h: usize,
+    score_w: usize,
+    floor: bool,
+) -> ImageBuffer {
+    let (h, w) = (img.height, img.width);
+    let (score, factor) = if (score_h, score_w) == (h, w) {
+        (score_det.to_vec(), 1.0)
+    } else {
+        let factor = (h as f64 / score_h as f64).max(w as f64 / score_w as f64);
+        let mut s = vec![0.0; h * w];
+        negpy_core::resize::resize_linear(score_det, (score_h, score_w, 1), (h, w), false, &mut s)
+            .expect("positive dimensions");
+        (s, factor)
+    };
+    let supports = fill_supports(h.max(w), factor);
+    let mut out = img.pixels.clone();
+    let c = score_repair_constants();
+    let changed = negpy_core::retouch::repair_components(
+        &img.pixels,
+        &score,
+        (h, w),
+        &supports,
+        floor,
+        factor.max(1.0),
+        &c,
+        *supports.iter().max().unwrap_or(&1),
+        REPAIR_MAX_COMPONENTS,
+        None,
+        &mut out,
+    )
+    .unwrap_or(false);
+    if changed {
+        ImageBuffer::from_rgb(w, h, out)
+    } else {
+        img.clone()
+    }
+}
+
+/// `route_wide_defects`: detection-scale wide components for the inpaint.
+#[must_use]
+pub fn route_wide_defects(
+    score: &[f32],
+    height: usize,
+    width: usize,
+    budget: Option<f64>,
+) -> Option<Vec<u8>> {
+    let scale = film_scale(height, width);
+    let radius = (IR_ROUTE_RADIUS as f64 * scale).round() as usize;
+    let side = (2 * IR_ROUTE_DILATE + 1).max(1);
+    let kernel_mask = negpy_core::morph::ellipse_kernel(side, side);
+    let routed = negpy_core::retouch::route_wide_defects(
+        score,
+        (height, width),
+        IR_SCORE_FLOOR as f32,
+        radius,
+        negpy_core::morph::Kernel {
+            mask: &kernel_mask,
+            w: side,
+            h: side,
+        },
+    )?;
+    let frac = routed.iter().filter(|v| **v != 0).count() as f64 / routed.len().max(1) as f64;
+    if budget.is_some_and(|b| frac > b) {
+        None
+    } else {
+        Some(routed)
+    }
+}
+
+/// `apply_hair_inpaint`: structure-following fill of long defects.
+#[must_use]
+pub fn apply_hair_inpaint(
+    img: &ImageBuffer,
+    hair_masks: &[Option<Vec<u8>>],
+    mask_h: usize,
+    mask_w: usize,
+    radius: i64,
+) -> ImageBuffer {
+    let masks: Vec<&Vec<u8>> = hair_masks.iter().flatten().collect();
+    if masks.is_empty() {
+        return img.clone();
+    }
+    let (h, w) = (img.height, img.width);
+    let factor = (h as f64 / mask_h as f64)
+        .max(w as f64 / mask_w as f64)
+        .max(1.0);
+    let dilate = HAIR_DILATE_PX.max(factor.round() as i64);
+    let mut m = vec![0u8; h * w];
+    for mask in masks {
+        let up = if (mask_h, mask_w) == (h, w) {
+            mask.clone()
+        } else {
+            let f: Vec<f32> = mask.iter().map(|v| *v as f32).collect();
+            let mut out = vec![0.0; h * w];
+            negpy_core::resize::resize_linear(&f, (mask_h, mask_w, 1), (h, w), false, &mut out)
+                .expect("positive dimensions");
+            out.into_iter().map(|v| u8::from(v > 0.5)).collect()
+        };
+        for (d, v) in m.iter_mut().zip(up) {
+            *d |= v;
+        }
+    }
+    if !m.iter().any(|v| *v != 0) {
+        return img.clone();
+    }
+    if dilate > 0 {
+        let side = (2 * dilate as usize + 1).max(1);
+        let mut out = vec![0u8; h * w];
+        negpy_core::morph::morphology(
+            &m,
+            &mut out,
+            (h, w, 1),
+            negpy_core::morph::Op::Dilate,
+            (side, side),
+            1,
+            negpy_core::filter::Border::Constant,
+        )
+        .expect("the mask matches the frame");
+        m = out;
+    }
+    let c = negpy_core::inpaint::HairFill {
+        radius: radius as f64,
+        dilate_px: dilate as usize,
+        pad: HAIR_INPAINT_PAD,
+        tile: HAIR_TILE_PX,
+        halo: HAIR_TILE_HALO,
+        sample_px: HAIR_RANGE_SAMPLE_PX,
+        gamma: HAIR_INPAINT_GAMMA,
+    };
+    let mut out = vec![0.0; img.pixels.len()];
+    negpy_core::inpaint::hair_fill(&img.pixels, (h, w), &m, &c, &mut out);
+    let clean: Vec<bool> = m.iter().map(|v| *v == 0).collect();
+    let mut grained = vec![0.0; out.len()];
+    negpy_core::retouch::add_clean_grain(&out, &clean, (h, w), factor.max(1.0), None, &mut grained);
+    ImageBuffer::from_rgb(w, h, grained)
+}
+
+fn clone_path(points: &[[f64; 2]], x0: usize, y0: usize, w: usize, h: usize) -> Vec<(i64, i64)> {
+    let mut chain: Vec<(f64, f64)> = points
+        .iter()
+        .map(|p| (p[0] * w as f64, p[1] * h as f64))
+        .collect();
+    if chain.len() >= 3 {
+        chain = crate::features::geometry::mapping::smooth_polyline(&chain, false, 16);
+    }
+    chain
+        .iter()
+        .map(|(x, y)| (x.round() as i64 - x0 as i64, y.round() as i64 - y0 as i64))
+        .collect()
+}
+
+/// One clone stroke in place.
+pub fn apply_clone_stroke(
+    out: &mut [f32],
+    h: usize,
+    w: usize,
+    stroke: &crate::features::retouch::models::CloneStrokeConfig,
+) {
+    if stroke.points.is_empty() || stroke.strength <= 0.0 {
+        return;
+    }
+    let radius = (stroke.size * h.max(w) as f64 / HEAL_SIZE_REF as f64 * 0.5).max(1.0);
+    let (sx, sy) = (
+        (stroke.dx * w as f64).round() as i64,
+        (stroke.dy * h as f64).round() as i64,
+    );
+    if sx == 0 && sy == 0 {
+        return;
+    }
+    let sigma = radius.max(2.0);
+    let pad = (radius + 3.0 * sigma) as usize + 2;
+    let xs: Vec<f64> = stroke.points.iter().map(|p| p[0] * w as f64).collect();
+    let ys: Vec<f64> = stroke.points.iter().map(|p| p[1] * h as f64).collect();
+    let x0 = (xs.iter().fold(f64::INFINITY, |a, &b| a.min(b)) as i64 - pad as i64).max(0) as usize;
+    let y0 = (ys.iter().fold(f64::INFINITY, |a, &b| a.min(b)) as i64 - pad as i64).max(0) as usize;
+    let x1 = (xs.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)) as i64 + pad as i64 + 1)
+        .min(w as i64) as usize;
+    let y1 = (ys.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b)) as i64 + pad as i64 + 1)
+        .min(h as i64) as usize;
+    if x1 <= x0 || y1 <= y0 {
+        return;
+    }
+    let path = clone_path(&stroke.points, x0, y0, w, h);
+    let c = CloneStroke {
+        rect: (x0, y0, x1, y1),
+        path: &path,
+        brush: radius.round().max(1.0) as i64,
+        radius,
+        shift: (sx, sy),
+        sigma,
+        feather: stroke.feather,
+        strength: stroke.strength,
+        match_tone: stroke.match_tone,
+    };
+    let _ = negpy_core::retouch::clone_stroke(out, (h, w), &c);
+}
+
+/// Every clone stroke, in order.
+#[must_use]
+pub fn apply_clone_strokes(
+    img: &ImageBuffer,
+    strokes: &[crate::features::retouch::models::CloneStrokeConfig],
+) -> ImageBuffer {
+    let mut out = img.pixels.clone();
+    for stroke in strokes {
+        apply_clone_stroke(&mut out, img.height, img.width, stroke);
+    }
+    ImageBuffer::from_rgb(img.width, img.height, out)
 }
