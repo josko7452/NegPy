@@ -10,3 +10,9 @@ name = "negpy_backend"
 
 [dependencies]
 negpy_core = { path = "../../negpy_core", default-features = false }
+dirs = "6"
+libc = "0.2"
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

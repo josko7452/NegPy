@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 16:35 | **Last Commit:** `_ backend: document the contract mapping`
+**Last Updated:** 2026-11-12 17:20 | **Last Commit:** `_ backend: add kernel path helpers`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
-`MIGRATION_PLAN.md` is advisory. **Phase B is complete**; Phase C (event
-  contract) is complete — C1–C4 landed. **Next session: Phase D1.**
+`MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
+  Phase D1 is in progress: paths and user dir landed; text and i18n next.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
@@ -21,9 +21,11 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   coalescing, close semantics and the size rule.
 - C4 `EVENT_CONTRACT.md` gains the class mapping: each Python controller/session/worker
   class to its `BackendEvent`/`BackendCommand`/GUI-local home.
+- D1a `backend/src/kernel/system/{paths,user_directory}.rs`: resource and user-dir
+  resolution, atomic replace, safe unlink, umask mode. 15 tests ported.
 
 ## Next Steps (Ordered)
-1. [ ] D1 `kernel.system.{text,i18n,logging,paths,override}` + `assets/translations`
+1. [ ] D1 `kernel.system.{text,i18n,logging,override}` + `assets/translations`; paths done
 2. [ ] D2–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
 3. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
 
