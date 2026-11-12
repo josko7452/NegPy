@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 10:00 | **Last Commit:** `c1cf2ada backend: add runtime lens metadata model`
+**Last Updated:** 2026-11-13 10:10 | **Last Commit:** `c3ca9cf3 backend: migrate Positive-frame auto metering`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -20,6 +20,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 
 ## Completed (This Session)
 - D12: Positive-frame auto-meter migration (tests green).
+- D12: New roll-field card locks (tests green).
 - `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
 - `d9c0ce50` D12: hash rehome and ambiguity.
 - `cf05350b` D12: normalization-roll baselines.
