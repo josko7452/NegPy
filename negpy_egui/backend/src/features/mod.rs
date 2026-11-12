@@ -1,4 +1,5 @@
 //! Feature kernels and their pure configuration.
 
 pub mod exposure;
+pub mod lab;
 pub mod process;
