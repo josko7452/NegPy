@@ -7,6 +7,10 @@
 
 use serde_json::{Map, Value};
 
+/// The measured-bounds version a sidecar records. Mirrors `BOUNDS_VERSION` in
+/// `negpy/features/exposure/normalization.py`.
+pub const BOUNDS_VERSION: i64 = 5;
+
 use crate::domain::migrations::{FlatConfig, migrate_flat_config};
 use crate::domain::models::export::{ExportConfig, ExportPreset};
 use crate::domain::models::{

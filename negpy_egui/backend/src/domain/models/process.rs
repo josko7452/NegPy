@@ -210,6 +210,15 @@ impl Default for ProcessConfig {
     }
 }
 
+impl ProcessConfig {
+    /// Whether this frame has measured bounds stored for it.
+    #[must_use]
+    pub fn is_local_initialized(&self) -> bool {
+        self.local_floors.into_iter().any(|value| value != 0.0)
+            || self.local_ceils.into_iter().any(|value| value != 0.0)
+    }
+}
+
 const fn default_analysis_buffer() -> f64 {
     0.05
 }
