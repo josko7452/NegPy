@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:20 | **Last Commit:** `1f023e3b backend: detect scanner raw loader families`
+**Last Updated:** 2026-11-13 00:55 | **Last Commit:** `eb5a86e3 backend: add loader factory entry point`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 loaders are complete. Next is D7, starting
-with the process feature kernels.
+Phases A–C, D1–D5 and D6 are complete. D7 process-mode detection has
+landed; next are the other process kernels and exposure.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -19,9 +19,10 @@ with the process feature kernels.
 - D6: Flextight LogLuv strips decode and normalize to RGB.
 - D6: Source selection tells Coolscan NEF and Flextight FFF apart.
 - D6: `factory::load` dispatches every format through one call.
+- D7: process-mode detection ports the Python crop, stats and thresholds.
 
 ## Next Steps (Ordered)
-1. [ ] D7: process feature kernels
+1. [ ] D7: exposure normalization and print curve
 2. [ ] D7: exposure feature kernels
 
 ## Constraints / Gotchas
