@@ -4,7 +4,7 @@
 //! Edits stay under each frame's own hash, except a forked path, which gets a
 //! `#roll:<id>` suffix.
 
-use serde_json::{Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::domain::models::process::ProcessConfig;
 use crate::domain::models::with_film_fields;
@@ -12,6 +12,10 @@ use crate::domain::models::workspace::WorkspaceConfig;
 use crate::infrastructure::storage::repository::StorageRepository;
 
 pub const ROLLS_KEY: &str = "rolls_by_id";
+pub const IMPORT_SOURCES_KEY: &str = "roll_import_sources";
+pub const DISMISSED_FOLDERS_KEY: &str = "dismissed_folder_rolls";
+pub const DISCOVERY_FILTERS_KEY: &str = "roll_discovery_filters";
+pub const DEFAULT_DISCOVERY_FILTERS: &[&str] = &["export"];
 const FORK_SEP: &str = "#roll:";
 
 /// A roll record, stored in the `ROLLS_KEY` global setting.
@@ -205,6 +209,467 @@ pub fn saved_rolls(repo: &StorageRepository) -> Map<String, Value> {
 #[must_use]
 pub fn roll_for_id(repo: &StorageRepository, roll_id: &str) -> Option<Value> {
     read(repo).get(roll_id).cloned()
+}
+
+/// `path` in the form two spellings of one folder share: separators and case.
+#[must_use]
+pub fn folder_key(path: &str) -> String {
+    let trimmed = path.trim_end_matches(['/', '\\']);
+    if cfg!(windows) {
+        trimmed.replace('/', "\\").to_lowercase()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// The id of the folder roll recognizing `path`.
+#[must_use]
+pub fn folder_roll_id_for_path(repo: &StorageRepository, path: &str) -> Option<String> {
+    let key = folder_key(path);
+    read(repo).into_iter().find_map(|(roll_id, entry)| {
+        (entry.get("kind").and_then(Value::as_str) == Some("folder")
+            && entry
+                .get("folder_path")
+                .and_then(Value::as_str)
+                .is_some_and(|folder| folder_key(folder) == key))
+        .then_some(roll_id)
+    })
+}
+
+fn string_list(entry: &Value, key: &str) -> Vec<String> {
+    entry
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The files a walk of `folders` skips: those removed from the roll of each.
+#[must_use]
+pub fn excluded_paths(repo: &StorageRepository, folders: &[String]) -> Vec<String> {
+    let keys: Vec<String> = folders.iter().map(|folder| folder_key(folder)).collect();
+    read(repo)
+        .into_values()
+        .filter(|entry| entry.get("kind").and_then(Value::as_str) == Some("folder"))
+        .filter(|entry| {
+            entry
+                .get("folder_path")
+                .and_then(Value::as_str)
+                .is_some_and(|folder| keys.contains(&folder_key(folder)))
+        })
+        .flat_map(|entry| string_list(&entry, "excluded_paths"))
+        .map(|path| folder_key(&path))
+        .collect()
+}
+
+/// Whether `path` is one of the excluded keys.
+#[must_use]
+pub fn is_excluded_key(path: &str, excluded: &[String]) -> bool {
+    excluded.iter().any(|key| key == &folder_key(path))
+}
+
+/// The removed files of a folder roll that are still on disk.
+#[must_use]
+pub fn removed_paths(repo: &StorageRepository, roll_id: &str) -> Vec<String> {
+    let Some(entry) = roll_for_id(repo, roll_id) else {
+        return Vec::new();
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("folder") {
+        return Vec::new();
+    }
+    string_list(&entry, "excluded_paths")
+        .into_iter()
+        .filter(|path| std::path::Path::new(path).is_file())
+        .collect()
+}
+
+/// Empty a folder roll's excluded paths, returning the files still on disk.
+pub fn restore_removed(repo: &mut StorageRepository, roll_id: &str) -> Vec<String> {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return Vec::new();
+    };
+    if entry.get("kind").and_then(Value::as_str) != Some("folder") {
+        return Vec::new();
+    }
+    let Some(excluded) = entry
+        .get("excluded_paths")
+        .and_then(Value::as_array)
+        .cloned()
+    else {
+        return Vec::new();
+    };
+    let back: Vec<String> = excluded
+        .iter()
+        .filter_map(Value::as_str)
+        .filter(|path| std::path::Path::new(path).is_file())
+        .map(str::to_string)
+        .collect();
+    entry.insert("excluded_paths".to_string(), Value::Array(Vec::new()));
+    write(repo, store);
+    back
+}
+
+/// Create a virtual roll and return its id.
+pub fn create_virtual_roll(
+    repo: &mut StorageRepository,
+    name: &str,
+    member_paths: &[String],
+) -> String {
+    let roll_id = uuid::Uuid::new_v4().simple().to_string();
+    let mut store = read(repo);
+    let mut entry = Map::new();
+    entry.insert("kind".into(), json!("virtual"));
+    entry.insert("name".into(), json!(name));
+    entry.insert("member_paths".into(), json!(member_paths));
+    entry.insert(
+        "created_at".into(),
+        json!(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs_f64()
+        ),
+    );
+    store.insert(roll_id.clone(), Value::Object(entry));
+    write(repo, store);
+    roll_id
+}
+
+/// Add paths to a roll in one write.
+///
+/// A virtual roll gains new members. A folder roll holds only its own folder's files, so
+/// the paths and their companion parts only leave its excluded paths. Returns the paths
+/// that left the exclusions.
+pub fn add_members(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    paths: &[String],
+    parts: &[String],
+) -> Vec<String> {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return Vec::new();
+    };
+    let kind = entry
+        .get("kind")
+        .and_then(Value::as_str)
+        .unwrap_or("virtual");
+    let mut new = Vec::new();
+    if kind != "folder" {
+        let known: Vec<String> = string_list(&Value::Object(entry.clone()), "member_paths");
+        for path in paths {
+            if !known.contains(path) && !new.contains(path) {
+                new.push(path.clone());
+            }
+        }
+    }
+    let added: Vec<String> = paths
+        .iter()
+        .chain(parts)
+        .map(|path| folder_key(path))
+        .collect();
+    let excluded: Vec<String> = entry
+        .get("excluded_paths")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|value| value.as_str().map(str::to_string))
+        .collect();
+    let kept: Vec<String> = excluded
+        .iter()
+        .filter(|path| !added.contains(&folder_key(path)))
+        .cloned()
+        .collect();
+    let changed = !new.is_empty() || kept.len() != excluded.len();
+    if !new.is_empty() {
+        let mut members = string_list(&Value::Object(entry.clone()), "member_paths");
+        members.extend(new);
+        entry.insert("member_paths".into(), json!(members));
+    }
+    if kept.len() != excluded.len() {
+        entry.insert("excluded_paths".into(), json!(kept));
+    }
+    if changed {
+        write(repo, store);
+    }
+    paths
+        .iter()
+        .filter(|path| {
+            let key = folder_key(path);
+            excluded.iter().any(|old| folder_key(old) == key)
+                && !kept.iter().any(|kept| folder_key(kept) == key)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Remove paths and their records from a roll, returning the forks the caller must delete.
+pub fn remove_members(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    paths: &[String],
+    hashes: &[String],
+) -> Vec<String> {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return Vec::new();
+    };
+    let gone: Vec<String> = paths.iter().map(|path| folder_key(path)).collect();
+    if entry.contains_key("member_paths") {
+        let members: Vec<String> = string_list(&Value::Object(entry.clone()), "member_paths")
+            .into_iter()
+            .filter(|path| !gone.contains(&folder_key(path)))
+            .collect();
+        entry.insert("member_paths".into(), json!(members));
+    }
+    if entry.get("kind").and_then(Value::as_str) == Some("folder") {
+        let folder = entry
+            .get("folder_path")
+            .and_then(Value::as_str)
+            .map(folder_key)
+            .unwrap_or_default();
+        let own: Vec<String> = paths
+            .iter()
+            .filter(|path| folder_key(&parent_dir(path).unwrap_or_default()) == folder)
+            .cloned()
+            .collect();
+        let mut excluded = string_list(&Value::Object(entry.clone()), "excluded_paths");
+        for path in own {
+            if !excluded
+                .iter()
+                .any(|known| folder_key(known) == folder_key(&path))
+            {
+                excluded.push(path);
+            }
+        }
+        entry.insert("excluded_paths".into(), json!(excluded));
+    }
+    for key in ["frame_overrides", "frame_baselines"] {
+        if let Some(records) = entry.get_mut(key).and_then(Value::as_object_mut) {
+            for hash in hashes {
+                records.remove(hash);
+            }
+            if records.is_empty() {
+                entry.remove(key);
+            }
+        }
+    }
+    if let Some(scenes) = entry.get_mut("scenes").and_then(Value::as_object_mut) {
+        pull_scene_members(scenes, hashes);
+    }
+    let forked = string_list(&Value::Object(entry.clone()), "forked_hashes")
+        .into_iter()
+        .filter(|hash| hashes.contains(hash))
+        .collect::<Vec<_>>();
+    if !forked.is_empty() {
+        let kept: Vec<String> = string_list(&Value::Object(entry.clone()), "forked_hashes")
+            .into_iter()
+            .filter(|hash| !hashes.contains(hash))
+            .collect();
+        entry.insert("forked_hashes".into(), json!(kept));
+    }
+    write(repo, store);
+    forked
+}
+
+/// Every roll `path` belongs to: directly in a folder roll's folder and not removed,
+/// or listed in a virtual roll's members.
+#[must_use]
+pub fn rolls_containing_path(repo: &StorageRepository, path: &str) -> Vec<String> {
+    let parent = parent_dir(&absolute(path)).unwrap_or_default();
+    let parent_key = folder_key(&parent);
+    read(repo)
+        .into_iter()
+        .filter_map(|(roll_id, entry)| {
+            let kind = entry
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("virtual");
+            if kind == "folder" {
+                let folder = entry
+                    .get("folder_path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let in_folder = !folder.is_empty() && folder_key(&absolute(folder)) == parent_key;
+                let excluded = string_list(&entry, "excluded_paths");
+                (in_folder && !is_excluded_key(path, &excluded)).then_some(roll_id)
+            } else {
+                string_list(&entry, "member_paths")
+                    .iter()
+                    .any(|member| member == path)
+                    .then_some(roll_id)
+            }
+        })
+        .collect()
+}
+
+/// The roll a path belongs to when none is active. A folder roll wins over a virtual one.
+#[must_use]
+pub fn home_roll(repo: &StorageRepository, path: &str) -> Option<String> {
+    if path.is_empty() {
+        return None;
+    }
+    let containing = rolls_containing_path(repo, path);
+    containing
+        .iter()
+        .find(|roll_id| {
+            roll_for_id(repo, roll_id)
+                .and_then(|entry| {
+                    entry
+                        .get("kind")
+                        .and_then(Value::as_str)
+                        .map(str::to_string)
+                })
+                .as_deref()
+                == Some("folder")
+        })
+        .cloned()
+        .or_else(|| containing.first().cloned())
+}
+
+/// The roll a frame resolves through: the active roll, else its home roll.
+#[must_use]
+pub fn frame_roll(
+    repo: &StorageRepository,
+    active_roll_id: Option<&str>,
+    path: &str,
+) -> Option<String> {
+    active_roll_id
+        .map(str::to_string)
+        .or_else(|| home_roll(repo, path))
+}
+
+fn absolute(path: &str) -> String {
+    std::path::Path::new(path)
+        .canonicalize()
+        .map(|path| path.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| path.to_string())
+}
+
+/// Rename a roll. An unknown id is a no-op.
+pub fn rename_roll(repo: &mut StorageRepository, roll_id: &str, name: &str) {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return;
+    };
+    entry.insert("name".into(), json!(name));
+    write(repo, store);
+}
+
+/// Delete a roll. A deleted folder roll is added to the dismissed folders.
+pub fn delete_roll(repo: &mut StorageRepository, roll_id: &str) {
+    let mut store = read(repo);
+    let Some(entry) = store.remove(roll_id) else {
+        return;
+    };
+    write(repo, store);
+    if entry.get("kind").and_then(Value::as_str) != Some("folder") {
+        return;
+    }
+    let Some(path) = entry.get("folder_path").and_then(Value::as_str) else {
+        return;
+    };
+    let dismissed = import_sources_of(repo, DISMISSED_FOLDERS_KEY);
+    if dismissed
+        .iter()
+        .any(|folder| folder_key(folder) == folder_key(path))
+    {
+        return;
+    }
+    let mut settings = Map::new();
+    let mut updated = dismissed.clone();
+    updated.push(path.to_string());
+    settings.insert(DISMISSED_FOLDERS_KEY.into(), json!(updated));
+    let _ = repo.save_global_settings(&settings);
+}
+
+fn import_sources_of(repo: &StorageRepository, key: &str) -> Vec<String> {
+    match repo.global_setting(key).ok().flatten() {
+        Some(Value::Array(values)) => values
+            .iter()
+            .filter_map(Value::as_str)
+            .map(str::to_string)
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Every roll in name order, folder and virtual alike.
+#[must_use]
+pub fn all_rolls_sorted(repo: &StorageRepository) -> Vec<(String, Value)> {
+    let mut rolls: Vec<(String, Value)> = read(repo).into_iter().collect();
+    rolls.sort_by(|left, right| {
+        let name = |entry: &Value| {
+            entry
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_lowercase()
+        };
+        name(&left.1).cmp(&name(&right.1))
+    });
+    rolls
+}
+
+/// Every virtual roll in name order.
+#[must_use]
+pub fn virtual_rolls(repo: &StorageRepository) -> Vec<(String, Value)> {
+    all_rolls_sorted(repo)
+        .into_iter()
+        .filter(|(_, entry)| entry.get("kind").and_then(Value::as_str) == Some("virtual"))
+        .collect()
+}
+
+fn parent_dir(path: &str) -> Option<String> {
+    std::path::Path::new(path)
+        .parent()
+        .map(|parent| parent.to_string_lossy().into_owned())
+}
+
+fn pull_scene_members(scenes: &mut Map<String, Value>, hashes: &[String]) {
+    let stale: Vec<String> = scenes
+        .iter()
+        .filter_map(|(scene_id, scene)| {
+            let members = scene.get("member_hashes").and_then(Value::as_array)?;
+            let kept: Vec<String> = members
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|hash| !hashes.iter().any(|gone| gone == hash))
+                .map(str::to_string)
+                .collect();
+            kept.is_empty().then(|| scene_id.clone())
+        })
+        .collect();
+    for scene_id in &stale {
+        scenes.remove(scene_id);
+    }
+    for (_, scene) in scenes.iter_mut() {
+        if let Some(members) = scene
+            .get("member_hashes")
+            .and_then(Value::as_array)
+            .cloned()
+        {
+            let kept: Vec<String> = members
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|hash| !hashes.iter().any(|gone| gone == hash))
+                .map(str::to_string)
+                .collect();
+            if !kept.is_empty() {
+                if let Some(object) = scene.as_object_mut() {
+                    object.insert("member_hashes".into(), json!(kept));
+                }
+            }
+        }
+    }
 }
 
 /// The horizontal card table row for `card_key`.

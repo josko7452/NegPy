@@ -4,10 +4,12 @@ use negpy_backend::domain::models::workspace::WorkspaceConfig;
 use negpy_backend::domain::models::{ProcessConfig, ProcessMode};
 use negpy_backend::infrastructure::storage::repository::StorageRepository;
 use negpy_backend::services::assets::rolls::{
-    ROLLS_KEY, add_frame_seed, clear_frame_overrides, copy_roll_settings, fork_edit,
-    forked_edit_hashes, frame_baseline, frame_override_cards, frame_seed, is_forked,
-    resolve_roll_config, roll_defaults, roll_edit_hash, saved_rolls, set_frame_override,
-    set_roll_defaults, settle_card_lock, unfork_edit, unforked_hash,
+    DISMISSED_FOLDERS_KEY, ROLLS_KEY, add_frame_seed, add_members, all_rolls_sorted,
+    clear_frame_overrides, copy_roll_settings, create_virtual_roll, delete_roll, excluded_paths,
+    fork_edit, forked_edit_hashes, frame_baseline, frame_override_cards, frame_roll, frame_seed,
+    home_roll, is_excluded_key, is_forked, remove_members, resolve_roll_config, roll_defaults,
+    roll_edit_hash, roll_for_id, rolls_containing_path, saved_rolls, set_frame_override,
+    set_roll_defaults, settle_card_lock, unfork_edit, unforked_hash, virtual_rolls,
 };
 use serde_json::{Map, Value, json};
 
@@ -363,4 +365,154 @@ fn map<const N: usize>(entries: [(&str, Value); N]) -> Map<String, Value> {
         .into_iter()
         .map(|(key, value)| (key.to_string(), value))
         .collect()
+}
+
+fn folder_roll(repo: &mut StorageRepository, id: &str, folder: &str) {
+    let mut store = saved_rolls(repo);
+    store.insert(
+        id.into(),
+        json!({"kind": "folder", "name": "roll_a", "folder_path": folder, "extra_paths": []}),
+    );
+    let mut values = Map::new();
+    values.insert(ROLLS_KEY.into(), Value::Object(store));
+    repo.save_global_settings(&values).unwrap();
+}
+
+#[test]
+fn a_virtual_roll_stores_its_member_list_and_extends_it_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(
+        &mut repo,
+        "Portra",
+        &["/a.nef".to_string(), "/b.nef".to_string()],
+    );
+
+    add_members(
+        &mut repo,
+        &roll_id,
+        &["/b.nef".to_string(), "/c.nef".to_string()],
+        &[],
+    );
+
+    let entry = roll_for_id(&repo, &roll_id).unwrap();
+    assert_eq!(entry["kind"], json!("virtual"));
+    assert_eq!(entry["name"], json!("Portra"));
+    assert_eq!(entry["member_paths"], json!(["/a.nef", "/b.nef", "/c.nef"]));
+}
+
+#[test]
+fn membership_answers_by_path_and_prefers_a_folder_roll() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let folder = dir.path().join("roll_a");
+    let frame = folder.join("frame001.tif");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(&frame, b"x").unwrap();
+    folder_roll(&mut repo, "folder", &folder.display().to_string());
+    let virtual_id = create_virtual_roll(&mut repo, "Picks", &[frame.display().to_string()]);
+
+    let path = frame.display().to_string();
+    let mut containing = rolls_containing_path(&repo, &path);
+    containing.sort();
+    let mut expected = vec!["folder".to_string(), virtual_id];
+    expected.sort();
+
+    assert_eq!(containing, expected);
+    assert_eq!(home_roll(&repo, &path), Some("folder".to_string()));
+    assert_eq!(frame_roll(&repo, None, &path), Some("folder".to_string()));
+    assert_eq!(
+        frame_roll(&repo, Some("active"), "/elsewhere.tif"),
+        Some("active".to_string())
+    );
+}
+
+#[test]
+fn a_subfolder_is_not_a_member_of_its_parents_roll() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let folder = dir.path().join("roll_a");
+    let sub = folder.join("picks");
+    std::fs::create_dir_all(&sub).unwrap();
+    let file = sub.join("p1.tif");
+    std::fs::write(&file, b"x").unwrap();
+    folder_roll(&mut repo, "parent", &folder.display().to_string());
+    assert!(rolls_containing_path(&repo, &file.display().to_string()).is_empty());
+    folder_roll(&mut repo, "picks", &sub.display().to_string());
+
+    assert_eq!(
+        rolls_containing_path(&repo, &file.display().to_string()),
+        vec!["picks".to_string()]
+    );
+    assert_eq!(
+        rolls_containing_path(&repo, &folder.join("a1.tif").display().to_string()),
+        vec!["parent".to_string()]
+    );
+}
+
+#[test]
+fn removing_a_folder_file_adds_an_exclusion_and_returns_its_forks() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let folder = dir.path().join("roll_a");
+    std::fs::create_dir_all(&folder).unwrap();
+    let path = folder.join("frame001.tif");
+    std::fs::write(&path, b"x").unwrap();
+    let path = path.display().to_string();
+    folder_roll(&mut repo, "roll", &folder.display().to_string());
+    set_frame_override(&mut repo, "roll", "h1", "film", true, None);
+    fork_edit(&mut repo, "roll", "h1", &path, &WorkspaceConfig::default()).unwrap();
+
+    let forked = remove_members(&mut repo, "roll", &[path.clone()], &["h1".to_string()]);
+
+    assert_eq!(forked, vec!["h1"]);
+    let entry = roll_for_id(&repo, "roll").unwrap();
+    assert!(entry.get("frame_overrides").is_none());
+    assert!(
+        entry["excluded_paths"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(path))
+    );
+    let excluded = excluded_paths(&repo, &[folder.display().to_string()]);
+    assert!(is_excluded_key(&path, &excluded));
+    assert!(rolls_containing_path(&repo, &path).is_empty());
+}
+
+#[test]
+fn deleting_a_folder_roll_dismisses_its_folder() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let folder = dir.path().join("roll_a");
+    std::fs::create_dir_all(&folder).unwrap();
+    folder_roll(&mut repo, "roll", &folder.display().to_string());
+
+    delete_roll(&mut repo, "roll");
+
+    assert!(roll_for_id(&repo, "roll").is_none());
+    assert_eq!(
+        repo.global_setting(DISMISSED_FOLDERS_KEY).unwrap().unwrap(),
+        json!([folder.display().to_string()])
+    );
+}
+
+#[test]
+fn rolls_sort_by_name_and_virtual_lists_only_virtual_ones() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    folder_roll(&mut repo, "folder", "/scans/roll_a");
+    create_virtual_roll(&mut repo, "Zebra", &[]);
+    create_virtual_roll(&mut repo, "apple", &[]);
+
+    let all: Vec<String> = all_rolls_sorted(&repo)
+        .into_iter()
+        .map(|(_, entry)| entry["name"].as_str().unwrap().to_string())
+        .collect();
+    let virtual_names: Vec<String> = virtual_rolls(&repo)
+        .into_iter()
+        .map(|(_, entry)| entry["name"].as_str().unwrap().to_string())
+        .collect();
+
+    assert_eq!(all, vec!["apple", "roll_a", "Zebra"]);
+    assert_eq!(virtual_names, vec!["apple", "Zebra"]);
 }
