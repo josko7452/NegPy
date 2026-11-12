@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 22:06 | **Last Commit:** `_ backend: add the shipped app config`
+**Last Updated:** 2026-11-12 22:10 | **Last Commit:** `_ backend: add the TOML cache`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -20,15 +20,16 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   `WorkspaceConfig` flattens to one key namespace via `to_dict`/`from_flat_dict`.
   46 tests, incl. a 0.63.0 sidecar fixture round-trip. 134 tests total, green.
 - D3 `kernel/system/config.rs`: `app_config()` and `default_workspace_config()`;
-  path, limit and shipped-default assertions. First commit recorded only the
-  ledger; the code and tests follow in the same subject.
+  path, limit and shipped-default assertions.
+- D3 `services/assets/toml_cache.rs`: stat-keyed TOML cache; invalid files
+  cache as `None` until the stat changes.
 
 ## Next Steps (Ordered)
-1. [ ] D3 `services/assets/toml_cache.rs`
-2. [ ] D5 `services/assets/sidecar.rs`
-3. [ ] D5 `services/assets/presets.rs`
-4. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
-5. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
+1. [ ] D5 `services/assets/sidecar.rs`
+2. [ ] D5 `services/assets/presets.rs`
+3. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
+4. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
+5. [ ] D4/D5 finish SQLite settings persistence and asset-store cache tests
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
