@@ -6,4 +6,5 @@
 pub mod bounds;
 pub mod cast_removal;
 mod common;
+pub mod hash;
 pub mod source_color;
