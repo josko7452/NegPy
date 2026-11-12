@@ -81,3 +81,69 @@ fn global_settings_round_trip_through_their_own_database() {
     );
     assert_eq!(repo.global_setting("clip").unwrap(), Some(json!(0.01)));
 }
+
+#[test]
+fn a_triage_mark_is_independent_of_the_edit() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_file_mark("h1", Some("keeper"), "/photos/1.nef")
+        .unwrap();
+    repo.save_file_mark("h2", Some("excluded"), "/photos/2.nef")
+        .unwrap();
+    assert_eq!(
+        repo.file_marks().unwrap().get("h1").map(String::as_str),
+        Some("keeper")
+    );
+    assert_eq!(
+        repo.file_marks_by_path()
+            .unwrap()
+            .get("/photos/2.nef")
+            .map(String::as_str),
+        Some("excluded")
+    );
+
+    repo.delete_file_settings("h1").unwrap();
+    assert_eq!(
+        repo.file_marks().unwrap().get("h1").map(String::as_str),
+        Some("keeper")
+    );
+    repo.save_file_mark("h1", None, "").unwrap();
+    assert!(!repo.file_marks().unwrap().contains_key("h1"));
+}
+
+#[test]
+fn history_steps_round_trip_in_order_and_truncate() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    let mut first = WorkspaceConfig::default();
+    first.exposure.density = 1.1;
+    let mut second = WorkspaceConfig::default();
+    second.exposure.density = 1.2;
+    repo.save_history_step("h", 0, &first).unwrap();
+    repo.save_history_step("h", 1, &second).unwrap();
+
+    let history = repo.all_history("h").unwrap();
+    assert_eq!(history.len(), 2);
+    assert_eq!(history[0].1.exposure.density, 1.1);
+    assert_eq!(history[1].1.exposure.density, 1.2);
+    assert_eq!(repo.max_history_index("h").unwrap(), 1);
+
+    repo.truncate_history_above("h", 0).unwrap();
+    assert_eq!(repo.all_history("h").unwrap().len(), 1);
+}
+
+#[test]
+fn deleting_an_edit_drops_its_history_and_work_prints() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = repository(dir.path());
+    repo.save_file_settings("h", &WorkspaceConfig::default(), "")
+        .unwrap();
+    repo.save_history_step("h", 0, &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_work_print("h", "print", &WorkspaceConfig::default())
+        .unwrap();
+    repo.delete_file_settings("h").unwrap();
+    assert!(repo.load_file_settings("h").unwrap().is_none());
+    assert!(repo.history_step("h", 0).unwrap().is_none());
+    assert!(repo.work_prints("h").unwrap().is_empty());
+}

@@ -10,11 +10,13 @@ use negpy_backend::services::assets::sidecar::{
 };
 
 fn rich_config() -> WorkspaceConfig {
-    let mut config = WorkspaceConfig::default();
-    config.exposure = ExposureConfig {
-        density: 0.42,
-        grade: 130.0,
-        ..ExposureConfig::default()
+    let mut config = WorkspaceConfig {
+        exposure: ExposureConfig {
+            density: 0.42,
+            grade: 130.0,
+            ..ExposureConfig::default()
+        },
+        ..WorkspaceConfig::default()
     };
     config.geometry.fine_rotation = 1.5;
     config.geometry.crop_rect = Some(vec![0.1, 0.2, 0.8, 0.9]);

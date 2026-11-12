@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
@@ -124,14 +125,14 @@ impl StorageRepository {
     /// The path this hash's edit was last saved against.
     pub fn path_for_file_hash(&self, file_hash: &str) -> rusqlite::Result<Option<String>> {
         let connection = self.connect(&self.edits_db_path)?;
-        Ok(connection
+        connection
             .query_row(
                 "SELECT file_path FROM file_settings
                  WHERE file_hash = ?1 AND file_path IS NOT NULL AND file_path != ''",
                 [file_hash],
                 |row| row.get(0),
             )
-            .optional()?)
+            .optional()
     }
 
     /// The saved edits among `hashes`, without parsing a missing row.
@@ -151,6 +152,189 @@ impl StorageRepository {
             }
         }
         Ok(saved)
+    }
+
+    /// Persist a triage mark. `None` clears it.
+    pub fn save_file_mark(
+        &self,
+        file_hash: &str,
+        mark: Option<&str>,
+        file_path: &str,
+    ) -> rusqlite::Result<()> {
+        let connection = self.connect(&self.edits_db_path)?;
+        if let Some(mark) = mark {
+            connection.execute(
+                "INSERT OR REPLACE INTO file_marks (file_hash, mark, file_path) VALUES (?1, ?2, ?3)",
+                params![file_hash, mark, file_path],
+            )?;
+        } else {
+            connection.execute("DELETE FROM file_marks WHERE file_hash = ?1", [file_hash])?;
+        }
+        Ok(())
+    }
+
+    /// Every triage mark, keyed by file hash.
+    pub fn file_marks(&self) -> rusqlite::Result<HashMap<String, String>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare("SELECT file_hash, mark FROM file_marks")?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Triage marks keyed by path. Rows written before the path column exists are absent.
+    pub fn file_marks_by_path(&self) -> rusqlite::Result<HashMap<String, String>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT file_path, mark FROM file_marks WHERE file_path IS NOT NULL AND file_path != ''",
+        )?;
+        let rows = statement.query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        rows.collect()
+    }
+
+    /// Delete this hash's edit, history, work prints and embedding. A triage mark stays.
+    pub fn delete_file_settings(&self, file_hash: &str) -> rusqlite::Result<()> {
+        let connection = self.connect(&self.edits_db_path)?;
+        for table in [
+            "file_settings",
+            "edit_history",
+            "work_prints",
+            "image_embeddings",
+        ] {
+            connection.execute(
+                &format!("DELETE FROM {table} WHERE file_hash = ?1"),
+                [file_hash],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Store one undo-history step.
+    pub fn save_history_step(
+        &self,
+        file_hash: &str,
+        index: i64,
+        settings: &WorkspaceConfig,
+    ) -> rusqlite::Result<()> {
+        let json = serde_json::to_string(&settings.to_dict())
+            .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO edit_history (file_hash, step_index, settings_json)
+             VALUES (?1, ?2, ?3)",
+            params![file_hash, index, json],
+        )?;
+        Ok(())
+    }
+
+    /// The stored edit at one history step.
+    pub fn history_step(
+        &self,
+        file_hash: &str,
+        index: i64,
+    ) -> rusqlite::Result<Option<WorkspaceConfig>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let json: Option<String> = connection
+            .query_row(
+                "SELECT settings_json FROM edit_history WHERE file_hash = ?1 AND step_index = ?2",
+                params![file_hash, index],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(json
+            .and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok())
+            .map(|flat| WorkspaceConfig::from_flat_dict(&flat)))
+    }
+
+    /// Every history step, ordered by index.
+    pub fn all_history(&self, file_hash: &str) -> rusqlite::Result<Vec<(i64, WorkspaceConfig)>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT step_index, settings_json FROM edit_history WHERE file_hash = ?1 ORDER BY step_index",
+        )?;
+        let rows = statement.query_map([file_hash], |row| Ok((row.get(0)?, row.get(1)?)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let (index, json): (i64, String) = row?;
+            if let Ok(flat) = serde_json::from_str::<Map<String, Value>>(&json) {
+                out.push((index, WorkspaceConfig::from_flat_dict(&flat)));
+            }
+        }
+        Ok(out)
+    }
+
+    /// The highest stored history index.
+    pub fn max_history_index(&self, file_hash: &str) -> rusqlite::Result<i64> {
+        let connection = self.connect(&self.edits_db_path)?;
+        Ok(connection
+            .query_row(
+                "SELECT MAX(step_index) FROM edit_history WHERE file_hash = ?1",
+                [file_hash],
+                |row| row.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten()
+            .unwrap_or(0))
+    }
+
+    /// Delete every history step above `index`.
+    pub fn truncate_history_above(&self, file_hash: &str, index: i64) -> rusqlite::Result<()> {
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "DELETE FROM edit_history WHERE file_hash = ?1 AND step_index > ?2",
+            params![file_hash, index],
+        )?;
+        Ok(())
+    }
+
+    /// Store or replace a named version of this frame's edit.
+    pub fn save_work_print(
+        &self,
+        file_hash: &str,
+        name: &str,
+        settings: &WorkspaceConfig,
+    ) -> rusqlite::Result<()> {
+        let json = serde_json::to_string(&settings.to_dict())
+            .map_err(|err| rusqlite::Error::ToSqlConversionFailure(Box::new(err)))?;
+        let created_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs_f64();
+        let connection = self.connect(&self.edits_db_path)?;
+        connection.execute(
+            "INSERT OR REPLACE INTO work_prints (file_hash, name, created_at, settings_json)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![file_hash, name, created_at, json],
+        )?;
+        Ok(())
+    }
+
+    /// This frame's work-print names, newest first.
+    pub fn work_prints(&self, file_hash: &str) -> rusqlite::Result<Vec<String>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let mut statement = connection.prepare(
+            "SELECT name FROM work_prints WHERE file_hash = ?1 ORDER BY created_at DESC, rowid DESC",
+        )?;
+        let rows = statement.query_map([file_hash], |row| row.get(0))?;
+        rows.collect()
+    }
+
+    /// The stored edit for one work print.
+    pub fn work_print(
+        &self,
+        file_hash: &str,
+        name: &str,
+    ) -> rusqlite::Result<Option<WorkspaceConfig>> {
+        let connection = self.connect(&self.edits_db_path)?;
+        let json: Option<String> = connection
+            .query_row(
+                "SELECT settings_json FROM work_prints WHERE file_hash = ?1 AND name = ?2",
+                params![file_hash, name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(json
+            .and_then(|text| serde_json::from_str::<Map<String, Value>>(&text).ok())
+            .map(|flat| WorkspaceConfig::from_flat_dict(&flat)))
     }
 
     /// Look up a whole-file edit by path. Half-frame rows (`<hash>#<n>`) are excluded.

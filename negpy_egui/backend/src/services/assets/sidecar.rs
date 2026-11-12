@@ -113,13 +113,14 @@ pub fn load_or_promote(
     if let Some(config) = repo.load_file_settings(file_hash)? {
         return Ok(Some(config));
     }
-    if half == 0 && !composite && !forked {
-        if let Some((old_hash, config)) =
+    if half == 0
+        && !composite
+        && !forked
+        && let Some((old_hash, config)) =
             repo.load_file_settings_by_path(&source_path.to_string_lossy())?
-        {
-            repo.rehome_file_settings(&old_hash, file_hash, &source_path.to_string_lossy())?;
-            return Ok(Some(config));
-        }
+    {
+        repo.rehome_file_settings(&old_hash, file_hash, &source_path.to_string_lossy())?;
+        return Ok(Some(config));
     }
     if composite || forked {
         return Ok(None);

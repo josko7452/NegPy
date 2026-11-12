@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:00 | **Last Commit:** `_ backend: add sidecar promotion`
+**Last Updated:** 2026-11-12 23:10 | **Last Commit:** `_ backend: add repository history`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -31,13 +31,14 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   sidecar promotion and batch promotion.
 - D4 `infrastructure/storage/repository.rs`: WAL schema, file-settings rows,
   path lookup, rehome and global settings.
+- D4 repository marks, edit deletion and ordered history/work-print rows.
 
 ## Next Steps (Ordered)
-1. [ ] D4 repository history and work-print rows
-2. [ ] D4 repository embedding rows and model-version filtering
-3. [ ] D4 local asset store cache and thumbnail paths
-4. [ ] D4 repository marks, stats, reset and VACUUM
-5. [ ] D4 storage parity tests and ledger closeout
+1. [ ] D4 repository embedding rows and model-version filtering
+2. [ ] D4 local asset store cache and thumbnail paths
+3. [ ] D4 repository stats, reset and VACUUM
+4. [ ] D4 storage parity tests and ledger closeout
+5. [ ] D5 roll/composite integration against the repository
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
