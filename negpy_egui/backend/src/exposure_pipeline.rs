@@ -7,6 +7,14 @@ use crate::domain::models::{ProcessConfig, WorkspaceConfig};
 use crate::features::exposure::metering::{self, Roi};
 use crate::features::exposure::print::{PrintRenderSettings, render_negative};
 use crate::features::exposure::processor::{NormalizationSettings, normalize_negative};
+use crate::features::finish::processor::{FinishContext, process as finish_process};
+use crate::features::geometry::processor::{
+    GeometryContext, crop_image, process as geometry_process,
+};
+use crate::features::lab::logic::apply_clahe;
+use crate::features::lab::processor::{LabContext, process as lab_process};
+use crate::features::toning::processor::process as toning_process;
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
 /// One frame's pixels and size.
 #[derive(Clone, Debug, PartialEq)]
@@ -158,4 +166,52 @@ pub fn analysis_roi(frame: &Frame, config: &ProcessConfig, active_roi: Option<Ro
         rect(config.meter_rect.as_ref()),
     )
     .0
+}
+
+/// Whether a frame renders in black and white: a B&W negative, or a Slide with B&W on.
+#[must_use]
+pub fn is_mono(config: &WorkspaceConfig) -> bool {
+    use crate::domain::models::ProcessMode;
+    config.process.process_mode == ProcessMode::BW
+        || (config.process.process_mode == ProcessMode::E6 && config.process.slide_bw)
+}
+
+/// The D8 tail stages: CLAHE, Lab, toning, crop and finish, in engine order.
+#[must_use]
+pub fn render_tail(
+    frame: &Frame,
+    config: &WorkspaceConfig,
+    geometry: GeometryContext,
+    preview_size: f64,
+) -> Frame {
+    let mono = is_mono(config);
+    let mut image = ImageBuffer::from_rgb(frame.width, frame.height, frame.pixels.clone());
+    if config.exposure.render_intent != crate::domain::models::RenderIntent::Flat {
+        image = apply_clahe(&image, config.lab.clahe_strength);
+        let lab = lab_process(&image, &config.lab, mono, LabContext { scale_factor: 1.0 });
+        image = lab.image;
+        image = toning_process(&image, &config.toning, config.altproc.alt_process, mono);
+    }
+    let geometry = geometry_process(&image, &config.geometry, geometry);
+    let cropped = crop_image(&geometry.image, geometry.active_roi);
+    let finished = if config.exposure.render_intent == crate::domain::models::RenderIntent::Flat {
+        cropped
+    } else {
+        finish_process(
+            &cropped,
+            &config.finish,
+            FinishContext {
+                print_size_cm: 30.0,
+                paper: [1.0; 3],
+                crop_preview_full: false,
+            },
+            None,
+        )
+    };
+    let _ = preview_size;
+    Frame {
+        pixels: finished.pixels,
+        width: finished.width,
+        height: finished.height,
+    }
 }
