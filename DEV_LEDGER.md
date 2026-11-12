@@ -1,13 +1,13 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 22:20 | **Last Commit:** `_ backend: add preset files`
+**Last Updated:** 2026-11-12 23:00 | **Last Commit:** `_ backend: add sidecar promotion`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **Phase D1 is complete. D2 is complete.** D3 is in progress: the shipped app
-  config and default edit landed; TOML cache, sidecars, presets and storage
-  follow.
+  **Phase D1 is complete. D2 is complete.** D3 is in progress: app config,
+  TOML cache, sidecars, presets and sidecar promotion landed; repository
+  rows and the asset store follow.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding; B1–B3 `negpy_core` verify-only audit; C1–C4 the frozen
@@ -27,13 +27,17 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   migration and round-trip; `ProcessConfig::is_local_initialized`.
 - D5 `services/assets/presets.rs`: filename sanitization, atomic JSON writes,
   case-folded existence and reserved notes.
+- D5 `services/assets/sidecar.rs`: database-first load, guarded path fallback,
+  sidecar promotion and batch promotion.
+- D4 `infrastructure/storage/repository.rs`: WAL schema, file-settings rows,
+  path lookup, rehome and global settings.
 
 ## Next Steps (Ordered)
-1. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
-2. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
-3. [ ] D4/D5 finish SQLite settings persistence and asset-store cache tests
-4. [ ] D4/D5 finish storage schema parity tests
-5. [ ] D4/D5 add database reset and global-setting cache tests
+1. [ ] D4 repository history and work-print rows
+2. [ ] D4 repository embedding rows and model-version filtering
+3. [ ] D4 local asset store cache and thumbnail paths
+4. [ ] D4 repository marks, stats, reset and VACUUM
+5. [ ] D4 storage parity tests and ledger closeout
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.

@@ -4,6 +4,7 @@ use std::fs;
 
 use negpy_backend::domain::models::workspace::{BOUNDS_VERSION, WorkspaceConfig};
 use negpy_backend::domain::models::{ExposureConfig, LocalAdjustmentsConfig, LocalMask};
+use negpy_backend::infrastructure::storage::repository::StorageRepository;
 use negpy_backend::services::assets::sidecar::{
     load_sidecar, read_sidecar, sidecar_path_for, write_sidecar,
 };
@@ -103,4 +104,59 @@ fn older_bounds_are_dropped_unless_lock_bounds_keeps_them() {
         read_sidecar(&path).unwrap().process.local_floors,
         [-1.1, -1.2, -1.0]
     );
+}
+
+#[test]
+fn a_sidecar_is_promoted_to_the_database() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = StorageRepository::new(
+        dir.path().join("edits.db").display().to_string(),
+        dir.path().join("settings.db").display().to_string(),
+    );
+    repo.initialize().unwrap();
+    let source = dir.path().join("IMG_004.NEF");
+    let config = rich_config();
+    write_sidecar(&source, &config, 0).unwrap();
+
+    let loaded = negpy_backend::services::assets::sidecar::load_or_promote(
+        &repo, "h4", &source, 0, false, false,
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(loaded.exposure.density, 0.42);
+    assert_eq!(
+        repo.load_file_settings("h4")
+            .unwrap()
+            .unwrap()
+            .exposure
+            .density,
+        0.42
+    );
+}
+
+#[test]
+fn a_fork_or_composite_never_takes_a_path_fallback() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = StorageRepository::new(
+        dir.path().join("edits.db").display().to_string(),
+        dir.path().join("settings.db").display().to_string(),
+    );
+    repo.initialize().unwrap();
+    let source = dir.path().join("IMG_009.NEF");
+    repo.save_file_settings("h9", &rich_config(), &source.to_string_lossy())
+        .unwrap();
+
+    assert!(
+        negpy_backend::services::assets::sidecar::load_or_promote(
+            &repo,
+            "h9#roll:r1",
+            &source,
+            0,
+            false,
+            true,
+        )
+        .unwrap()
+        .is_none()
+    );
+    assert!(repo.load_file_settings("h9").unwrap().is_some());
 }

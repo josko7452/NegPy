@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use serde_json::{Map, Value};
 
 use crate::domain::models::workspace::{BOUNDS_VERSION, WorkspaceConfig};
+use crate::infrastructure::storage::repository::StorageRepository;
 use crate::kernel::system::paths::{apply_umask_mode, replace_file, safe_unlink};
 
 pub const SIDECAR_EXT: &str = ".negpy";
@@ -97,4 +98,54 @@ pub fn read_sidecar(path: &Path) -> Option<WorkspaceConfig> {
 pub fn load_sidecar(source_path: &Path, half: u32) -> Option<WorkspaceConfig> {
     let path = sidecar_path_for(source_path, half);
     path.exists().then(|| read_sidecar(&path)).flatten()
+}
+
+/// Load the edit for one asset, preferring the database, then a path fallback, then the
+/// sidecar. A path fallback is only valid for a whole, non-composite, non-forked frame.
+pub fn load_or_promote(
+    repo: &StorageRepository,
+    file_hash: &str,
+    source_path: &Path,
+    half: u32,
+    composite: bool,
+    forked: bool,
+) -> rusqlite::Result<Option<WorkspaceConfig>> {
+    if let Some(config) = repo.load_file_settings(file_hash)? {
+        return Ok(Some(config));
+    }
+    if half == 0 && !composite && !forked {
+        if let Some((old_hash, config)) =
+            repo.load_file_settings_by_path(&source_path.to_string_lossy())?
+        {
+            repo.rehome_file_settings(&old_hash, file_hash, &source_path.to_string_lossy())?;
+            return Ok(Some(config));
+        }
+    }
+    if composite || forked {
+        return Ok(None);
+    }
+    let Some(config) = load_sidecar(source_path, half) else {
+        return Ok(None);
+    };
+    repo.save_file_settings(file_hash, &config, &source_path.to_string_lossy())?;
+    Ok(Some(config))
+}
+
+/// Promote every sidecar among `assets` that has no saved edit.
+pub fn promote_sidecars(
+    repo: &StorageRepository,
+    assets: &[(String, PathBuf, u32, bool, bool)],
+) -> rusqlite::Result<()> {
+    let hashes: Vec<String> = assets
+        .iter()
+        .map(|(hash, _, _, _, _)| hash.clone())
+        .collect();
+    let saved = repo.saved_hashes(&hashes)?;
+    for (hash, path, half, composite, forked) in assets {
+        if saved.contains(hash) {
+            continue;
+        }
+        load_or_promote(repo, hash, path, *half, *composite, *forked)?;
+    }
+    Ok(())
 }
