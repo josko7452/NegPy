@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:55 | **Last Commit:** `eb5a86e3 backend: add loader factory entry point`
+**Last Updated:** 2026-11-13 01:20 | **Last Commit:** `pending backend: collapse B&W exposure channels`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 Phases A–C, D1–D5 and D6 are complete. D7 process-mode detection has
-landed; next are the other process kernels and exposure.
+landed; exposure kernels are in progress.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -20,10 +20,14 @@ landed; next are the other process kernels and exposure.
 - D6: Source selection tells Coolscan NEF and Flextight FFF apart.
 - D6: `factory::load` dispatches every format through one call.
 - D7: process-mode detection ports the Python crop, stats and thresholds.
+- D7: B&W collapse, filter weights and printed-exposure filtering are ported.
 
 ## Next Steps (Ordered)
 1. [ ] D7: exposure normalization and print curve
 2. [ ] D7: exposure feature kernels
+3. [ ] D7: paper profiles and dye matrices
+4. [ ] D7: auto exposure and grade
+5. [ ] D7: exposure processor wiring
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
