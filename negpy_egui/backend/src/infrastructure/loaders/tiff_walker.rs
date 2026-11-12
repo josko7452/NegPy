@@ -13,6 +13,7 @@ use tiff::tags::{IfdPointer, Tag};
 /// The tags a loader needs before it decodes an image.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IfdInfo {
+    pub offset: u64,
     pub width: u32,
     pub height: u32,
     pub samples_per_pixel: u16,
@@ -44,6 +45,7 @@ fn read_info(
     decoder: &mut Decoder<File>,
     directory: &Directory,
     is_subifd: bool,
+    offset: u64,
 ) -> Option<IfdInfo> {
     let mut tags = decoder.read_directory_tags(directory);
     let width = u32::try_from(unsigned(&mut tags, Tag::ImageWidth)?).ok()?;
@@ -55,6 +57,7 @@ fn read_info(
     let compression = u32::try_from(unsigned(&mut tags, Tag::Compression).unwrap_or(1)).ok()?;
     let subfile = u32::try_from(unsigned(&mut tags, Tag::NewSubfileType).unwrap_or(0)).ok()?;
     Some(IfdInfo {
+        offset,
         width,
         height,
         samples_per_pixel: u16::try_from(samples).ok()?,
@@ -89,7 +92,7 @@ pub fn read_ifds(path: &Path) -> Option<Vec<IfdInfo>> {
         let Ok(directory) = decoder.read_directory(pointer) else {
             continue;
         };
-        if let Some(info) = read_info(&mut decoder, &directory, is_subifd) {
+        if let Some(info) = read_info(&mut decoder, &directory, is_subifd, pointer.0) {
             out.push(info);
         }
         for child in child_pointers(&mut decoder, &directory) {

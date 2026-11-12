@@ -4,6 +4,7 @@
 //! plane from a fourth sample or a sidecar, and the Positive source decode.
 
 use std::fs::File;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 
 use tiff::ColorType;
@@ -24,7 +25,7 @@ const PHOTOMETRIC_PALETTE: u16 = 3;
 const PHOTOMETRIC_SEPARATED: u16 = 5;
 const NEW_SUBFILE_MASK: u32 = 4;
 
-type DecodedPage = (ImageBuffer, Option<Vec<u8>>, Option<Vec<f32>>);
+pub(crate) type DecodedPage = (ImageBuffer, Option<Vec<u8>>, Option<Vec<f32>>);
 type IrPlane = (Vec<f32>, usize, usize);
 
 fn channels(color: ColorType) -> usize {
@@ -128,8 +129,25 @@ fn palette_u16(values: &[u8], colormap: &[u16]) -> Vec<u16> {
         .collect()
 }
 
-fn decode_page(path: &Path) -> Option<DecodedPage> {
+pub(crate) fn decode_page(path: &Path) -> Option<DecodedPage> {
+    decode_page_at(path, 0)
+}
+
+fn decode_page_at(path: &Path, ifd_index: usize) -> Option<DecodedPage> {
     let mut decoder = Decoder::new(File::open(path).ok()?).ok()?;
+    if ifd_index > 0 {
+        decoder.seek_to_image(ifd_index).ok()?;
+    }
+    decode_with(decoder)
+}
+
+/// Decode a TIFF directory that is not in the top-level image chain.
+pub(crate) fn decode_ifd(path: &Path, offset: u64) -> Option<DecodedPage> {
+    let reader = TiffAt::new(File::open(path).ok()?, offset)?;
+    decode_with(Decoder::new(reader).ok()?)
+}
+
+fn decode_with(mut decoder: Decoder<impl Read + Seek>) -> Option<DecodedPage> {
     let (width, height) = decoder.dimensions().ok()?;
     let color = decoder.colortype().ok()?;
     let photometric = decoder
@@ -263,6 +281,81 @@ fn decode_page(path: &Path) -> Option<DecodedPage> {
     Some((image, icc, ir))
 }
 
+struct TiffAt {
+    file: File,
+    header: [u8; 8],
+    position: u64,
+}
+
+impl TiffAt {
+    fn new(mut file: File, offset: u64) -> Option<Self> {
+        let mut order = [0u8; 2];
+        file.read_exact(&mut order).ok()?;
+        let offset = u32::try_from(offset).ok()?;
+        let mut header = [0u8; 8];
+        header[..2].copy_from_slice(&order);
+        match &order {
+            b"II" => {
+                header[2..4].copy_from_slice(&42u16.to_le_bytes());
+                header[4..8].copy_from_slice(&offset.to_le_bytes());
+            }
+            b"MM" => {
+                header[2..4].copy_from_slice(&42u16.to_be_bytes());
+                header[4..8].copy_from_slice(&offset.to_be_bytes());
+            }
+            _ => return None,
+        }
+        file.seek(SeekFrom::Start(0)).ok()?;
+        Some(Self {
+            file,
+            header,
+            position: 0,
+        })
+    }
+}
+
+impl Read for TiffAt {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        let position = usize::try_from(self.position).unwrap_or(usize::MAX);
+        let from_header = (8usize.saturating_sub(position)).min(buffer.len());
+        if from_header > 0 {
+            buffer[..from_header].copy_from_slice(&self.header[position..position + from_header]);
+            self.position += from_header as u64;
+        }
+        if self.position < 8 {
+            return Ok(from_header);
+        }
+        self.file.seek(SeekFrom::Start(self.position))?;
+        let mut total = from_header;
+        if total < buffer.len() {
+            let read = self.file.read(&mut buffer[total..])?;
+            total += read;
+            self.position += read as u64;
+        }
+        Ok(total)
+    }
+}
+
+impl Seek for TiffAt {
+    fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+        let target = match position {
+            SeekFrom::Start(position) => position,
+            SeekFrom::Current(delta) => u64::try_from(self.position as i128 + i128::from(delta))
+                .map_err(|_| {
+                    std::io::Error::new(std::io::ErrorKind::InvalidInput, "negative seek")
+                })?,
+            SeekFrom::End(delta) => self.file.seek(SeekFrom::End(delta))?,
+        };
+        self.position = target;
+        if self.position <= 8 {
+            self.file.seek(SeekFrom::Start(0))?;
+        } else {
+            self.file.seek(SeekFrom::Start(target))?;
+        }
+        Ok(target)
+    }
+}
+
 fn tiff_extensions(name: &str) -> bool {
     Path::new(name)
         .extension()
@@ -272,6 +365,32 @@ fn tiff_extensions(name: &str) -> bool {
                 .iter()
                 .any(|known| ext.eq_ignore_ascii_case(&known[1..]))
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TiffAt;
+    use std::io::{Read, Seek, SeekFrom};
+
+    #[test]
+    fn a_redirected_header_does_not_skip_payload_bytes() {
+        let path = std::env::temp_dir().join("negpy-tiff-at.bin");
+        let mut bytes = b"II\x2a\x00\x10\x00\x00\x00PAYLOAD".to_vec();
+        bytes.resize(32, 0);
+        std::fs::write(&path, bytes).unwrap();
+        let mut reader = TiffAt::new(std::fs::File::open(&path).unwrap(), 16).unwrap();
+        let mut header = [0u8; 8];
+        reader.read_exact(&mut header).unwrap();
+        assert_eq!(&header[4..], &16u32.to_le_bytes());
+        let mut payload = [0u8; 7];
+        reader.read_exact(&mut payload).unwrap();
+        assert_eq!(&payload, b"PAYLOAD");
+        reader.seek(SeekFrom::Start(16)).unwrap();
+        let mut byte = [0u8; 1];
+        reader.read_exact(&mut byte).unwrap();
+        assert_eq!(byte[0], 0);
+        std::fs::remove_file(path).unwrap();
+    }
 }
 
 fn find_sidecar(path: &Path, stem: &str, suffix: &str) -> Option<PathBuf> {

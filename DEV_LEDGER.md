@@ -1,28 +1,23 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 21:05 | **Last Commit:** `af40cf28 backend: decode Pakon planar raws`
+**Last Updated:** 2026-11-12 22:20 | **Last Commit:** `4ef15006 backend: decode Noritsu chunky raws`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Camera RAW, JPEG XL, Pakon and
-Noritsu decoding are complete; next is Coolscan NEF and Flextight FFF.
+Phases A–C, D1–D5 and D6 loaders are complete except LogLuv. Next is the
+loader factory.
 
 ## Completed (Recent)
-- A–C: workspace, core audit, event contract and render worker.
-- D1–D3: system leaves, config DTOs, migrations, shipped config and TOML cache.
-- D4–D5: storage, sidecars, presets, rolls, composites and analysis.
-- D6: constants, source kind, preview memory, JPEG XL boxes and metadata helpers.
-- D6: `ImageBuffer` and source encoding (ICC/TRC, untagged rules, gamut fit).
-- D6: shared TIFF walker; Coolscan NEF and Flextight FFF detection.
-- D6: TIFF/JPEG decoders, IR sidecars and the positive decode.
-- `2e302bfa` D6: HE NEF reason check reads compressed SubIFD strip heads.
+- A–C and D1–D5 complete: workspace, event contract, storage and assets.
+- D6: constants, source kind, metadata, TIFF/JPEG and source encoding.
 - D6: camera RAW decodes through `rawler` behind `RawDecoder`.
 - D6: JPEG XL decodes 8-bit floats and keeps 16-bit samples.
 - D6: Pakon decodes planar or interleaved samples into RGB16.
 - D6: Noritsu decodes chunky BGR16 into RGB16.
+- D6: Coolscan subifds and uncompressed FFF pages decode.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
+1. [ ] D6 loaders: Flextight LogLuv decoding
 2. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas
@@ -40,20 +35,16 @@ Noritsu decoding are complete; next is Coolscan NEF and Flextight FFF.
 - D2: flat `to_dict` emits JSON in section order; Python uses `json.dumps` defaults.
 - D5: `edited_file_names_under` returns a `Vec`; callers compare as sets.
 - D5: roll records stay flat JSON; only modeled sections take resolved defaults.
-- D6: `source_kind` selects TIFF/JPEG/JXL/Pakon/Noritsu; Coolscan NEF and
-  Flextight FFF need one shared TIFF walker.
-- D6: `tiff_walker::read_ifds` reads every reachable IFD; SubIFDs are marked so
-  NEF and FFF rules can tell them from top-level directories.
-- D6: TIFF keeps uint16 samples when it is already linear; an untagged 8-bit
-  image decodes as sRGB and a profile supplies the positive decode.
-- D6: HE NEF check reads SubIFDs directly; `tiff::Decoder` needs top-level
-  dimensions absent from the synthetic test NEF.
-- D6: HE NEF check mirrors Python: Compression 34713, first StripOffset, then
-  a 64-byte `INTOPIX` head.
+- D6: `tiff_walker::read_ifds` marks SubIFDs; keep top-level and SubIFD rules
+  separate for NEF and FFF.
+- D6: TIFF keeps uint16 samples when already linear; untagged 8-bit is sRGB.
+- D6: HE NEF check reads Compression 34713, StripOffset and an `INTOPIX` head.
 - D6: `RawlerDecoder` keeps sensor RGB; apply as-shot WB only when valid and
   carry `rgb_xyz_matrix` to the transparency transfer.
 - D6: JXL fixtures were written with `imagecodecs`; the loader keeps 8-bit
   samples and stores 16-bit as `source_u16`.
+- D6: `fff_loader::load` returns None for SGI LogLuv until the RLE and
+  tables are ported; `negpy_core::loaders` already holds the primitives.
 - Clippy `-D warnings` fails on existing storage/rolls code, so use
   `cargo check --workspace` plus focused tests as the gate.
 - D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;

@@ -5,6 +5,9 @@
 
 use std::path::Path;
 
+use crate::infrastructure::loaders::helpers::read_orientation;
+use crate::infrastructure::loaders::image_buffer::LoadedImage;
+use crate::infrastructure::loaders::tiff_loader::decode_ifd;
 use crate::infrastructure::loaders::tiff_walker::{IfdInfo, read_ifds};
 
 const PHOTOMETRIC_RGB: u16 = 2;
@@ -52,4 +55,20 @@ pub fn is_flextight_fff(path: &Path) -> bool {
         .as_deref()
         .and_then(find_full_res_ifd)
         .is_some()
+}
+
+/// Load the full-resolution image from a Flextight FFF.
+#[must_use]
+pub fn load(path: &Path) -> Option<LoadedImage> {
+    let ifds = read_ifds(path)?;
+    let selected = find_full_res_ifd(&ifds)?;
+    if is_sgilog_compression(selected.compression) {
+        return None;
+    }
+    let (image, _, _) = decode_ifd(path, selected.offset)?;
+    Some(LoadedImage {
+        image: Some(image),
+        orientation: read_orientation(path),
+        ..LoadedImage::default()
+    })
 }
