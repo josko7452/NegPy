@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:35 | **Last Commit:** `e1add263 backend: decode camera RAW with rawler`
+**Last Updated:** 2026-11-12 20:50 | **Last Commit:** `fd021063 backend: decode JPEG XL images`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Camera RAW and JPEG XL decoding
-are complete; next is Pakon.
+Phases A–C, D1–D5 and D6 start are complete. Camera RAW, JPEG XL and Pakon
+decoding are complete; next is Noritsu.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -18,12 +18,12 @@ are complete; next is Pakon.
 - `2e302bfa` D6: HE NEF reason check reads compressed SubIFD strip heads.
 - D6: camera RAW decodes through `rawler` behind `RawDecoder`.
 - D6: JPEG XL decodes 8-bit floats and keeps 16-bit samples.
+- D6: Pakon decodes planar or interleaved BGR16 into RGB16.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Pakon decoder
-2. [ ] D6 loaders: Noritsu decoder
-3. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
-4. [ ] D6 loaders: loader factory wiring
+1. [ ] D6 loaders: Noritsu decoder
+2. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
+3. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.

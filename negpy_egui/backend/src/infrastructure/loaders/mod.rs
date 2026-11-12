@@ -9,6 +9,7 @@ pub mod jxl_boxes;
 pub mod jxl_loader;
 pub mod memory;
 pub mod nef_loader;
+pub mod pakon_loader;
 pub mod raw_decoder;
 pub mod source_encoding;
 pub mod source_kind;
