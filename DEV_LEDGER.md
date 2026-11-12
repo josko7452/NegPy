@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:25 | **Last Commit:** `pending toning`
+**Last Updated:** 2026-11-13 00:45 | **Last Commit:** `pending finish`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -26,15 +26,15 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 - D8: shared Adobe RGB Lab spaces, gamma and clip helper.
 - D8: Lab stage order, sharpening, saturation, denoise, glow and CLAHE.
 - D8: chemical toning, lith overrides and split tinting.
+- D8: finish vignette, carrier tables and carrier composition.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port finish vignette and carrier
-4. [ ] D8: port geometry transforms and crops
-5. [ ] D8: port geometry detection
-6. [ ] D8: port local masks
-7. [ ] D8: port retouch detection and IR
-8. [ ] D8: port retouch repair and clone
-9. [ ] D8: wire the D8 stage order and verify
+1. [ ] D8: port geometry transforms and crops
+2. [ ] D8: port geometry detection
+3. [ ] D8: port local masks
+4. [ ] D8: port retouch detection and IR
+5. [ ] D8: port retouch repair and clone
+6. [ ] D8: wire the D8 stage order and verify
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
