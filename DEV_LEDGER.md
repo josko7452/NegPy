@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:10 | **Last Commit:** `862ec12a backend: add folder roll discovery`
+**Last Updated:** 2026-11-12 17:31 | **Last Commit:** `6c44a349 backend: add roll scenes and baselines`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -21,7 +21,9 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   scenes and baseline resolution are in; D5 is complete.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: helpers and memory first
+1. [ ] D6 loaders: memory estimates next
+2. [ ] D6 loaders: JPEG XL boxes and source encoding
+3. [ ] D6 loaders: the first concrete decoder
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -60,3 +62,4 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D5: folder recognition, nested import naming, discovery filters and pruning are in.
 - D5 complete: scenes, Roll/Scene Analysis records, stale checks and baseline
   resolution are in.
+- D6: loader constants moved to `infrastructure/loaders`; `source_kind` follows.
