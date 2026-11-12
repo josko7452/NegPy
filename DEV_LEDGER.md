@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 17:31 | **Last Commit:** `6c44a349 backend: add roll scenes and baselines`
+**Last Updated:** 2026-11-12 17:45 | **Last Commit:** `941f5250 backend: add loader extension rules`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -21,8 +21,8 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   scenes and baseline resolution are in; D5 is complete.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: memory estimates next
-2. [ ] D6 loaders: JPEG XL boxes and source encoding
+1. [ ] D6 loaders: JPEG XL boxes and source encoding
+2. [ ] D6 loaders: source kind and loader selection
 3. [ ] D6 loaders: the first concrete decoder
 
 ## Constraints / Gotchas
@@ -63,3 +63,5 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D5 complete: scenes, Roll/Scene Analysis records, stale checks and baseline
   resolution are in.
 - D6: loader constants moved to `infrastructure/loaders`; `source_kind` follows.
+- D6: preview memory estimates use TIFF headers for the largest page, including
+  sub-IFDs, and `image` only for other formats.
