@@ -5,7 +5,11 @@
 
 use std::path::Path;
 
-use crate::infrastructure::loaders::image_buffer::LoadedImage;
+use rawler::imgop::develop::{Intermediate, ProcessingStep, RawDevelop};
+use rawler::imgop::xyz::Illuminant;
+
+use crate::infrastructure::loaders::helpers::read_orientation;
+use crate::infrastructure::loaders::image_buffer::{ImageBuffer, LoadedImage};
 
 /// A camera RAW decoder.
 pub trait RawDecoder {
@@ -24,6 +28,103 @@ impl RawDecoder for UnsupportedRawDecoder {
             "This camera RAW format is not supported by this build.".to_string()
         }))
     }
+}
+
+/// A camera RAW decoder backed by `rawler`.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RawlerDecoder;
+
+impl RawDecoder for RawlerDecoder {
+    fn decode(&self, path: &Path) -> Result<LoadedImage, String> {
+        if let Some(reason) = unsupported_raw_reason(path) {
+            return Err(reason);
+        }
+        let raw = rawler::decode_file(path).map_err(|error| error.to_string())?;
+        let developed = RawDevelop::new_with(&[
+            ProcessingStep::Rescale,
+            ProcessingStep::Demosaic,
+            ProcessingStep::FujiRotate,
+            ProcessingStep::CropActiveArea,
+            ProcessingStep::CropDefault,
+        ])
+        .develop_intermediate(&raw)
+        .map_err(|error| error.to_string())?;
+
+        let (width, height, mut pixels) = match developed {
+            Intermediate::ThreeColor(image) => (image.width, image.height, image.into_flatten()),
+            Intermediate::FourColor(image) => {
+                let width = image.width;
+                let height = image.height;
+                let pixels = image
+                    .into_inner()
+                    .into_iter()
+                    .flat_map(|pixel| [pixel[0], pixel[1], pixel[2]])
+                    .collect();
+                (width, height, pixels)
+            }
+            Intermediate::Monochrome(image) => {
+                let width = image.width;
+                let height = image.height;
+                let pixels = image
+                    .data
+                    .into_iter()
+                    .flat_map(|value| [value, value, value])
+                    .collect();
+                (width, height, pixels)
+            }
+        };
+
+        let gains = white_balance(&raw.wb_coeffs);
+        if let Some([red, green, blue]) = gains {
+            for pixel in pixels.chunks_exact_mut(3) {
+                pixel[0] = (pixel[0] * red).clamp(0.0, 1.0);
+                pixel[1] = (pixel[1] * green).clamp(0.0, 1.0);
+                pixel[2] = (pixel[2] * blue).clamp(0.0, 1.0);
+            }
+        }
+
+        let mut image = ImageBuffer::from_rgb(width, height, pixels);
+        image.rgb_xyz_matrix = camera_matrix(&raw);
+        Ok(LoadedImage {
+            image: Some(image),
+            orientation: read_orientation(path),
+            color_space: None,
+            ..LoadedImage::default()
+        })
+    }
+}
+
+fn white_balance(coeffs: &[f32; 4]) -> Option<[f32; 3]> {
+    let [red, green, blue, _] = *coeffs;
+    [red, green, blue]
+        .iter()
+        .all(|value| value.is_finite() && *value > 0.0 && green > 0.0)
+        .then_some([red / green, 1.0, blue / green])
+}
+
+fn camera_matrix(raw: &rawler::RawImage) -> Option<[[f32; 3]; 3]> {
+    let (_, matrix) = raw.color_matrix_find_first([
+        Illuminant::D65,
+        Illuminant::A,
+        Illuminant::B,
+        Illuminant::C,
+        Illuminant::D50,
+        Illuminant::D55,
+        Illuminant::D75,
+        Illuminant::Daylight,
+        Illuminant::Flash,
+    ])?;
+    if matrix.len() < 9 {
+        return None;
+    }
+    let mut out = [[0.0; 3]; 3];
+    for (row, values) in out.iter_mut().enumerate() {
+        values.copy_from_slice(&matrix[row * 3..row * 3 + 3]);
+    }
+    out.iter()
+        .flatten()
+        .all(|value| value.is_finite())
+        .then_some(out)
 }
 
 const NEF_COMPRESSED: u16 = 34_713;

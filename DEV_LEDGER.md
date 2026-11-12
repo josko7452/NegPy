@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 19:35 | **Last Commit:** `c2b48082 backend: explain High Efficiency NEF`
+**Last Updated:** 2026-11-12 20:10 | **Last Commit:** `2e302bfa docs: record High Efficiency NEF unblock`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. D6 RAW decoding is unblocked;
-next is camera RAW support.
+Phases A–C, D1–D5 and D6 start are complete. Camera RAW decoding is complete;
+next is JPEG XL.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -15,11 +15,12 @@ next is camera RAW support.
 - D6: `ImageBuffer` and source encoding (ICC/TRC, untagged rules, gamut fit).
 - D6: shared TIFF walker; Coolscan NEF and Flextight FFF detection.
 - D6: TIFF/JPEG decoders, IR sidecars and the positive decode.
-- `c2b48082` D6: HE NEF reason check reads compressed SubIFD strip heads.
+- `2e302bfa` D6: HE NEF reason check reads compressed SubIFD strip heads.
+- D6: camera RAW decodes through `rawler` behind `RawDecoder`.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: camera RAW support behind `RawDecoder`
-2. [ ] D6 loaders: JXL, Pakon and Noritsu decoders
+1. [ ] D6 loaders: JXL decoder
+2. [ ] D6 loaders: Pakon decoder
 3. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
 4. [ ] D6 loaders: loader factory wiring
 
@@ -48,6 +49,8 @@ next is camera RAW support.
   dimensions absent from the synthetic test NEF.
 - D6: HE NEF check mirrors Python: Compression 34713, first StripOffset, then
   a 64-byte `INTOPIX` head.
+- D6: `RawlerDecoder` keeps sensor RGB; apply as-shot WB only when valid and
+  carry `rgb_xyz_matrix` to the transparency transfer.
 - Clippy `-D warnings` fails on existing storage/rolls code, so use
   `cargo check --workspace` plus focused tests as the gate.
 - D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;
