@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 05:25 | **Last Commit:** `93d440db backend: port the photometric processor`
+**Last Updated:** 2026-11-12 23:04 | **Last Commit:** `69340bb4 backend: wire the exposure pipeline`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -22,14 +22,15 @@ exposure kernels have landed; processor wiring is next.
 - D7: normalization orchestration, bound resolution and point trims.
 - D7: photometric print curve, split grade and B&W collapse.
 - D7: NPZ print-LUT loading through `zip` and `npyz`.
+- D7: exposure pipeline entry point normalizes then prints a frame.
 
 ## Next Steps (Ordered)
-1. [ ] D7: wire exposure stages into `DarkroomEngine`
+1. [ ] D8: port geometry, lab and local feature kernels
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
 - Targeted tests per commit; full `cargo test --workspace` only after commit 5.
-- Last full workspace test: not run this session (targeted tests only).
+- Last full workspace test: 2026-11-12 23:04, passed with `CARGO_BUILD_JOBS=1`.
 - Never edit `negpy/`; `pub` promotion in `negpy_core/src/*.rs` needs human approval.
 - `negpy_core` stays its own workspace; no root `Cargo.toml`.
 - No new crates can be fetched here. `git` writes need escalation.
