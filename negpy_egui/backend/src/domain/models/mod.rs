@@ -16,6 +16,7 @@ pub mod flatfield;
 pub mod geometry;
 pub mod hdr;
 pub mod lab;
+pub mod lens;
 pub mod local;
 pub mod metadata;
 pub mod process;
@@ -37,6 +38,7 @@ pub use flatfield::FlatFieldConfig;
 pub use geometry::{AspectRatio, AutocropMode, GeometryConfig};
 pub use hdr::{HdrConfig, hdr_active, hdr_merge_token, hdr_name, hdr_stem, hdr_token};
 pub use lab::{LabConfig, SharpenMethod};
+pub use lens::{LensCorrections, LensMetadata, LensWarp};
 pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
 pub use metadata::{MetadataConfig, normalize_description_fields};
 pub use process::{

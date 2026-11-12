@@ -5,7 +5,7 @@ use negpy_backend::domain::models::{ProcessConfig, ProcessMode, SensorUnmix};
 use negpy_backend::features::process::capture_color::{
     camera_matrix_parts, camera_to_working_matrix, primaries, wb_gains,
 };
-use negpy_backend::features::process::chart::{patch_centers, sample_radius, COLS, ROWS};
+use negpy_backend::features::process::chart::{COLS, ROWS, patch_centers, sample_radius};
 use negpy_backend::features::process::hue::apply_hue_trim;
 use negpy_backend::features::process::sensor::{
     build_sensor_matrix, density_unmix_matrix, effective_sensor_matrix, sensor_token,
@@ -46,14 +46,9 @@ fn a_linear_negative_accepts_the_sensor_unmix() {
 #[test]
 fn the_sensor_token_names_the_matrix_and_mode() {
     let mut process = process(ProcessMode::C41, true);
-    process.sensor_matrix = Some(vec![
-        1.0, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0,
-    ]);
+    process.sensor_matrix = Some(vec![1.0, 0.1, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0]);
     process.sensor_unmix = SensorUnmix::Density;
-    assert_eq!(
-        sensor_token(&process),
-        "|sn:1,0.1,0,0,1,0,0,0,1|density"
-    );
+    assert_eq!(sensor_token(&process), "|sn:1,0.1,0,0,1,0,0,0,1|density");
     process.sensor_unmix = SensorUnmix::Linear;
     assert!(!sensor_token(&process).ends_with("|density"));
 }
@@ -105,11 +100,7 @@ fn no_camera_matrix_is_available_for_a_profiled_source() {
 
 #[test]
 fn a_neutral_white_balance_keeps_the_matrix() {
-    let camera = [
-        [0.5, 0.3, 0.2],
-        [0.2, 0.6, 0.2],
-        [0.1, 0.2, 0.7],
-    ];
+    let camera = [[0.5, 0.3, 0.2], [0.2, 0.6, 0.2], [0.1, 0.2, 0.7]];
     let plain = camera_to_working_matrix(Some(camera), None).unwrap();
     let neutral = camera_to_working_matrix(Some(camera), Some(&[1.0, 1.0, 1.0])).unwrap();
     for row in 0..3 {
@@ -124,7 +115,9 @@ fn the_working_matrices_invert_each_other() {
     let product: [[f64; 3]; 3] = std::array::from_fn(|row| {
         std::array::from_fn(|column| {
             (0..3)
-                .map(|index| f64::from(WORKING_TO_XYZ[row][index]) * f64::from(XYZ_TO_WORKING[index][column]))
+                .map(|index| {
+                    f64::from(WORKING_TO_XYZ[row][index]) * f64::from(XYZ_TO_WORKING[index][column])
+                })
                 .sum()
         })
     });
@@ -138,11 +131,7 @@ fn the_working_matrices_invert_each_other() {
 
 #[test]
 fn raising_white_balance_to_green_scales_the_matrix_columns() {
-    let camera = [
-        [0.5, 0.3, 0.2],
-        [0.2, 0.6, 0.2],
-        [0.1, 0.2, 0.7],
-    ];
+    let camera = [[0.5, 0.3, 0.2], [0.2, 0.6, 0.2], [0.1, 0.2, 0.7]];
     let gains = wb_gains(Some(&[2.0, 1.0, 1.5])).unwrap();
     assert_eq!(gains, [2.0, 1.0, 1.5]);
     let plain = camera_to_working_matrix(Some(camera), None).unwrap();
