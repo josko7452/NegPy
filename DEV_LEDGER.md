@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 22:20 | **Last Commit:** `4ef15006 backend: decode Noritsu chunky raws`
+**Last Updated:** 2026-11-12 23:05 | **Last Commit:** `6d66bd1e backend: decode Coolscan and Flextight images`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 loaders are complete except LogLuv. Next is the
-loader factory.
+Phases A–C, D1–D5 and D6 loaders are complete except the LogLuv TIFF path.
+Next is the loader factory.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -15,9 +15,10 @@ loader factory.
 - D6: Pakon decodes planar or interleaved samples into RGB16.
 - D6: Noritsu decodes chunky BGR16 into RGB16.
 - D6: Coolscan subifds and uncompressed FFF pages decode.
+- D6: LogLuv tables, RLE strips and RGB conversion are in `logluv.rs`.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Flextight LogLuv decoding
+1. [ ] D6 loaders: Flextight LogLuv TIFF strips
 2. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas

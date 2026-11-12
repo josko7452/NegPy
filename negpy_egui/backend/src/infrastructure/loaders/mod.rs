@@ -7,6 +7,7 @@ pub mod image_buffer;
 pub mod jpeg_loader;
 pub mod jxl_boxes;
 pub mod jxl_loader;
+pub mod logluv;
 pub mod memory;
 pub mod nef_loader;
 pub mod noritsu_loader;
