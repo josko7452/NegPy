@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:05 | **Last Commit:** `pending lab`
+**Last Updated:** 2026-11-13 00:25 | **Last Commit:** `pending toning`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -25,10 +25,10 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 - D7: exposure pipeline entry point normalizes then prints a frame.
 - D8: shared Adobe RGB Lab spaces, gamma and clip helper.
 - D8: Lab stage order, sharpening, saturation, denoise, glow and CLAHE.
+- D8: chemical toning, lith overrides and split tinting.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port chemical and split toning
-3. [ ] D8: port finish vignette and carrier
+1. [ ] D8: port finish vignette and carrier
 4. [ ] D8: port geometry transforms and crops
 5. [ ] D8: port geometry detection
 6. [ ] D8: port local masks

@@ -3,3 +3,4 @@
 pub mod exposure;
 pub mod lab;
 pub mod process;
+pub mod toning;
