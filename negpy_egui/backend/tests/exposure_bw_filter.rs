@@ -65,10 +65,7 @@ fn a_mono_slide_takes_the_filter() {
 
 #[test]
 fn the_collapse_matrix_repeats_the_weights() {
-    assert_eq!(
-        collapse_matrix([0.31, 0.39, 0.30]),
-        [[0.31, 0.39, 0.30]; 3],
-    );
+    assert_eq!(collapse_matrix([0.31, 0.39, 0.30]), [[0.31, 0.39, 0.30]; 3],);
 }
 
 #[test]
@@ -78,7 +75,10 @@ fn only_a_bw_mode_collapses_a_plane() {
         plane_weights(&process(ProcessMode::BW, Some(true)), &exposure),
         Some([0.31, 0.39, 0.30])
     );
-    assert_eq!(plane_weights(&process(ProcessMode::C41, None), &exposure), None);
+    assert_eq!(
+        plane_weights(&process(ProcessMode::C41, None), &exposure),
+        None
+    );
 }
 
 #[test]
