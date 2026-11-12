@@ -1,12 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 18:10 | **Last Commit:** `_ backend: add the logging setup`
+**Last Updated:** 2026-11-12 18:40 | **Last Commit:** `_ backend: add the override config`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  Phase D1 is in progress: paths, user dir, i18n, text and logging landed;
-  override is the last D1 module.
+  **Phase D1 is complete.** Next: D2 `domain.{types,models,tokens,migrations}`.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
@@ -29,9 +28,12 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   `human_bytes`. 17 tests ported.
 - D1c `backend/src/kernel/system/logging.rs`: `setup_logging` via `fern`, console plus
   a rotating `negpy.log` under the user dir, and the `negpy.<module>` target. 3 tests.
+- D1d `backend/src/kernel/system/override_config.rs` + `domain/types.rs`: `override.toml`
+  load/parse/apply, the cache recommendation, the stored-preference merge. 23 tests.
+  `AppConfig` lands here because override needs it; D2 extends `domain/`.
 
 ## Next Steps (Ordered)
-1. [ ] D1 `kernel.system.override`; paths, i18n, text, logging done
+1. [ ] D2 `domain.{types,models,tokens,migrations}` (serde DTOs); `types` started
 2. [ ] D2–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
 3. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
 
