@@ -1,26 +1,21 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 18:40 | **Last Commit:** `_ backend: add the override config`
+**Last Updated:** 2026-11-12 19:05 | **Last Commit:** `_ backend: add domain migrations`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **Phase D1 is complete.** Next: D2 `domain.{types,models,tokens,migrations}`.
+  **Phase D1 is complete. D2 is in progress**: `types` and `migrations` landed;
+  `models` (serde DTOs) and `tokens` are next.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
 - B1–B3 `negpy_core` visibility audit: verify-only, every pure kernel already `pub`,
   so no promotion; `histogram::Samples` and the config structs are `pub`. Smoke test
   calls `stats::percentiles`, `color::rgb_to_lab`, `convert::to_uint` on `&[f32]`.
-- C1 `BackendEvent`/`BackendCommand` enums in `backend/src/event.rs`; the 456-signal
-  bucket table in `negpy_egui/docs/EVENT_CONTRACT.md` (200 EV, 48 CMD, 208 GUI).
-- C2 `backend/src/channel.rs`: `std::sync::mpsc` pair (commands in, events out) with a
-  `Wake` callback the GUI installs for `request_repaint`. Round-trip test passes.
-- C3 `backend/src/render.rs`: render thread with a one-slot latest-wins queue, the
-  `render_size` proxy rule (≤1600 px while dragging, full-res otherwise), and tests for
-  coalescing, close semantics and the size rule.
-- C4 `EVENT_CONTRACT.md` gains the class mapping: each Python controller/session/worker
-  class to its `BackendEvent`/`BackendCommand`/GUI-local home.
+- C1–C4 `backend/src/{event,channel,render}.rs`: the frozen event/command contract + the
+  456-signal table (`negpy_egui/docs/EVENT_CONTRACT.md`), the `std::sync::mpsc` pair with
+  a `Wake` for `request_repaint`, and the render thread (latest-wins, ≤1600 px proxy).
 - D1a `backend/src/kernel/system/{paths,user_directory}.rs`: resource and user-dir
   resolution, atomic replace, safe unlink, umask mode. 15 tests ported.
 - D1b `backend/src/kernel/system/{i18n,text}.rs`: language resolution, the catalog
@@ -31,11 +26,12 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D1d `backend/src/kernel/system/override_config.rs` + `domain/types.rs`: `override.toml`
   load/parse/apply, the cache recommendation, the stored-preference merge. 23 tests.
   `AppConfig` lands here because override needs it; D2 extends `domain/`.
+- D2a `backend/src/domain/migrations.rs`: every key rename, value rewrite and dropped
+  key for persisted configs, over a JSON field map. 20 tests.
 
 ## Next Steps (Ordered)
-1. [ ] D2 `domain.{types,models,tokens,migrations}` (serde DTOs); `types` started
-2. [ ] D2–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
-3. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
+1. [ ] D2 `domain.models` (WorkspaceConfig serde DTOs) + `domain.tokens`
+2. [ ] D3–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -50,7 +46,7 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - `negpy_egui/Cargo.lock` is tracked; regenerable.
 - Subject ≤50 chars, body wrapped at 72, no trailing period; split commits on "and".
 - Anti-loop: 3 failed fix attempts ⇒ STOP and ask for human guidance.
-- Phase C MUST land before porting `controller.py`/`session.py`.
+- Phase C (done) let `controller.py`/`session.py` port against a frozen contract.
 - Divergence recorded (plan §8.6): `.git/info/exclude` ignores the migration docs;
   `DEV_LEDGER.md` is force-added. Anchoring `/AGENTS.md` needs a `.git/` write
   the sandbox forbids. Human action pending.
