@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:55 | **Last Commit:** `9a3d8856 backend: add database statistics`
+**Last Updated:** 2026-11-13 00:05 | **Last Commit:** `6d6dea19 backend: add roll fork identities`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -16,9 +16,9 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   local asset store, stats and reset.
 
 ## Next Steps (Ordered)
-1. [ ] D5 roll/composite integration against the repository
-2. [ ] D5 roll fork helpers and tests
-3. [ ] D5 repository helpers for batch reads and path rehoming
+1. [ ] D5 repository helpers for batch reads and path rehoming
+2. [ ] D5 roll-wide defaults and card locks
+3. [ ] D4 CI dependency-graph parity closeout
 4. [ ] D5 sidecar promotion batch parity test
 5. [ ] D4 CI dependency-graph parity closeout
 
