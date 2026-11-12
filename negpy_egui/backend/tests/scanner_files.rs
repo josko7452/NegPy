@@ -213,3 +213,95 @@ fn an_8_bit_or_non_fff_file_is_not_a_flextight() {
         .unwrap();
     assert!(!is_flextight_fff(&tiff));
 }
+
+fn write_logluv_fff(path: &std::path::Path, width: u32, height: u32, compression: u16) {
+    let entries = 9usize;
+    let ifd_offset = 8usize;
+    let ifd_size = 2 + entries * 12 + 4;
+    let strip_offset = ifd_offset + ifd_size;
+    let rle = compression == 34676;
+    let pixels = width as usize * height as usize;
+    let strip = if rle {
+        let codes: Vec<u32> = (0..pixels)
+            .map(|index| {
+                let le = 0x3f00 + index as u32 % 8;
+                (le << 16) | (0x56 << 8) | 0xc2
+            })
+            .collect();
+        let mut bytes = Vec::new();
+        for row in codes.chunks(width as usize) {
+            for shift in [24, 16, 8, 0] {
+                bytes.push(row.len() as u8);
+                bytes.extend(row.iter().map(|code| (code >> shift) as u8));
+            }
+        }
+        bytes
+    } else {
+        (0..pixels)
+            .flat_map(|index| {
+                let code = ((700 + index as u32 % 8) << 14) | 8000;
+                [(code >> 16) as u8, (code >> 8) as u8, code as u8]
+            })
+            .collect()
+    };
+    let mut data = vec![0u8; strip_offset + strip.len()];
+    data[..4].copy_from_slice(&[b'M', b'M', 0, 42]);
+    data[4..8].copy_from_slice(&(ifd_offset as u32).to_be_bytes());
+    data[ifd_offset..ifd_offset + 2].copy_from_slice(&(entries as u16).to_be_bytes());
+    fn entry(data: &mut [u8], at: usize, tag: u16, kind: u16, count: u32, value: u32) {
+        data[at..at + 2].copy_from_slice(&tag.to_be_bytes());
+        data[at + 2..at + 4].copy_from_slice(&kind.to_be_bytes());
+        data[at + 4..at + 8].copy_from_slice(&count.to_be_bytes());
+        if kind == 3 {
+            data[at + 8..at + 10].copy_from_slice(&(value as u16).to_be_bytes());
+        } else {
+            data[at + 8..at + 12].copy_from_slice(&value.to_be_bytes());
+        }
+    }
+    let tags = [
+        (256, 4, 1, width),
+        (257, 4, 1, height),
+        (258, 3, 1, if rle { 32 } else { 24 }),
+        (259, 3, 1, u32::from(compression)),
+        (262, 3, 1, 32845),
+        (273, 4, 1, strip_offset as u32),
+        (277, 3, 1, 3),
+        (278, 4, 1, height),
+        (279, 4, 1, strip.len() as u32),
+    ];
+    for (index, (tag, kind, count, value)) in tags.into_iter().enumerate() {
+        entry(
+            &mut data,
+            ifd_offset + 2 + index * 12,
+            tag,
+            kind,
+            count,
+            value,
+        );
+    }
+    data[strip_offset..].copy_from_slice(&strip);
+    std::fs::write(path, data).unwrap();
+}
+
+#[test]
+fn a_logluv24_fff_decodes_to_normalized_rgb() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scan.fff");
+    write_logluv_fff(&path, 4, 3, 34677);
+    assert!(is_flextight_fff(&path));
+    let image = load_fff(&path).unwrap().image.unwrap();
+    assert_eq!((image.width, image.height), (4, 3));
+    assert_eq!(image.pixels.len(), 4 * 3 * 3);
+    assert!(image.pixels.iter().any(|value| *value > 0.01));
+    assert!(image.pixels.iter().all(|value| (0.0..=1.0).contains(value)));
+}
+
+#[test]
+fn a_logluv32_rle_fff_decodes_one_strip_per_scanline() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("scan.fff");
+    write_logluv_fff(&path, 4, 3, 34676);
+    let image = load_fff(&path).unwrap().image.unwrap();
+    assert_eq!((image.width, image.height), (4, 3));
+    assert!(image.pixels.iter().any(|value| *value > 0.01));
+}

@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:05 | **Last Commit:** `6d66bd1e backend: decode Coolscan and Flextight images`
+**Last Updated:** 2026-11-12 23:35 | **Last Commit:** `775efdda backend: add LogLuv pixel codec`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 loaders are complete except the LogLuv TIFF path.
-Next is the loader factory.
+Phases A–C, D1–D5 and D6 loaders are complete except factory dispatch.
+Next is scanner-family detection in the source selector.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -16,10 +16,11 @@ Next is the loader factory.
 - D6: Noritsu decodes chunky BGR16 into RGB16.
 - D6: Coolscan subifds and uncompressed FFF pages decode.
 - D6: LogLuv tables, RLE strips and RGB conversion are in `logluv.rs`.
+- D6: Flextight LogLuv strips decode and normalize to RGB.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Flextight LogLuv TIFF strips
-2. [ ] D6 loaders: loader factory wiring
+1. [ ] D6 loaders: scanner-family source detection
+2. [ ] D6 loaders: factory dispatch
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
