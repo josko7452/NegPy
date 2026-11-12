@@ -1,12 +1,13 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 21:45 | **Last Commit:** `_ build: fetch crates into the shared registry`
+**Last Updated:** 2026-11-12 22:06 | **Last Commit:** `_ backend: add the shipped app config`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **Phase D1 is complete. D2 is complete**: `types`, `migrations` and the full
-  `models` DTO set landed; **D3 (`kernel.system.config`) is next**.
+  **Phase D1 is complete. D2 is complete.** D3 is in progress: the shipped app
+  config and default edit landed; TOML cache, sidecars, presets and storage
+  follow.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding; B1–B3 `negpy_core` verify-only audit; C1–C4 the frozen
@@ -18,10 +19,16 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   finish,flatfield,export,metadata,hdr,rgbscan,stitch,workspace}.rs` and `tokens.rs`.
   `WorkspaceConfig` flattens to one key namespace via `to_dict`/`from_flat_dict`.
   46 tests, incl. a 0.63.0 sidecar fixture round-trip. 134 tests total, green.
+- D3 `kernel/system/config.rs`: `app_config()` and `default_workspace_config()`;
+  path, limit and shipped-default assertions. First commit recorded only the
+  ledger; the code and tests follow in the same subject.
 
 ## Next Steps (Ordered)
-1. [ ] D3 `kernel.system.config` (TOML, shipped defaults) + `override` sync
-2. [ ] D4–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
+1. [ ] D3 `services/assets/toml_cache.rs`
+2. [ ] D5 `services/assets/sidecar.rs`
+3. [ ] D5 `services/assets/presets.rs`
+4. [ ] D4 `infrastructure/storage/repository.rs` (SQLite schema and settings rows)
+5. [ ] D4/D5 `infrastructure/storage/local_asset_store.rs` and sidecar promotion
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
