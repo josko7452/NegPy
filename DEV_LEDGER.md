@@ -1,34 +1,33 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 04:00 | **Last Commit:** `HEAD backend: wire the D8 tail stages`
+**Last Updated:** 2026-11-13 05:10 | **Last Commit:** `fc086714 backend: wire the D8 tail stages`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-A–C, D1–D7 and D8 are complete. D9 feature kernels are next.
+User override: this session runs 10 commits, focused on the missing D12 asset migrations.
 
 ## Completed (Recent)
-- D6: source kinds, metadata, TIFF/JPEG/JXL/RAW/Pakon/Noritsu/FFF decode.
-- D7: process detection, exposure normalization, curves, LUTs and print.
-- D8: shared Adobe RGB Lab spaces, gamma and clip helper.
-- D8: Lab, CLAHE, sharpening, saturation, glow and halation.
-- D8: chemical and split toning, including lith overrides.
-- D8: finish vignette, carrier profiles and filed carrier.
-- D8: geometry transforms, crop resolution and coordinate mapping.
-- D8: film detection, opaque-border trim, auto-crop and ratio snapping.
-- D8: local masks, limited planes, overlap and geometry mapping.
-- D8: dust/IR detection, scratch tracing and source tokens.
-- D8: exclusion release, score repair, inpaint and clone strokes.
-- D8: CLAHE → Lab → toning → crop → finish tail order with Flat bypass.
+- D12: ported the bounds, Cast Removal and B&W source-color row sweeps.
+- D12: added the shared edit-row rewrite helper and done-flag handling.
+- D6: source kinds, metadata and TIFF/JPEG/JXL/RAW/Pakon/Noritsu/FFF decode.
+- D7: detection, normalization, curves, metering, papers and print.
+- D8: Lab, toning, finish, local, retouch, single-frame geometry and tail order.
 
 ## Next Steps (Ordered)
-1. [ ] D9: port flatfield, HDR, lens, RGB scan, stitch and slide kernels.
-2. [ ] D9: port transparency, alt-process, metadata and pick-better kernels.
-3. [ ] D9: verify CPU/GPU parity and source-bake order.
+1. [ ] D12: port the legacy hash rehome and ambiguous-hash helpers.
+2. [ ] D12: port the normalization-roll and Positive auto-meter migrations.
+3. [ ] D12: port the roll card split, lock and section-push migrations.
+4. [ ] D12: port the Cast Removal and Crop moves to frame seeds.
+5. [ ] D12: port the Film card source-encoding migration.
+6. [ ] D12: port the legacy flat-field profile migration.
+7. [ ] D12: port the flat-field sensor-layout migration.
+8. [ ] D12: port the gear-preset migration.
+9. [ ] D7: port the missing exposure and process groups.
+10. [ ] D8: port geometry skew and batch auto-crop.
 
 ## Constraints / Gotchas
-- User override 2026-11-13: this session ran 10 commits for the D8 scope.
+- User override 2026-11-13: 10 commits this session; targeted tests per commit, one workspace test at the end.
 - Last full workspace test: 2026-11-13 04:00, passed with `CARGO_BUILD_JOBS=1`.
-- `cargo check --workspace` also passes. Use it plus focused tests for each commit.
 - Never edit `negpy/`; `pub` promotion in `negpy_core/src/*.rs` needs human approval.
 - `negpy_core` stays its own workspace; no root `Cargo.toml`.
 - Subject ≤50 chars, body wrapped at 72, no trailing period; split on "and".

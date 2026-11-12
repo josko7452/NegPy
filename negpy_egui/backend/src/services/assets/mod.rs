@@ -2,6 +2,7 @@
 
 pub mod composites;
 pub mod library;
+pub mod migrations;
 pub mod presets;
 pub mod rolls;
 pub mod sidecar;
