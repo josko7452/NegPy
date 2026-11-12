@@ -7,3 +7,6 @@ publish = false
 
 [lib]
 name = "negpy_backend"
+
+[dependencies]
+negpy_core = { path = "../../negpy_core", default-features = false }
