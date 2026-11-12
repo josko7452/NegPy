@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 15:40 | **Last Commit:** `_ backend: define the event/command contract`
+**Last Updated:** 2026-11-12 16:00 | **Last Commit:** `_ backend: add the command/event channels`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. **Phase B is complete**; Phase C (event
-contract) is in progress — C1 landed, C2/C3 next.
+  contract) is in progress — C1/C2 landed, C3 next.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
@@ -14,13 +14,14 @@ contract) is in progress — C1 landed, C2/C3 next.
   calls `stats::percentiles`, `color::rgb_to_lab`, `convert::to_uint` on `&[f32]`.
 - C1 `BackendEvent`/`BackendCommand` enums in `backend/src/event.rs`; the 456-signal
   bucket table in `negpy_egui/docs/EVENT_CONTRACT.md` (200 EV, 48 CMD, 208 GUI).
+- C2 `backend/src/channel.rs`: `std::sync::mpsc` pair (commands in, events out) with a
+  `Wake` callback the GUI installs for `request_repaint`. Round-trip test passes.
 
 ## Next Steps (Ordered)
-1. [ ] C2 channels (commands in, events out) + `request_repaint` wake
-2. [ ] C3 render worker thread + latest-wins coalescing + proxy rule
-3. [ ] C4 `AppController`/worker → contract mapping doc (table in place)
-4. [ ] D1–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
-5. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
+1. [ ] C3 render worker thread + latest-wins coalescing + proxy rule
+2. [ ] C4 `AppController`/worker → contract mapping doc (table in place)
+3. [ ] D1–D13 Layer 2 services, in order (see MIGRATION_PLAN.md §7.4)
+4. [ ] E1–E8 Layer 3 egui UI, in order (see MIGRATION_PLAN.md §7.5)
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
