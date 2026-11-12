@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:20 | **Last Commit:** `_ backend: add repository embeddings`
+**Last Updated:** 2026-11-12 23:30 | **Last Commit:** `_ backend: add local asset store`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -33,13 +33,15 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   path lookup, rehome and global settings.
 - D4 repository marks, edit deletion and ordered history/work-print rows.
 - D4 repository work-print rename/delete and model-versioned embeddings.
+- D4 `local_asset_store.rs`: content identity, JPEG thumbnails, comments,
+  size-miss handling and cache management.
 
 ## Next Steps (Ordered)
-1. [ ] D4 local asset store cache and thumbnail paths
-2. [ ] D4 repository stats, reset and VACUUM
-3. [ ] D4 storage parity tests and ledger closeout
-4. [ ] D5 roll/composite integration against the repository
-5. [ ] D5 roll fork helpers and tests
+1. [ ] D4 repository stats, reset and VACUUM
+2. [ ] D4 storage parity tests and ledger closeout
+3. [ ] D5 roll/composite integration against the repository
+4. [ ] D5 roll fork helpers and tests
+5. [ ] D4 CI dependency-graph parity closeout
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.

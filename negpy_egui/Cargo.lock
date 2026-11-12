@@ -1657,6 +1657,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2044,6 +2046,7 @@ dependencies = [
  "chrono",
  "dirs",
  "fern",
+ "image",
  "libc",
  "log",
  "negpy_core",
