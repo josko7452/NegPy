@@ -2,7 +2,7 @@
 
 use negpy_core::lab::{self, Rl, Spread};
 
-use crate::domain::color::{WORKING_INV_GAMMA, clip01, working_lab};
+use crate::domain::color::{WORKING_GAMMA, WORKING_INV_GAMMA, clip01, working_lab};
 use crate::domain::types::{LUM_B, LUM_G, LUM_R};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
@@ -339,4 +339,39 @@ fn slice_rows(img: &ImageBuffer, low: usize, high: usize) -> ImageBuffer {
     let begin = low * img.width * 3;
     let end = high * img.width * 3;
     ImageBuffer::from_rgb(img.width, high - low, img.pixels[begin..end].to_vec())
+}
+
+fn smoothstep(edge0: f32, edge1: f32, value: f32) -> f32 {
+    let t = ((value - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// `sharpen_shadow_gain`: per-pixel sharpen gain from L*, lighter shadows sharpen fully.
+#[must_use]
+pub fn sharpen_shadow_gain(luminance: &[f32]) -> Vec<f32> {
+    luminance
+        .iter()
+        .map(|value| {
+            SHARPEN_SHADOW_FLOOR
+                + (1.0 - SHARPEN_SHADOW_FLOOR) * smoothstep(0.0, SHARPEN_SHADOW_L_HI, *value)
+        })
+        .collect()
+}
+
+/// `apply_resize_sharpening`: Lab Sharpening on working-OETF code values.
+#[must_use]
+pub fn apply_resize_sharpening(
+    encoded: &ImageBuffer,
+    config: &crate::domain::models::LabConfig,
+) -> ImageBuffer {
+    if config.sharpen <= 0.0 {
+        return encoded.clone();
+    }
+    let mut linear = vec![0.0; encoded.pixels.len()];
+    negpy_core::color::oetf_decode(&encoded.pixels, &mut linear, WORKING_GAMMA as f32);
+    let linear = ImageBuffer::from_rgb(encoded.width, encoded.height, linear);
+    let sharpened = apply_lab_sharpening(&linear, config, auto_masking(&linear, config));
+    let mut out = vec![0.0; encoded.pixels.len()];
+    negpy_core::color::oetf_encode(&sharpened.pixels, &mut out, WORKING_INV_GAMMA);
+    ImageBuffer::from_rgb(encoded.width, encoded.height, out)
 }

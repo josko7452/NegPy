@@ -1286,3 +1286,76 @@ pub fn apply_clone_strokes(
     }
     ImageBuffer::from_rgb(img.width, img.height, out)
 }
+
+/// Defect mask → compact defects and thin hair components.
+#[must_use]
+pub fn split_hairs(mask: &[u8], width: usize, height: usize) -> (Vec<u8>, Option<Vec<u8>>) {
+    negpy_core::retouch::split_hairs(mask, (height, width), (HAIR_MIN_AREA, HAIR_MIN_ELONG))
+}
+
+fn token_digest(kind: &str, payload: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(payload.as_bytes());
+    let mut hex = String::with_capacity(64);
+    for byte in digest {
+        hex.push_str(&format!("{byte:02x}"));
+    }
+    format!("|{kind}{}", &hex[..12])
+}
+
+/// Config identity of the excluded strokes.
+#[must_use]
+pub fn exclusion_token(config: &crate::domain::models::RetouchConfig) -> String {
+    if config.dust_exclusion_strokes.is_empty() {
+        return String::new();
+    }
+    token_digest(
+        "ex",
+        &serde_json::to_string(&config.dust_exclusion_strokes).unwrap_or_default(),
+    )
+}
+
+/// Config identity of the painted heals.
+#[must_use]
+pub fn manual_bake_token(config: &crate::domain::models::RetouchConfig) -> String {
+    if config.manual_heal_strokes.is_empty()
+        && config.manual_dust_spots.is_empty()
+        && config.scratch_lines.is_empty()
+    {
+        return String::new();
+    }
+    let payload = serde_json::json!([
+        config.manual_heal_strokes,
+        config.manual_dust_spots,
+        config.scratch_lines,
+        (config.scratch_threshold * 10_000.0).round() / 10_000.0,
+    ]);
+    token_digest("heal", &payload.to_string())
+}
+
+/// Detection-param identity for the hair inpaint.
+#[must_use]
+pub fn hair_bake_token(config: &crate::domain::models::RetouchConfig) -> String {
+    format!(
+        "|hair{}_{:.3}_{:.3}_{}_{}_{:.3}{}",
+        u8::from(config.dust_remove),
+        config.dust_threshold,
+        config.dust_hair_threshold,
+        config.dust_size,
+        u8::from(config.ir_dust_remove),
+        config.ir_threshold,
+        exclusion_token(config)
+    )
+}
+
+/// Config identity of the clone strokes.
+#[must_use]
+pub fn clone_token(config: &crate::domain::models::RetouchConfig) -> String {
+    if config.clone_strokes.is_empty() {
+        return String::new();
+    }
+    token_digest(
+        "clone",
+        &serde_json::to_string(&config.clone_strokes).unwrap_or_default(),
+    )
+}

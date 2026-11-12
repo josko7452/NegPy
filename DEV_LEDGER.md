@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 06:50 | **Last Commit:** `fc086714 backend: wire the D8 tail stages`
+**Last Updated:** 2026-11-13 07:12 | **Last Commit:** `fc086714 backend: wire the D8 tail stages`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -13,6 +13,7 @@ User override: this session runs 10 commits, focused on the missing D12 asset mi
 - D7: added the process render path and decode-token helpers.
 - D7: ported exposure analysis, statistics and densitometer read-outs.
 - D7: ported process hue, sensor, capture-color and chart patch units.
+- D8: added Lab resize sharpening, retouch split/tokens and hair-fill routing.
 - D12: added the shared edit-row rewrite helper and done-flag handling.
 - D6: source kinds, metadata and TIFF/JPEG/JXL/RAW/Pakon/Noritsu/FFF decode.
 - D7: detection, normalization, curves, metering, papers and print.
