@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:40 | **Last Commit:** `_ backend: add export and metadata config DTOs`
+**Last Updated:** 2026-11-12 21:00 | **Last Commit:** `_ backend: add assembly configs and source tokens`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -35,6 +35,11 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   flatfield. 8 tests.
 - D2d export + metadata DTOs: `ExportConfig`/`ExportPreset` (with the `userDir` key spelling
   and the JXL block rule), `MetadataConfig` and the format/description helpers. 7 tests.
+- D2e `domain/models/{hdr,rgbscan,stitch}.rs` + `domain/tokens.rs`: the assembly configs,
+  their `*_token`/`*_active` predicates, and `composite_token`. 10 tests.
+  Divergence: `composite_token` uses a 64-bit FNV-1a over canonical JSON, not the Python
+  sha256 — the token is a cache key that is never persisted, and no hash crate is available
+  offline. Same tokens iff same JSON.
 
 ## Next Steps (Ordered)
 1. [ ] D2 `domain.models` (WorkspaceConfig serde DTOs) + `domain.tokens`
