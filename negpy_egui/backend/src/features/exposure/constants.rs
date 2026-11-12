@@ -88,6 +88,9 @@ pub const NEUTRAL_AXIS_SKY: (f32, f32, f32) = (0.06, -150.0, -60.0);
 pub const NEUTRAL_AXIS_CONFIDENCE_N0: f64 = 256.0;
 pub const NEUTRAL_AXIS_AGREEMENT: (f64, f64) = (0.10, 0.20);
 pub const NEUTRAL_AXIS_WIDTH: (f64, f64) = (0.15, 0.30);
+/// Clamp on each channel's deviation from green and the curvature ratio.
+pub const MIDTONE_CAST_MAX_OFFSET: f64 = 0.2;
+pub const NEUTRAL_AXIS_CURV_MAX_RATIO: f64 = 0.45;
 
 /// Luminance row of Adobe RGB (1998), the working space.
 pub const LUMA_R: f64 = 0.2974;

@@ -12,6 +12,12 @@ use crate::features::exposure::papers::{
     PaperProfile, compose_density_matrices, effective_constants, resolve_print_color,
     resolve_saturation_matrix,
 };
+use crate::features::exposure::processor::NeutralAxisRefs;
+use crate::features::exposure::{
+    constants as c2,
+    curve::{self, cast_solve_inputs},
+    normalization::LogNegativeBounds,
+};
 
 /// The straight-line input of one print: grade, density and an optional metered anchor.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -262,6 +268,215 @@ pub fn render_print(
     let curve = print_curve(settings, paper);
     let mut out = vec![0.0; image.len()];
     apply_print_curve(image, width, &curve, &mut out);
+    out
+}
+
+/// The config and measured values a print render solves from.
+#[derive(Clone, Copy, Debug)]
+pub struct PrintRenderSettings<'a> {
+    pub config: &'a crate::domain::models::ExposureConfig,
+    pub process: &'a crate::domain::models::ProcessConfig,
+    pub density_range: Option<f64>,
+    pub textural_range: Option<f64>,
+    pub shadow_point: Option<f64>,
+    pub highlight_point: Option<f64>,
+    pub anchor: Option<f64>,
+    pub bounds: Option<LogNegativeBounds>,
+    pub neutral_axis: Option<NeutralAxisRefs>,
+    pub mode: crate::domain::models::ProcessMode,
+    pub base_black_hold: f64,
+}
+
+/// The per-channel curve and tone values of one print render.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SolvedPrint {
+    pub slopes: [f64; 3],
+    pub pivots: [f64; 3],
+    pub curvatures: [f64; 3],
+    pub toe: f64,
+    pub shoulder: f64,
+    pub shadow_density: f64,
+    pub highlight_density: f64,
+    pub shadow_grade: [f64; 3],
+    pub highlight_grade: [f64; 3],
+}
+
+/// Solve the print curve from config and metrics, mirroring `PhotometricProcessor.process`.
+#[must_use]
+pub fn solve_print(settings: &PrintRenderSettings<'_>) -> SolvedPrint {
+    let exposure = settings.config;
+    let paper = crate::features::exposure::papers::effective_paper_profile(
+        &exposure.paper_profile,
+        Some(settings.mode),
+    );
+    let d_min = if exposure.paper_dmin {
+        paper.tonal.d_min
+    } else {
+        0.0
+    };
+    let anchor = exposure.auto_exposure.then_some(settings.anchor).flatten();
+    let (strength, neutral_axis) = cast_solve_inputs(
+        settings
+            .bounds
+            .unwrap_or(LogNegativeBounds::new([-1.0; 3], [0.0; 3])),
+        settings.neutral_axis,
+        exposure.cast_removal_strength,
+    );
+    let midtone_gamma = curve::effective_midtone_gamma(Some(paper), exposure.midtone_gamma);
+    let (slopes, pivots, curvatures) = curve::per_channel_curve_params(
+        exposure.grade,
+        exposure.density,
+        exposure.auto_normalize_contrast,
+        strength,
+        settings.density_range,
+        settings.textural_range,
+        d_min,
+        anchor,
+        Some(paper),
+        if strength > 0.0 { neutral_axis } else { None },
+        [
+            exposure.grade_trim_red,
+            exposure.grade_trim_green,
+            exposure.grade_trim_blue,
+        ],
+        settings.shadow_point,
+        Some(midtone_gamma),
+    );
+    let highlight = settings
+        .highlight_point
+        .filter(|_| exposure.auto_normalize_contrast);
+    let highlight_density = highlight.map_or(0.0, |point| {
+        curve::highlight_hold_offset(
+            slopes[1],
+            pivots[1],
+            point,
+            d_min,
+            Some(paper),
+            Some(midtone_gamma),
+        )
+    });
+    let shadow = settings
+        .shadow_point
+        .filter(|_| exposure.auto_normalize_contrast);
+    let shadow_density = shadow.map_or(0.0, |point| {
+        curve::shadow_hold_offset(
+            slopes[1],
+            pivots[1],
+            point,
+            d_min,
+            Some(paper),
+            Some(midtone_gamma),
+        )
+    });
+    let (toe, shoulder) = curve::grade_coupled_shape(slopes[1], exposure.toe, exposure.shoulder);
+    let (shadow_grade, highlight_grade) = curve::split_grade_deltas(
+        exposure.grade,
+        exposure.shadow_grade,
+        exposure.highlight_grade,
+        [
+            exposure.shadow_grade_trim_red,
+            exposure.shadow_grade_trim_green,
+            exposure.shadow_grade_trim_blue,
+        ],
+        [
+            exposure.highlight_grade_trim_red,
+            exposure.highlight_grade_trim_green,
+            exposure.highlight_grade_trim_blue,
+        ],
+    );
+    SolvedPrint {
+        slopes,
+        pivots,
+        curvatures,
+        toe,
+        shoulder,
+        shadow_density: exposure.shadow_density + shadow_density,
+        highlight_density: exposure.highlight_density + highlight_density,
+        shadow_grade,
+        highlight_grade,
+    }
+}
+
+/// Render the print stage over an HxWx3 normalized image.
+#[must_use]
+pub fn render_negative(
+    image: &[f32],
+    width: usize,
+    settings: &PrintRenderSettings<'_>,
+) -> Vec<f32> {
+    let exposure = settings.config;
+    let solved = solve_print(settings);
+    let paper = crate::features::exposure::papers::effective_paper_profile(
+        &exposure.paper_profile,
+        Some(settings.mode),
+    );
+    let d_min = if exposure.paper_dmin {
+        paper.tonal.d_min
+    } else {
+        0.0
+    };
+    let cmy = curve::filtration_offsets(
+        [exposure.wb_cyan, exposure.wb_magenta, exposure.wb_yellow],
+        settings.bounds,
+    );
+    let cmy_max = c2::CMY_MAX_DENSITY;
+    let shadow_cmy = [
+        exposure.shadow_cyan * cmy_max,
+        exposure.shadow_magenta * cmy_max,
+        exposure.shadow_yellow * cmy_max,
+    ];
+    let highlight_cmy = [
+        exposure.highlight_cyan * cmy_max,
+        exposure.highlight_magenta * cmy_max,
+        exposure.highlight_yellow * cmy_max,
+    ];
+    let is_bw = settings.mode == crate::domain::models::ProcessMode::BW;
+    let input = if is_bw {
+        let weights =
+            crate::features::exposure::bw_filter::collapse_weights(settings.process, exposure);
+        let matrix = crate::features::exposure::bw_filter::collapse_matrix(weights);
+        let mut out = vec![0.0; image.len()];
+        negpy_core::analysis::unmix_log(image, matrix, &mut out);
+        out
+    } else {
+        image.to_vec()
+    };
+    let midtone_gamma = curve::effective_midtone_gamma(Some(paper), exposure.midtone_gamma);
+    let settings_out = PrintSettings {
+        params: PrintParams {
+            slope: solved.slopes[1],
+            pivot: solved.pivots[1],
+            d_min,
+            midtone_gamma,
+        },
+        toe: solved.toe,
+        toe_width: exposure.toe_width,
+        shoulder: solved.shoulder,
+        shoulder_width: exposure.shoulder_width,
+        cmy_offsets: cmy.map(|value| value as f32),
+        shadow_cmy: shadow_cmy.map(|value| value as f32),
+        highlight_cmy: highlight_cmy.map(|value| value as f32),
+        shadow_density: solved.shadow_density,
+        highlight_density: solved.highlight_density,
+        bpc: !exposure.paper_black,
+        black_hold: settings.base_black_hold,
+        preflash: exposure.preflash,
+        grade: exposure.grade,
+    };
+    let mut curve = print_curve(&settings_out, Some(paper));
+    curve.pivots = solved.pivots.map(|value| value as f32);
+    curve.slopes = solved.slopes.map(|value| value as f32);
+    curve.curvatures = solved.curvatures.map(|value| value as f32);
+    curve.shadow_grade = solved.shadow_grade;
+    curve.highlight_grade = solved.highlight_grade;
+    curve.dye_mix = if is_bw { None } else { curve.dye_mix };
+    let mut out = vec![0.0; input.len()];
+    apply_print_curve(&input, width, &curve, &mut out);
+    if is_bw {
+        let mut lum = vec![0.0; input.len() / 3];
+        negpy_core::analysis::luminance(&out, &mut lum);
+        out = lum.iter().flat_map(|value| [*value; 3]).collect();
+    }
     out
 }
 
