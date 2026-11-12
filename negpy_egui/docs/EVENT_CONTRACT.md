@@ -26,6 +26,24 @@ The composite, chart, contact-sheet and probe workers share one generic pair,
 `JobCancelled`, keyed by `JobFamily`. The render, scan, capture, export and
 library workers get named variants because their payloads differ.
 
+## Class mapping
+
+Each Python class that carries signals moves to one side of the seam.
+
+| Python class | Side | Contract |
+|---|---|---|
+| `AppController` | split | Its `*_requested` slots become `BackendCommand`s. Its data events (`image_updated`, `metrics_available`, `scan_*`, `capture_*`) become `BackendEvent`s. Its display-only signals stay in the GUI shell. |
+| `AppState` / `DesktopSessionManager` | split | The state half moves to `backend/src/session/`. Its `state_changed` family becomes `BackendEvent`s; `color_vision_changed`, `canvas_bg_changed` and `auto_thumbnail_refresh_changed` stay GUI-local because only the view paints them. |
+| `RenderWorker` (`workers/render.py`) | backend | The render service (`backend/src/render.rs`) emits the `RenderFinished`/`MetricsUpdated`/`StripProgress`/`Thumbnail*` events. |
+| `ScanWorker`, `CaptureWorker` | backend | Their `finished`/`progress`/`error` families become the `Scan*` and `Capture*`/`LiveView*`/`Calibration*` events. |
+| `ExportWorker`, `LibraryWorker` | backend | The `Export*` and `Library*` events. |
+| `StitchWorker`, `HdrWorker`, `FrameMergeWorker`, `TripletProbeWorker`, `EmbeddingWorker`, `ChartFitWorker`, `ContactSheetWorker` | backend | The generic `JobProgress`/`JobResult`/`JobError`/`JobCancelled` pair, keyed by `JobFamily`. |
+| every `view/**` widget | GUI | All 208 GUI-local signals stay in `negpy-desktop`. |
+| `workers/contact_sheet.py` `_prepare_requested` / `_render_requested` | GUI | Qt thread-hop helpers; the Rust port has no such hop. |
+
+The `main.py` `show` signal is GUI-local: it opens the window.
+**The GUI pushes commands and subscribes to events. Nothing calls into the GUI.**
+
 ## Full signal table
 
 | File | Signal | Bucket | Home |
