@@ -58,6 +58,8 @@ pub struct PrintSettings {
     pub highlight_density: f64,
     pub bpc: bool,
     pub black_hold: f64,
+    pub preflash: f64,
+    pub grade: f64,
 }
 
 impl Default for PrintSettings {
@@ -80,6 +82,8 @@ impl Default for PrintSettings {
             highlight_density: 0.0,
             bpc: false,
             black_hold: 0.0,
+            preflash: 0.0,
+            grade: 115.0,
         }
     }
 }
@@ -192,6 +196,12 @@ pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> Pr
     let dye = resolve_print_color(paper).0;
     let composed = compose_density_matrices(dye, sat);
     let d_min_rgb = paper_dmin_rgb(settings.params.d_min, paper);
+    let (flash_v, flash_gamma) = crate::features::exposure::curve::preflash_params(
+        settings.grade,
+        settings.params.d_min,
+        paper,
+        Some(settings.params.midtone_gamma),
+    );
     PrintCurve {
         pivots: [settings.params.pivot as f32; 3],
         slopes: [settings.params.slope as f32; 3],
@@ -230,9 +240,9 @@ pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> Pr
         r0: c::ISO_R_MAX,
         r_min: c::ISO_R_MIN,
         r_max: c::ISO_R_MAX,
-        flash: 0.0,
-        flash_v: 0.0,
-        flash_gamma: 1.0,
+        flash: settings.preflash.max(0.0),
+        flash_v,
+        flash_gamma,
         flash_map: None,
         diffusion: None,
         lut: None,

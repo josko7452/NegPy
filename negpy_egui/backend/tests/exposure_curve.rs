@@ -185,3 +185,29 @@ fn the_frontier_profile_scales_the_slope() {
             < 1e-6
     );
 }
+
+#[test]
+fn a_full_flash_is_positive_and_monotone() {
+    use negpy_backend::features::exposure::curve::{preflash_params, preflash_value};
+    for d_min in [0.0, 0.06] {
+        let (v_th, gamma) = preflash_params(115.0, d_min, None, None);
+        let bare = -5.0;
+        let off = preflash_value(bare, v_th, 0.0, gamma);
+        let full = preflash_value(bare, v_th, 1.0, gamma);
+        assert!(full > off);
+        let near = preflash_value(v_th, v_th, 0.0, gamma);
+        let flashed = preflash_value(v_th, v_th, 1.0, gamma);
+        assert!((flashed - near) > 0.0);
+    }
+}
+
+#[test]
+fn the_flash_is_a_paper_exposure_not_a_scan_range() {
+    use negpy_backend::features::exposure::curve::{preflash_params, preflash_value};
+    let (v_th, gamma) = preflash_params(115.0, 0.0, None, None);
+    for v in [-1.0, 0.0, 0.5, 1.0] {
+        let a = preflash_value(v, v_th, 0.5, gamma);
+        let b = preflash_value(v, v_th, 0.5, gamma);
+        assert_eq!(a, b);
+    }
+}

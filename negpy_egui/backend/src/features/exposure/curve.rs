@@ -1,10 +1,10 @@
 //! Scalar exposure math of `negpy/features/exposure/logic.py`: grade conversion, auto-grade
 //! range, pivot placement and the shadow/highlight holds.
 
-use negpy_core::mathf::{log10_f64, tanh_f64};
+use negpy_core::mathf::{exp10_f64, log10_f64, tanh_f64};
 
 use crate::features::exposure::constants as c;
-use crate::features::exposure::papers::{PaperProfile, effective_constants};
+use crate::features::exposure::papers::{PaperProfile, effective_constants, slope_gain};
 
 /// Fallback density range when none is measured: a normal negative's, scaled by K.
 #[must_use]
@@ -150,6 +150,32 @@ pub fn anchor_linear_value(
     } else {
         reference_linear_value(d_min, paper, None)
     }
+}
+
+/// `(v_th, gamma)` for [`preflash_value`]. `v_th` prints the paper's threshold density,
+/// `gamma` is the paper's density per log10 exposure at `grade`.
+#[must_use]
+pub fn preflash_params(
+    grade: f64,
+    d_min: f64,
+    paper: Option<&PaperProfile>,
+    midtone_gamma: Option<f64>,
+) -> (f64, f64) {
+    let v_th = straight_line_target(
+        d_min,
+        paper,
+        Some(d_min + c::PREFLASH_THRESHOLD_DENSITY),
+        midtone_gamma,
+    );
+    let er = grade.clamp(c::ISO_R_MIN, c::ISO_R_MAX) / 100.0;
+    (v_th, c::GRADE_CONTRAST_SCALE / er * slope_gain(paper))
+}
+
+/// Straight-line value after a uniform flash of `flash` times the threshold exposure.
+/// Exposures add, so the flash lifts tones near threshold and barely moves tones far above it.
+#[must_use]
+pub fn preflash_value(v: f64, v_th: f64, flash: f64, gamma: f64) -> f64 {
+    v_th + gamma * log10_f64(exp10_f64((v - v_th) / gamma) + flash)
 }
 
 /// Pivot so the reference tone prints at its target, plus the density slider offset.

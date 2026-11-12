@@ -1,33 +1,28 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 03:00 | **Last Commit:** `010d0e30 backend: port exposure curve and holds`
+**Last Updated:** 2026-11-13 03:20 | **Last Commit:** `4ff81167 backend: port exposure curve and holds`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 are complete. D7 process-mode detection has
-landed; exposure kernels are in progress.
+Phases A–C, D1–D5 and D6 are complete. D7 process-mode detection and the
+exposure kernels have landed; processor wiring is next.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
 - D6: constants, source kind, metadata, TIFF/JPEG and source encoding.
-- D6: camera RAW decodes through `rawler` behind `RawDecoder`.
-- D6: JPEG XL decodes 8-bit floats and keeps 16-bit samples.
-- D6: Pakon decodes planar or interleaved samples into RGB16.
-- D6: Noritsu decodes chunky BGR16 into RGB16.
-- D6: Coolscan subifds and uncompressed FFF pages decode.
-- D6: LogLuv tables, RLE strips and RGB conversion are in `logluv.rs`.
-- D6: Flextight LogLuv strips decode and normalize to RGB.
-- D6: Source selection tells Coolscan NEF and Flextight FFF apart.
-- D6: `factory::load` dispatches every format through one call.
+- D6: camera RAW, JPEG XL, Pakon, Noritsu, Coolscan and Flextight decode.
+- D6: source selection and one `factory::load` dispatch.
 - D7: process-mode detection ports the Python crop, stats and thresholds.
-- D7: B&W collapse, filter weights and printed-exposure filtering are ported.
-- D7: log-density bounds, ROI metering and luma/color mixing are ported.
-- D7: paper registry, tonal overrides and density matrices are ported.
-- D7: grade, pivot, shadow/highlight holds and the print wrapper are ported.
+- D7: B&W collapse, filter weights and printed-exposure filtering.
+- D7: log-density bounds, ROI metering and luma/color mixing.
+- D7: paper registry, tonal overrides and density matrices.
+- D7: grade, pivot, shadow/highlight holds and the print wrapper.
+- D7: preflash parameters and value math.
 
 ## Next Steps (Ordered)
 1. [ ] D7: port the processor orchestration over the kernels
 2. [ ] D7: add NPZ print-LUT loading
+3. [ ] D7: wire exposure stages into `DarkroomEngine`
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
@@ -43,17 +38,12 @@ landed; exposure kernels are in progress.
 - D2: composite tokens use canonical JSON, stable here but not Python-interchangeable.
 - D2: flat `to_dict` emits JSON in section order; Python uses `json.dumps` defaults.
 - D5: roll records stay flat JSON; only modeled sections take resolved defaults.
-- D6: `tiff_walker::read_ifds` marks SubIFDs; keep top-level and SubIFD rules
-  separate for NEF and FFF.
 - D6: TIFF keeps uint16 samples when already linear; untagged 8-bit is sRGB.
 - D6: HE NEF check reads Compression 34713, StripOffset and an `INTOPIX` head.
-- D6: `RawlerDecoder` keeps sensor RGB; apply as-shot WB only when valid and
-  carry `rgb_xyz_matrix` to the transparency transfer.
-- D6: JXL fixtures were written with `imagecodecs`; the loader keeps 8-bit
-  samples and stores 16-bit as `source_u16`.
-- D6: `fff_loader::load` returns None for SGI LogLuv until the RLE and
-  tables are ported; `negpy_core::loaders` already holds the primitives.
+- D6: `RawlerDecoder` keeps sensor RGB; as-shot WB only when valid.
+- D6: JXL fixtures were written with `imagecodecs`; 16-bit stays `source_u16`.
+- D6: `fff_loader::load` returns None for SGI LogLuv until RLE/tables land.
 - Clippy `-D warnings` fails on existing storage/rolls code, so use
   `cargo check --workspace` plus focused tests as the gate.
-- D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;
+- Full `cargo test --workspace` is slow because it links every test binary;
   the last full run passed.
