@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:50 | **Last Commit:** `fd021063 backend: decode JPEG XL images`
+**Last Updated:** 2026-11-12 21:05 | **Last Commit:** `af40cf28 backend: decode Pakon planar raws`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Camera RAW, JPEG XL and Pakon
-decoding are complete; next is Noritsu.
+Phases A–C, D1–D5 and D6 start are complete. Camera RAW, JPEG XL, Pakon and
+Noritsu decoding are complete; next is Coolscan NEF and Flextight FFF.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -18,12 +18,12 @@ decoding are complete; next is Noritsu.
 - `2e302bfa` D6: HE NEF reason check reads compressed SubIFD strip heads.
 - D6: camera RAW decodes through `rawler` behind `RawDecoder`.
 - D6: JPEG XL decodes 8-bit floats and keeps 16-bit samples.
-- D6: Pakon decodes planar or interleaved BGR16 into RGB16.
+- D6: Pakon decodes planar or interleaved samples into RGB16.
+- D6: Noritsu decodes chunky BGR16 into RGB16.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Noritsu decoder
-2. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
-3. [ ] D6 loaders: loader factory wiring
+1. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
+2. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
