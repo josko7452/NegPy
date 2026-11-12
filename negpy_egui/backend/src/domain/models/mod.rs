@@ -9,23 +9,31 @@
 mod string_enum;
 
 pub mod altprocess;
+pub mod export;
 pub mod exposure;
 pub mod finish;
 pub mod flatfield;
 pub mod geometry;
 pub mod lab;
 pub mod local;
+pub mod metadata;
 pub mod process;
 pub mod retouch;
 pub mod toning;
 
 pub use altprocess::{AltProcess, AltProcessConfig, Sensitizer};
+pub use export::{
+    EXPORT_COLOR_SPACES, ExportConfig, ExportFormat, ExportPreset, ExportPresetOutputMode,
+    ExportResolutionMode, JXL_TAGGABLE_SPACES, TiffCompression, export_blocked, migrate_export_fmt,
+    preset_display_name,
+};
 pub use exposure::{BwFilter, ExposureConfig, RenderIntent};
 pub use finish::FinishConfig;
 pub use flatfield::FlatFieldConfig;
 pub use geometry::{AspectRatio, AutocropMode, GeometryConfig};
 pub use lab::{LabConfig, SharpenMethod};
 pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
+pub use metadata::{MetadataConfig, normalize_description_fields};
 pub use process::{DemosaicMode, ProcessConfig, ProcessMode, SensorUnmix, SourceEncoding};
 pub use retouch::RetouchConfig;
 pub use toning::ToningConfig;

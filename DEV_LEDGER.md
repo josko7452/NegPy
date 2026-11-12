@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 20:20 | **Last Commit:** `_ backend: add image-editing config DTOs`
+**Last Updated:** 2026-11-12 20:40 | **Last Commit:** `_ backend: add export and metadata config DTOs`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -33,6 +33,8 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   conversion and the bool->float cast-removal adapter. 9 tests.
 - D2c image-editing DTOs: geometry, lab, local, retouch, altprocess, toning, finish,
   flatfield. 8 tests.
+- D2d export + metadata DTOs: `ExportConfig`/`ExportPreset` (with the `userDir` key spelling
+  and the JXL block rule), `MetadataConfig` and the format/description helpers. 7 tests.
 
 ## Next Steps (Ordered)
 1. [ ] D2 `domain.models` (WorkspaceConfig serde DTOs) + `domain.tokens`
