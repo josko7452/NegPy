@@ -7,3 +7,4 @@ pub mod metering;
 pub mod normalization;
 pub mod papers;
 pub mod print;
+pub mod processor;
