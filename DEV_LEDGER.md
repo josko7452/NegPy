@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 02:00 | **Last Commit:** `pending local`
+**Last Updated:** 2026-11-13 02:30 | **Last Commit:** `pending retouch detection`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -30,12 +30,11 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 - D8: geometry transforms, crop resolution and coordinate mapping.
 - D8: film detection, removal of opaque borders, auto-crop and ratio snapping.
 - D8: local mask rasterisation, overlap, limited planes and geometry mapping.
+- D8: dust statistics, luma detection, IR ratio/gain and scratch tracing.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port local masks
-2. [ ] D8: port retouch detection and IR
-3. [ ] D8: port retouch repair and clone
-4. [ ] D8: wire the D8 stage order and verify
+1. [ ] D8: port retouch repair and clone
+2. [ ] D8: wire the D8 stage order and verify
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
