@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 17:50 | **Last Commit:** `e5cc5f50 backend: add scanner source kind defaults`
+**Last Updated:** 2026-11-12 17:58 | **Last Commit:** `b056c5e7 backend: add JPEG XL container boxes`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
@@ -23,7 +23,8 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 ## Next Steps (Ordered)
 1. [ ] D6 loaders: source encoding
 2. [ ] D6 loaders: Coolscan NEF and Flextight FFF detection
-3. [ ] D6 loaders: the first concrete decoder
+3. [ ] D6 loaders: TIFF and JPEG decoders
+4. [ ] D6 loaders: RawDecoder trait and camera RAW
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -69,3 +70,5 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   default is in. Coolscan NEF and Flextight FFF need one shared TIFF walker.
 - D6: JPEG XL boxes use `brotli-decompressor`, already available from the cached
   jxl dependency tree; EXIF/XMP fall back to nothing on a malformed container.
+- D6: helpers read bundled ICC descriptions and TIFF/JPEG/JXL EXIF orientation;
+  the LibRaw flip fallback for camera RAW waits on the RAW decoder.
