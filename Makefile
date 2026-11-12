@@ -49,10 +49,8 @@ rust-egui:
 	@cd negpy_egui && cargo fmt --check
 	@cd negpy_egui && cargo clippy --workspace --all-targets -- -D warnings
 	@cd negpy_egui && cargo test --workspace
-	@echo "Checking that negpy-backend stays headless..."
-	@cd negpy_egui && if cargo tree -p negpy-backend --prefix none | grep -qE '^(pyo3|numpy|eframe|egui)'; then \
-		echo "negpy-backend pulls in a GUI or Python crate" >&2; exit 1; \
-	fi
+	@echo "Checking the backend and GUI dependency graphs..."
+	@negpy_egui/scripts/check-dependency-graph.sh
 
 .PHONY: translations translations-check
 translations:

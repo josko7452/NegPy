@@ -1,11 +1,12 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 00:12 | **Last Commit:** `3ebbc49c backend: persist composite membership`
+**Last Updated:** 2026-11-13 00:25 | **Last Commit:** `ed1167a2 backend: test batch sidecar promotion`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **D1–D5 storage slices are complete.** Next is D5 roll/composite integration.
+  D1–D4 storage slices are complete, plus roll forks and composites.
+  Next is the rest of D5: roll defaults, membership and repository helpers.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -14,13 +15,14 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D5: atomic sidecars, bounds migration, presets and guarded promotion.
 - D4: SQLite schema, settings/edits/history/marks/work prints, embeddings,
   local asset store, stats and reset.
+- D5: roll fork identities, composite persistence and batch sidecar promotion.
+- D4: shared dependency-graph gate for the backend and GUI crates.
 
 ## Next Steps (Ordered)
-1. [ ] D4 CI dependency-graph parity closeout
-2. [ ] D5 repository helpers for batch reads and path rehoming
-3. [ ] D5 roll-wide defaults and card locks
-4. [ ] D5 sidecar promotion batch parity test
-5. [ ] D4 CI dependency-graph parity closeout
+1. [ ] D5 repository helpers for batch reads and path rehoming
+2. [ ] D5 roll-wide defaults and card locks
+3. [ ] D5 roll membership and folder recognition
+4. [ ] D5 scene grouping and baseline resolution
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
