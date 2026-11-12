@@ -179,3 +179,52 @@ fn work_prints_can_be_renamed_and_deleted() {
     repo.delete_work_print("h", "final").unwrap();
     assert!(repo.work_prints("h").unwrap().is_empty());
 }
+
+#[test]
+fn database_stats_count_rows_and_presets() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    repo.save_file_settings("h", &WorkspaceConfig::default(), "")
+        .unwrap();
+    repo.save_history_step("h", 0, &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_work_print("h", "print", &WorkspaceConfig::default())
+        .unwrap();
+    repo.save_file_mark("h", Some("keeper"), "").unwrap();
+    let mut values = serde_json::Map::new();
+    values.insert("export_presets".into(), json!([{"name": "JPEG"}]));
+    repo.save_global_settings(&values).unwrap();
+
+    let stats = repo.database_stats().unwrap();
+    assert_eq!(stats.file_settings, 1);
+    assert_eq!(stats.edit_history, 1);
+    assert_eq!(stats.work_prints, 1);
+    assert_eq!(stats.file_marks, 1);
+    assert_eq!(stats.export_presets, 1);
+    assert_eq!(stats.app_preferences, 0);
+    assert!(stats.edits_db_bytes > 0);
+}
+
+#[test]
+fn reset_keeps_the_schema_and_empties_both_databases() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    repo.save_file_settings("h", &WorkspaceConfig::default(), "")
+        .unwrap();
+    let mut values = serde_json::Map::new();
+    values.insert("rolls".into(), json!({"r1": {}}));
+    repo.save_global_settings(&values).unwrap();
+    repo.clear_saved_edits().unwrap();
+    assert!(repo.load_file_settings("h").unwrap().is_none());
+    assert_eq!(
+        repo.global_setting("rolls").unwrap(),
+        Some(json!({"r1": {}}))
+    );
+
+    repo.save_file_settings("h", &WorkspaceConfig::default(), "")
+        .unwrap();
+    repo.reset_everything().unwrap();
+    assert!(repo.load_file_settings("h").unwrap().is_none());
+    assert_eq!(repo.global_setting("rolls").unwrap(), None);
+    repo.save_global_settings(&values).unwrap();
+}

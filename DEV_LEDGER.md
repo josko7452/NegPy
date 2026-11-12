@@ -1,46 +1,25 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:30 | **Last Commit:** `_ backend: add local asset store`
+**Last Updated:** 2026-11-12 23:41 | **Last Commit:** `483f962e backend: add database statistics`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  **Phase D1 is complete. D2 is complete.** D3 is in progress: app config,
-  TOML cache, sidecars, presets and sidecar promotion landed; repository
-  rows and the asset store follow.
+  **D1–D5 storage slices are complete.** Next is D5 roll/composite integration.
 
 ## Completed (Recent)
-- A1–A5 Phase A scaffolding; B1–B3 `negpy_core` verify-only audit; C1–C4 the frozen
-  event/command contract, `std::sync::mpsc` channels and the render thread.
-- D1a–d `kernel/system/{paths,user_directory,i18n,text,logging,override_config}.rs`
-  and `domain/types.rs` (`AppConfig`). 58 tests.
-- D2 `domain/`: `migrations.rs` (key renames, value rewrites, dropped keys);
-  `models/{string_enum,process,exposure,geometry,lab,local,retouch,altprocess,toning,
-  finish,flatfield,export,metadata,hdr,rgbscan,stitch,workspace}.rs` and `tokens.rs`.
-  `WorkspaceConfig` flattens to one key namespace via `to_dict`/`from_flat_dict`.
-  46 tests, incl. a 0.63.0 sidecar fixture round-trip. 134 tests total, green.
-- D3 `kernel/system/config.rs`: `app_config()` and `default_workspace_config()`;
-  path, limit and shipped-default assertions.
-- D3 `services/assets/toml_cache.rs`: stat-keyed TOML cache; invalid files
-  cache as `None` until the stat changes.
-- D5 `services/assets/sidecar.rs`: atomic `.negpy` write, bounds-version
-  migration and round-trip; `ProcessConfig::is_local_initialized`.
-- D5 `services/assets/presets.rs`: filename sanitization, atomic JSON writes,
-  case-folded existence and reserved notes.
-- D5 `services/assets/sidecar.rs`: database-first load, guarded path fallback,
-  sidecar promotion and batch promotion.
-- D4 `infrastructure/storage/repository.rs`: WAL schema, file-settings rows,
-  path lookup, rehome and global settings.
-- D4 repository marks, edit deletion and ordered history/work-print rows.
-- D4 repository work-print rename/delete and model-versioned embeddings.
-- D4 `local_asset_store.rs`: content identity, JPEG thumbnails, comments,
-  size-miss handling and cache management.
+- A–C: workspace, core audit, event contract and render worker.
+- D1–D2: kernel/system leaves, `AppConfig`, all config DTOs, migrations.
+- D3: shipped config, shipped edit and the stat-keyed TOML cache.
+- D5: atomic sidecars, bounds migration, presets and guarded promotion.
+- D4: SQLite schema, settings/edits/history/marks/work prints, embeddings,
+  local asset store, stats and reset.
 
 ## Next Steps (Ordered)
-1. [ ] D4 repository stats, reset and VACUUM
-2. [ ] D4 storage parity tests and ledger closeout
-3. [ ] D5 roll/composite integration against the repository
-4. [ ] D5 roll fork helpers and tests
+1. [ ] D4 repository parity tests for stats/reset and WAL behavior
+2. [ ] D5 roll/composite integration against the repository
+3. [ ] D5 roll fork helpers and tests
+4. [ ] D5 sidecar promotion batch parity test
 5. [ ] D4 CI dependency-graph parity closeout
 
 ## Constraints / Gotchas

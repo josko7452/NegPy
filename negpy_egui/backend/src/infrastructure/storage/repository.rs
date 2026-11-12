@@ -4,6 +4,7 @@
 //! The database is the primary edit store; sidecars are promoted into it.
 
 use std::collections::HashMap;
+use std::fs;
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -531,6 +532,87 @@ impl StorageRepository {
             .optional()?;
         Ok(json.and_then(|text| serde_json::from_str(&text).ok()))
     }
+
+    /// Row counts per category and on-disk sizes for the database dialog.
+    pub fn database_stats(&self) -> Result<DatabaseStats, RepositoryError> {
+        let edits = self.connect(&self.edits_db_path)?;
+        let settings = self.connect(&self.settings_db_path)?;
+        let presets = self.global_setting("export_presets")?;
+        let export_presets = presets
+            .as_ref()
+            .and_then(Value::as_array)
+            .map_or(0, Vec::len);
+        let global_settings = count(&settings, "global_settings")?;
+        Ok(DatabaseStats {
+            file_settings: count(&edits, "file_settings")?,
+            edit_history: count(&edits, "edit_history")?,
+            work_prints: count(&edits, "work_prints")?,
+            file_marks: count(&edits, "file_marks")?,
+            export_presets,
+            app_preferences: global_settings.saturating_sub(usize::from(presets.is_some())),
+            edits_db_bytes: db_size_bytes(&self.edits_db_path),
+            settings_db_bytes: db_size_bytes(&self.settings_db_path),
+        })
+    }
+
+    /// Drop saved looks and their records, preserving rig and app preferences.
+    pub fn clear_saved_edits(&self) -> Result<(), RepositoryError> {
+        wipe(
+            &self.edits_db_path,
+            &["file_settings", "edit_history", "work_prints", "file_marks"],
+        )?;
+        Ok(())
+    }
+
+    /// Drop every row in both databases, preserving the schema.
+    pub fn reset_everything(&mut self) -> Result<(), RepositoryError> {
+        wipe(
+            &self.edits_db_path,
+            &["file_settings", "edit_history", "work_prints", "file_marks"],
+        )?;
+        wipe(&self.settings_db_path, &["global_settings"])?;
+        self.global_json.clear();
+        Ok(())
+    }
+}
+
+/// The database dialog's row counts and on-disk sizes.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct DatabaseStats {
+    pub file_settings: usize,
+    pub edit_history: usize,
+    pub work_prints: usize,
+    pub file_marks: usize,
+    pub export_presets: usize,
+    pub app_preferences: usize,
+    pub edits_db_bytes: u64,
+    pub settings_db_bytes: u64,
+}
+
+fn count(connection: &Connection, table: &str) -> rusqlite::Result<usize> {
+    let count: i64 = connection.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+        row.get(0)
+    })?;
+    Ok(usize::try_from(count).unwrap_or(0))
+}
+
+fn db_size_bytes(path: &str) -> u64 {
+    ["", "-wal", "-shm"]
+        .iter()
+        .filter_map(|suffix| fs::metadata(format!("{path}{suffix}")).ok())
+        .map(|metadata| metadata.len())
+        .sum()
+}
+
+fn wipe(path: &str, tables: &[&str]) -> Result<(), RepositoryError> {
+    let connection = Connection::open(path)?;
+    for table in tables {
+        connection.execute(&format!("DELETE FROM {table}"), [])?;
+    }
+    drop(connection);
+    let connection = Connection::open(path)?;
+    connection.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")?;
+    Ok(())
 }
 
 #[derive(Debug)]
