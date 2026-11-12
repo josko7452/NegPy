@@ -1,11 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 23:55 | **Last Commit:** `7207a476 backend: decode Flextight LogLuv strips`
+**Last Updated:** 2026-11-13 00:20 | **Last Commit:** `1f023e3b backend: detect scanner raw loader families`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 loaders are complete except factory dispatch.
-Next is a single loader entry point over the format loaders.
+Phases A–C, D1–D5 and D6 loaders are complete. Next is D7, starting
+with the process feature kernels.
 
 ## Completed (Recent)
 - A–C and D1–D5 complete: workspace, event contract, storage and assets.
@@ -18,10 +18,11 @@ Next is a single loader entry point over the format loaders.
 - D6: LogLuv tables, RLE strips and RGB conversion are in `logluv.rs`.
 - D6: Flextight LogLuv strips decode and normalize to RGB.
 - D6: Source selection tells Coolscan NEF and Flextight FFF apart.
+- D6: `factory::load` dispatches every format through one call.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: factory dispatch
-2. [ ] D7: process feature kernels
+1. [ ] D7: process feature kernels
+2. [ ] D7: exposure feature kernels
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.

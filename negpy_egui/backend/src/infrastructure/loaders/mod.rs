@@ -1,6 +1,7 @@
 //! Mirrors `negpy/infrastructure/loaders/`: source formats and file decoding.
 
 pub mod constants;
+pub mod factory;
 pub mod fff_loader;
 pub mod helpers;
 pub mod image_buffer;
