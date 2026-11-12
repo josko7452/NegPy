@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 01:10 | **Last Commit:** `pending geometry transform`
+**Last Updated:** 2026-11-13 01:35 | **Last Commit:** `pending geometry detection`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -28,10 +28,10 @@ geometry, lab, local, retouch, toning and finish kernels over ten commits.
 - D8: chemical toning, lith overrides and split tinting.
 - D8: finish vignette, carrier tables and carrier composition.
 - D8: geometry transforms, crop resolution and coordinate mapping.
+- D8: film detection, removal of opaque borders, auto-crop and ratio snapping.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port geometry detection
-3. [ ] D8: port local masks
+1. [ ] D8: port local masks
 4. [ ] D8: port retouch detection and IR
 5. [ ] D8: port retouch repair and clone
 6. [ ] D8: wire the D8 stage order and verify

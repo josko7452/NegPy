@@ -14,6 +14,37 @@ const GEOMETRY_EXIF: [u8; 16] = [1, 4, 2, 3, 8, 5, 7, 6, 3, 2, 4, 1, 6, 7, 5, 8]
 /// A half-open pixel window, `(y1, y2, x1, x2)`.
 pub type Roi = (i64, i64, i64, i64);
 
+/// `_resolve_ratio_dims`: the orientation-corrected target width and height.
+#[must_use]
+pub fn ratio_dims(cw: usize, ch: usize, ratio: crate::domain::models::AspectRatio) -> (f64, f64) {
+    let target_aspect = ratio_aspect(ratio).unwrap_or(1.5);
+    let target_aspect = if ch > cw {
+        if target_aspect > 1.0 {
+            1.0 / target_aspect
+        } else {
+            target_aspect
+        }
+    } else if target_aspect < 1.0 {
+        1.0 / target_aspect
+    } else {
+        target_aspect
+    };
+    let current = cw as f64 / ch as f64;
+    if current > target_aspect {
+        (ch as f64 * target_aspect, ch as f64)
+    } else {
+        (cw as f64, cw as f64 / target_aspect)
+    }
+}
+
+/// The canonical width-over-height ratio without orientation correction.
+#[must_use]
+pub fn ratio_aspect(ratio: crate::domain::models::AspectRatio) -> Option<f64> {
+    let text = ratio.as_str();
+    let (w, h) = text.split_once(':')?;
+    Some(w.parse::<f64>().ok()? / h.parse::<f64>().ok()?.max(1e-9))
+}
+
 /// `apply_geometry_orientation`: rot90, then the two mirrors, as one copy.
 #[must_use]
 pub fn apply_geometry_orientation(
