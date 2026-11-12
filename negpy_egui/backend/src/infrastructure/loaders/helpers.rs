@@ -176,3 +176,101 @@ pub fn read_orientation(path: &Path) -> u8 {
         .and_then(|exif| tiff_orientation(&exif))
         .unwrap_or(1)
 }
+
+/// A camera CFA layout, as the demosaic policy needs it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CfaLayout {
+    Bayer,
+    XTrans,
+    None,
+}
+
+/// The user's demosaic mode where it is meaningful.
+///
+/// A 6x6 X-Trans CFA routes to Markesteijn; a 2x2 Bayer CFA uses the chosen algorithm.
+/// A source with no CFA arrives de-mosaiced and reads Linear.
+#[must_use]
+pub fn resolve_demosaic(
+    mode: crate::domain::models::DemosaicMode,
+    cfa: CfaLayout,
+) -> (crate::domain::models::DemosaicMode, Option<&'static str>) {
+    use crate::domain::models::DemosaicMode;
+    match cfa {
+        CfaLayout::None => (DemosaicMode::Linear, None),
+        CfaLayout::XTrans => {
+            let chosen = if mode == DemosaicMode::Auto {
+                DemosaicMode::Ahd
+            } else {
+                mode
+            };
+            let label = if matches!(
+                chosen,
+                DemosaicMode::Ppg | DemosaicMode::Vng | DemosaicMode::Linear
+            ) {
+                "Markesteijn 1-pass"
+            } else {
+                "Markesteijn 3-pass"
+            };
+            (chosen, Some(label))
+        }
+        CfaLayout::Bayer => {
+            let chosen = if mode == DemosaicMode::Auto {
+                DemosaicMode::Ahd
+            } else {
+                mode
+            };
+            (chosen, None)
+        }
+    }
+}
+
+/// The user's mode where it is meaningful, else AHD for a mosaiced sensor.
+#[must_use]
+pub fn get_best_demosaic_algorithm(
+    mode: crate::domain::models::DemosaicMode,
+    cfa: CfaLayout,
+) -> crate::domain::models::DemosaicMode {
+    resolve_demosaic(mode, cfa).0
+}
+
+/// True for a Fuji X-Trans sensor.
+#[must_use]
+pub fn is_xtrans(cfa: CfaLayout) -> bool {
+    cfa == CfaLayout::XTrans
+}
+
+/// The decoder's XYZ-to-camera matrix, when it is a finite 3x3 transform.
+#[must_use]
+pub fn camera_xyz_matrix(matrix: Option<[[f64; 3]; 3]>) -> Option<[[f64; 3]; 3]> {
+    let matrix = matrix?;
+    if !matrix.iter().flatten().all(|value| value.is_finite()) {
+        return None;
+    }
+    let largest = matrix
+        .iter()
+        .flatten()
+        .fold(0.0_f64, |largest, value| largest.max(value.abs()));
+    (largest >= 1e-12).then_some(matrix)
+}
+
+/// The as-shot white balance as [R, G, B] multipliers, or None if absent.
+#[must_use]
+pub fn camera_wb_multipliers(white_balance: Option<[f64; 3]>) -> Option<[f64; 3]> {
+    let white_balance = white_balance?;
+    (white_balance.iter().all(|value| value.is_finite())
+        && white_balance.iter().all(|value| *value > 0.0))
+    .then_some(white_balance)
+}
+
+/// Raw formats for a file dialog, upper- and lowercase per extension.
+#[must_use]
+pub fn supported_raw_wildcards() -> String {
+    crate::infrastructure::loaders::constants::SUPPORTED_RAW_EXTENSIONS
+        .iter()
+        .flat_map(|extension| {
+            let base = extension.trim_start_matches('.');
+            [format!("*.{base}"), format!("*.{}", base.to_uppercase())]
+        })
+        .collect::<Vec<String>>()
+        .join(" ")
+}

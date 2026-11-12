@@ -5,6 +5,7 @@ pub mod factory;
 pub mod fff_loader;
 pub mod helpers;
 pub mod image_buffer;
+pub mod ir_planes;
 pub mod jpeg_loader;
 pub mod jxl_boxes;
 pub mod jxl_loader;
