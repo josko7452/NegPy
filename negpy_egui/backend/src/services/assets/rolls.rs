@@ -786,6 +786,431 @@ pub fn outside_folder(repo: &StorageRepository, roll_id: &str, paths: &[String])
         .collect()
 }
 
+/// The roll's scenes as `(scene_id, entry)` pairs, in creation order.
+#[must_use]
+pub fn roll_scenes(repo: &StorageRepository, roll_id: Option<&str>) -> Vec<(String, Value)> {
+    let Some(roll_id) = roll_id else {
+        return Vec::new();
+    };
+    roll_for_id(repo, roll_id)
+        .and_then(|entry| entry.get("scenes").and_then(Value::as_object).cloned())
+        .map(|scenes| scenes.into_iter().collect())
+        .unwrap_or_default()
+}
+
+fn edit_scenes<T>(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    edit: impl FnOnce(&mut Map<String, Value>) -> T,
+) -> Option<T> {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return None;
+    };
+    let mut scenes = entry
+        .get("scenes")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let result = edit(&mut scenes);
+    entry.insert("scenes".into(), Value::Object(scenes));
+    write(repo, store);
+    Some(result)
+}
+
+fn pull_members(scenes: &mut Map<String, Value>, hashes: &[String]) {
+    let stale: Vec<String> = scenes
+        .iter()
+        .filter_map(|(scene_id, scene)| {
+            let members = scene.get("member_hashes").and_then(Value::as_array)?;
+            let kept: Vec<String> = members
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|hash| !hashes.iter().any(|gone| gone == hash))
+                .map(str::to_string)
+                .collect();
+            kept.is_empty().then(|| scene_id.clone())
+        })
+        .collect();
+    for (scene_id, scene) in scenes.iter_mut() {
+        if stale.contains(scene_id) {
+            continue;
+        }
+        if let Some(members) = scene
+            .get("member_hashes")
+            .and_then(Value::as_array)
+            .cloned()
+        {
+            let kept: Vec<String> = members
+                .iter()
+                .filter_map(Value::as_str)
+                .filter(|hash| !hashes.iter().any(|gone| gone == hash))
+                .map(str::to_string)
+                .collect();
+            if let Some(object) = scene.as_object_mut() {
+                object.insert("member_hashes".into(), json!(kept));
+            }
+        }
+    }
+    for scene_id in stale {
+        scenes.remove(&scene_id);
+    }
+}
+
+/// Group `member_hashes` as a new scene, taking them out of any scene they were in.
+pub fn create_scene(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    name: &str,
+    member_hashes: &[String],
+) -> Option<String> {
+    edit_scenes(repo, roll_id, |scenes| {
+        pull_members(scenes, member_hashes);
+        let scene_id = uuid::Uuid::new_v4().simple().to_string();
+        let members: Vec<String> = member_hashes.iter().fold(Vec::new(), |mut unique, hash| {
+            if !unique.contains(hash) {
+                unique.push(hash.clone());
+            }
+            unique
+        });
+        scenes.insert(
+            scene_id.clone(),
+            json!({"name": name, "member_hashes": members, "normalization": null}),
+        );
+        scene_id
+    })
+}
+
+/// Add hashes to a scene, removing them from every other scene.
+pub fn add_to_scene(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    scene_id: &str,
+    hashes: &[String],
+) {
+    edit_scenes(repo, roll_id, |scenes| {
+        let Some(target) = scenes.get(scene_id).cloned() else {
+            return;
+        };
+        let mut others: Map<String, Value> = scenes
+            .iter()
+            .filter(|(id, _)| id.as_str() != scene_id)
+            .map(|(id, entry)| (id.clone(), entry.clone()))
+            .collect();
+        pull_members(&mut others, hashes);
+        let mut merged: Vec<String> = target
+            .get("member_hashes")
+            .and_then(Value::as_array)
+            .map(|members| {
+                members
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        for hash in hashes {
+            if !merged.contains(hash) {
+                merged.push(hash.clone());
+            }
+        }
+        if let Some(object) = scenes.get_mut(scene_id).and_then(Value::as_object_mut) {
+            object.insert("member_hashes".into(), json!(merged));
+        }
+        let removed: Vec<String> = scenes
+            .keys()
+            .filter(|id| id.as_str() != scene_id && !others.contains_key(*id))
+            .cloned()
+            .collect();
+        for id in removed {
+            scenes.remove(&id);
+        }
+        for (id, entry) in others {
+            scenes.insert(id, entry);
+        }
+    });
+}
+
+/// Remove hashes from every scene of the roll.
+pub fn remove_from_scenes(repo: &mut StorageRepository, roll_id: &str, hashes: &[String]) {
+    edit_scenes(repo, roll_id, |scenes| pull_members(scenes, hashes));
+}
+
+/// Rename a scene.
+pub fn rename_scene(repo: &mut StorageRepository, roll_id: &str, scene_id: &str, name: &str) {
+    edit_scenes(repo, roll_id, |scenes| {
+        if let Some(object) = scenes.get_mut(scene_id).and_then(Value::as_object_mut) {
+            object.insert("name".into(), json!(name));
+        }
+    });
+}
+
+/// Delete a scene.
+pub fn delete_scene(repo: &mut StorageRepository, roll_id: &str, scene_id: &str) {
+    edit_scenes(repo, roll_id, |scenes| {
+        scenes.remove(scene_id);
+    });
+}
+
+/// `{hash: (ordinal, scene_id, name)}` for every scene member.
+#[must_use]
+pub fn scene_by_hash(
+    repo: &StorageRepository,
+    roll_id: Option<&str>,
+) -> std::collections::HashMap<String, (usize, String, String)> {
+    let mut out = std::collections::HashMap::new();
+    for (ordinal, (scene_id, scene)) in roll_scenes(repo, roll_id).into_iter().enumerate() {
+        let name = scene
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        for hash in string_list(&scene, "member_hashes") {
+            out.insert(hash, (ordinal + 1, scene_id.clone(), name.clone()));
+        }
+    }
+    out
+}
+
+/// `count` free "Scene N" names, numbered on from the roll's scenes.
+#[must_use]
+pub fn next_scene_names(
+    repo: &StorageRepository,
+    roll_id: Option<&str>,
+    count: usize,
+) -> Vec<String> {
+    let taken: Vec<String> = roll_scenes(repo, roll_id)
+        .into_iter()
+        .filter_map(|(_, scene)| {
+            scene
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let mut number = taken.len();
+    let mut names = Vec::new();
+    while names.len() < count {
+        number += 1;
+        let name = format!("Scene {number}");
+        if !taken.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
+}
+
+/// The next free scene name.
+#[must_use]
+pub fn next_scene_name(repo: &StorageRepository, roll_id: Option<&str>) -> String {
+    next_scene_names(repo, roll_id, 1)
+        .into_iter()
+        .next()
+        .unwrap_or_default()
+}
+
+fn normalization_record(
+    floors: &[f64],
+    ceils: &[f64],
+    cast: &[f64],
+    outliers: &[String],
+    axis: Option<Value>,
+    bounds_version: i64,
+    frames: Option<&[String]>,
+    inputs: Option<Map<String, Value>>,
+) -> Value {
+    let mut saved = Map::new();
+    saved.insert("floors".into(), json!(floors));
+    saved.insert("ceils".into(), json!(ceils));
+    saved.insert("cast".into(), json!(cast));
+    saved.insert("outliers".into(), json!(outliers));
+    saved.insert("axis".into(), axis.unwrap_or(Value::Null));
+    saved.insert("bounds_version".into(), json!(bounds_version));
+    if let Some(frames) = frames {
+        saved.insert("frames".into(), json!(frames));
+    }
+    if let Some(inputs) = inputs {
+        saved.insert("inputs".into(), Value::Object(inputs));
+    }
+    Value::Object(saved)
+}
+
+fn normalization_view(saved: &Value) -> Option<Value> {
+    let saved = saved.as_object()?;
+    if saved.is_empty() {
+        return None;
+    }
+    let mut view = Map::new();
+    for key in ["floors", "ceils", "cast", "axis", "outliers"] {
+        let value = saved.get(key).cloned().unwrap_or(Value::Null);
+        let value = if key == "axis" {
+            value
+        } else {
+            config_value(&value)
+        };
+        view.insert(key.into(), value);
+    }
+    if let Some(frames) = saved.get("frames") {
+        view.insert("frames".into(), config_value(frames));
+    } else {
+        view.insert("frames".into(), Value::Null);
+    }
+    if let Some(inputs) = saved.get("inputs") {
+        view.insert("inputs".into(), inputs.clone());
+    } else {
+        view.insert("inputs".into(), Value::Null);
+    }
+    Some(Value::Object(view))
+}
+
+/// The roll's saved Roll Analysis baseline, or `None` before it is measured.
+#[must_use]
+pub fn roll_normalization(repo: &StorageRepository, roll_id: &str) -> Option<Value> {
+    roll_for_id(repo, roll_id)
+        .and_then(|entry| entry.get("normalization").cloned())
+        .and_then(|saved| normalization_view(&saved))
+}
+
+/// Record the roll's Roll Analysis baseline. An unknown roll id is a no-op.
+pub fn set_roll_normalization(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    floors: &[f64],
+    ceils: &[f64],
+    cast: &[f64],
+    outliers: &[String],
+    axis: Option<Value>,
+    bounds_version: i64,
+    frames: Option<&[String]>,
+    inputs: Option<Map<String, Value>>,
+) {
+    let mut store = read(repo);
+    let Some(Value::Object(entry)) = store.get_mut(roll_id) else {
+        return;
+    };
+    entry.insert(
+        "normalization".into(),
+        normalization_record(
+            floors,
+            ceils,
+            cast,
+            outliers,
+            axis,
+            bounds_version,
+            frames,
+            inputs,
+        ),
+    );
+    write(repo, store);
+}
+
+/// The scene's saved Scene Analysis baseline, or `None` before it is measured.
+#[must_use]
+pub fn scene_normalization(
+    repo: &StorageRepository,
+    roll_id: &str,
+    scene_id: &str,
+) -> Option<Value> {
+    roll_scenes(repo, Some(roll_id))
+        .into_iter()
+        .find(|(id, _)| id == scene_id)
+        .and_then(|(_, scene)| scene.get("normalization").cloned())
+        .and_then(|saved| normalization_view(&saved))
+}
+
+/// Record a scene's Scene Analysis baseline.
+pub fn set_scene_normalization(
+    repo: &mut StorageRepository,
+    roll_id: &str,
+    scene_id: &str,
+    floors: &[f64],
+    ceils: &[f64],
+    outliers: &[String],
+    axis: Option<Value>,
+    bounds_version: i64,
+    frames: Option<&[String]>,
+    inputs: Option<Map<String, Value>>,
+) {
+    edit_scenes(repo, roll_id, |scenes| {
+        if let Some(object) = scenes.get_mut(scene_id).and_then(Value::as_object_mut) {
+            object.insert(
+                "normalization".into(),
+                normalization_record(
+                    floors,
+                    ceils,
+                    &[0.0, 0.0, 0.0],
+                    outliers,
+                    axis,
+                    bounds_version,
+                    frames,
+                    inputs,
+                ),
+            );
+        }
+    });
+}
+
+/// Whether a saved baseline was measured under an older bounds version.
+#[must_use]
+pub fn baseline_stale(saved: Option<&Value>) -> bool {
+    saved.is_some_and(|saved| {
+        saved
+            .get("bounds_version")
+            .and_then(Value::as_i64)
+            .unwrap_or(0)
+            < crate::domain::models::workspace::BOUNDS_VERSION
+    })
+}
+
+/// Whether the roll or scene baseline a frame rides is stale.
+#[must_use]
+pub fn frame_baseline_stale(repo: &StorageRepository, process: &ProcessConfig) -> bool {
+    let (kind, reference) = process.baseline_source.split_once(':').unwrap_or(("", ""));
+    match kind {
+        "roll" => roll_for_id(repo, reference)
+            .and_then(|entry| entry.get("normalization").cloned())
+            .is_some_and(|saved| baseline_stale(Some(&saved))),
+        "scene" => read(repo).into_values().any(|entry| {
+            entry
+                .get("scenes")
+                .and_then(Value::as_object)
+                .and_then(|scenes| scenes.get(reference))
+                .and_then(|scene| scene.get("normalization"))
+                .is_some_and(|saved| baseline_stale(Some(saved)))
+        }),
+        _ => false,
+    }
+}
+
+/// Whether the roll or scene baseline measured this frame as an outlier.
+#[must_use]
+pub fn frame_is_outlier(
+    repo: &StorageRepository,
+    process: &ProcessConfig,
+    file_hash: &str,
+) -> bool {
+    let (kind, reference) = process.baseline_source.split_once(':').unwrap_or(("", ""));
+    let saved = match kind {
+        "roll" => {
+            roll_for_id(repo, reference).and_then(|entry| entry.get("normalization").cloned())
+        }
+        "scene" => read(repo).into_values().find_map(|entry| {
+            entry
+                .get("scenes")
+                .and_then(Value::as_object)
+                .and_then(|scenes| scenes.get(reference))
+                .and_then(|scene| scene.get("normalization").cloned())
+        }),
+        _ => None,
+    };
+    saved.is_some_and(|saved| {
+        let outliers = string_list(&saved, "outliers");
+        outliers
+            .iter()
+            .any(|hash| hash == file_hash || hash == &unforked_hash(file_hash))
+    })
+}
+
 fn now_seconds() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1707,4 +2132,128 @@ pub fn unfork_edit(
     }
     repo.delete_file_settings(&roll_edit_hash(from_hash, roll_id))?;
     Ok(())
+}
+
+/// The baseline a frame's Use Average reads: its scene's, else its roll's.
+#[must_use]
+pub fn frame_saved_baseline(
+    repo: &StorageRepository,
+    roll_id: Option<&str>,
+    file_hash: &str,
+    scope: Option<&str>,
+) -> Option<(Value, String)> {
+    let roll_id = roll_id?;
+    let scene = if scope == Some("roll") {
+        None
+    } else {
+        scene_by_hash(repo, Some(roll_id))
+            .get(&unforked_hash(file_hash))
+            .cloned()
+    };
+    let (saved, source) = if let Some((_, scene_id, _)) = scene {
+        (
+            scene_normalization(repo, roll_id, &scene_id)?,
+            format!("scene:{scene_id}"),
+        )
+    } else {
+        (
+            roll_normalization(repo, roll_id)?,
+            format!("roll:{roll_id}"),
+        )
+    };
+    Some((saved, source))
+}
+
+/// A frame riding Use Average without its own baseline takes its scene's, else the roll's.
+#[must_use]
+pub fn resolve_roll_baseline(
+    repo: &StorageRepository,
+    roll_id: &str,
+    file_hash: &str,
+    config: &WorkspaceConfig,
+) -> WorkspaceConfig {
+    let process = &config.process;
+    if process.lock_bounds
+        || process.locked_floors.iter().any(|value| *value != 0.0)
+        || !(process.use_luma_average || process.use_color_average)
+    {
+        return config.clone();
+    }
+    let Some((saved, source)) = frame_saved_baseline(repo, Some(roll_id), file_hash, None) else {
+        return config.clone();
+    };
+    let mut resolved = config.clone();
+    if let Some(floors) = saved.get("floors") {
+        resolved.process.locked_floors = f64_triple(floors);
+    }
+    if let Some(ceils) = saved.get("ceils") {
+        resolved.process.locked_ceils = f64_triple(ceils);
+    }
+    resolved.process.locked_neutral_axis =
+        saved.get("axis").cloned().filter(|axis| !axis.is_null());
+    resolved.process.baseline_source = source;
+    resolved
+}
+
+fn f64_triple(value: &Value) -> [f64; 3] {
+    let mut triple = [0.0; 3];
+    if let Some(values) = value.as_array() {
+        for (slot, value) in triple.iter_mut().zip(values.iter()) {
+            *slot = value.as_f64().unwrap_or(0.0);
+        }
+    }
+    triple
+}
+
+/// `"roll"` for a frame that chose the roll average over its scene's.
+#[must_use]
+pub fn average_scope(process: &ProcessConfig) -> Option<&'static str> {
+    process
+        .baseline_source
+        .starts_with("roll:")
+        .then_some("roll")
+}
+
+/// What a frame's locked baseline was taken from, for display.
+#[must_use]
+pub fn baseline_label(repo: &StorageRepository, process: &ProcessConfig) -> String {
+    if process.baseline_source.is_empty() {
+        return process.roll_name.as_ref().map_or_else(
+            || "a saved baseline".to_string(),
+            |name| format!("Roll “{name}”"),
+        );
+    }
+    source_label(repo, &process.baseline_source)
+}
+
+/// A `baseline_source` rendered for display.
+#[must_use]
+pub fn source_label(repo: &StorageRepository, source: &str) -> String {
+    let (kind, reference) = source.split_once(':').unwrap_or(("", ""));
+    match kind {
+        "roll" => roll_for_id(repo, reference)
+            .and_then(|entry| {
+                entry
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+            })
+            .map_or_else(
+                || "a deleted roll".to_string(),
+                |name| format!("Roll “{name}”"),
+            ),
+        "scene" => read(repo)
+            .into_values()
+            .find_map(|entry| {
+                entry
+                    .get("scenes")
+                    .and_then(Value::as_object)
+                    .and_then(|scenes| scenes.get(reference))
+                    .and_then(|scene| scene.get("name").and_then(Value::as_str))
+                    .map(|name| format!("Scene “{name}”"))
+            })
+            .unwrap_or_else(|| "a deleted scene".to_string()),
+        "frame" => format!("Frame “{reference}”"),
+        _ => "a saved baseline".to_string(),
+    }
 }

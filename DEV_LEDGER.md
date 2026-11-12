@@ -1,12 +1,12 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 19:20 | **Last Commit:** `16133076 backend: add roll membership and path lookup`
+**Last Updated:** 2026-11-12 20:10 | **Last Commit:** `862ec12a backend: add folder roll discovery`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
-  D1–D4 storage slices are complete, plus roll forks and composites.
-  Next is the rest of D5: roll defaults, membership and repository helpers.
+  D1–D4 storage slices are complete, plus all D5 roll storage work.
+  Next is D6: the loaders.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -17,9 +17,11 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
   local asset store, stats and reset.
 - D5: roll fork identities, composite persistence and batch sidecar promotion.
 - D4: shared dependency-graph gate for the backend and GUI crates.
+- D5: batch edit reads, path rehoming, roll defaults, membership, discovery,
+  scenes and baseline resolution are in; D5 is complete.
 
 ## Next Steps (Ordered)
-1. [ ] D5 scene grouping and baseline resolution
+1. [ ] D6 loaders: helpers and memory first
 
 ## Constraints / Gotchas
 - 5-commit hard stop per session; update this ledger before every commit.
@@ -56,4 +58,5 @@ Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 - D5: virtual rolls, membership, exclusions, sorting and home-roll lookup are in;
   `library.rs` holds the shared image and IR-sidecar filters.
 - D5: folder recognition, nested import naming, discovery filters and pruning are in.
-  D5 remains on scene grouping and stale-baseline checks.
+- D5 complete: scenes, Roll/Scene Analysis records, stale checks and baseline
+  resolution are in.

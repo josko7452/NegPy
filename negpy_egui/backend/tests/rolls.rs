@@ -17,6 +17,8 @@ use negpy_backend::services::assets::rolls::{
 };
 use serde_json::{Map, Value, json};
 
+use negpy_backend::services::assets::rolls as roll_api;
+
 fn repository(dir: &std::path::Path) -> StorageRepository {
     let repo = StorageRepository::new(
         dir.join("edits.db").display().to_string(),
@@ -835,4 +837,311 @@ fn outside_folder_names_the_files_a_folder_roll_cannot_hold() {
     );
     let virtual_id = create_virtual_roll(&mut repo, "Picks", &[]);
     assert!(outside_folder(&repo, &virtual_id, &["/a.tif".into()]).is_empty());
+}
+
+#[test]
+fn a_scene_holds_unique_members_and_a_frame_moves_between_scenes() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    let beach = roll_api::create_scene(
+        &mut repo,
+        &roll_id,
+        "Beach",
+        &["a".into(), "b".into(), "a".into()],
+    )
+    .unwrap();
+    let night =
+        roll_api::create_scene(&mut repo, &roll_id, "Night", &["b".into(), "c".into()]).unwrap();
+
+    assert_eq!(
+        roll_api::roll_scenes(&repo, Some(&roll_id)),
+        vec![
+            (
+                beach.clone(),
+                json!({"name": "Beach", "member_hashes": ["a"], "normalization": null})
+            ),
+            (
+                night.clone(),
+                json!({"name": "Night", "member_hashes": ["b", "c"], "normalization": null})
+            ),
+        ]
+    );
+    assert_eq!(
+        roll_api::scene_by_hash(&repo, Some(&roll_id))["b"],
+        (2, night, "Night".to_string())
+    );
+}
+
+#[test]
+fn scene_edits_move_rename_and_remove_members() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    let beach = roll_api::create_scene(&mut repo, &roll_id, "Beach", &["a".into()]).unwrap();
+    let night = roll_api::create_scene(&mut repo, &roll_id, "Night", &["b".into()]).unwrap();
+
+    roll_api::add_to_scene(&mut repo, &roll_id, &beach, &["b".into()]);
+    roll_api::rename_scene(&mut repo, &roll_id, &beach, "Shore");
+    roll_api::remove_from_scenes(&mut repo, &roll_id, &["a".into()]);
+
+    let scenes = roll_api::roll_scenes(&repo, Some(&roll_id));
+    assert_eq!(scenes.len(), 1);
+    assert_eq!(scenes[0].0, beach);
+    assert_eq!(scenes[0].1["name"], json!("Shore"));
+    assert_eq!(scenes[0].1["member_hashes"], json!(["b"]));
+    assert!(scenes.iter().all(|(id, _)| id != &night));
+
+    roll_api::delete_scene(&mut repo, &roll_id, &beach);
+    assert!(roll_api::roll_scenes(&repo, Some(&roll_id)).is_empty());
+}
+
+#[test]
+fn next_scene_names_skip_names_already_taken() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    roll_api::create_scene(&mut repo, &roll_id, "Beach", &[]);
+
+    assert_eq!(
+        roll_api::next_scene_names(&repo, Some(&roll_id), 1),
+        vec!["Scene 2"]
+    );
+    assert_eq!(roll_api::next_scene_name(&repo, Some(&roll_id)), "Scene 2");
+}
+
+#[test]
+fn normalizations_round_trip_and_are_isolated_per_roll() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_a = create_virtual_roll(&mut repo, "Portra", &[]);
+    let roll_b = create_virtual_roll(&mut repo, "Tri-X", &[]);
+    roll_api::set_roll_normalization(
+        &mut repo,
+        &roll_a,
+        &[0.1, 0.1, 0.1],
+        &[0.9, 0.9, 0.9],
+        &[0.01, 0.0, -0.01],
+        &[],
+        None,
+        5,
+        Some(&["h1".into()]),
+        None,
+    );
+
+    let saved = roll_api::roll_normalization(&repo, &roll_a).unwrap();
+    assert_eq!(saved["floors"], json!([0.1, 0.1, 0.1]));
+    assert_eq!(saved["cast"], json!([0.01, 0.0, -0.01]));
+    assert_eq!(saved["frames"], json!(["h1"]));
+    assert!(roll_api::roll_normalization(&repo, &roll_b).is_none());
+    roll_api::set_roll_normalization(
+        &mut repo,
+        "not-a-roll",
+        &[0.1; 3],
+        &[0.9; 3],
+        &[],
+        &[],
+        None,
+        5,
+        None,
+        None,
+    );
+}
+
+#[test]
+fn a_scene_baseline_round_trips_and_drives_resolution() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    let scene_id = roll_api::create_scene(&mut repo, &roll_id, "Beach", &["h1".into()]).unwrap();
+    roll_api::set_roll_normalization(
+        &mut repo,
+        &roll_id,
+        &[0.1; 3],
+        &[0.9; 3],
+        &[],
+        &[],
+        None,
+        5,
+        None,
+        None,
+    );
+    roll_api::set_scene_normalization(
+        &mut repo,
+        &roll_id,
+        &scene_id,
+        &[0.2; 3],
+        &[0.8; 3],
+        &[],
+        None,
+        5,
+        None,
+        None,
+    );
+    let riding = WorkspaceConfig {
+        process: ProcessConfig {
+            use_luma_average: true,
+            ..ProcessConfig::default()
+        },
+        ..WorkspaceConfig::default()
+    };
+
+    let saved = roll_api::resolve_roll_baseline(&repo, &roll_id, "h1", &riding);
+    let roll = roll_api::resolve_roll_baseline(&repo, &roll_id, "h2", &riding);
+
+    assert_eq!(saved.process.locked_floors, [0.2; 3]);
+    assert_eq!(saved.process.baseline_source, format!("scene:{scene_id}"));
+    assert_eq!(roll.process.locked_floors, [0.1; 3]);
+    assert_eq!(roll.process.baseline_source, format!("roll:{roll_id}"));
+    assert_eq!(
+        roll_api::frame_saved_baseline(&repo, Some(&roll_id), "h1", Some("roll"))
+            .unwrap()
+            .1,
+        format!("roll:{roll_id}")
+    );
+}
+
+#[test]
+fn a_frame_with_its_own_bounds_or_off_axes_is_left_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    roll_api::set_roll_normalization(
+        &mut repo,
+        &roll_id,
+        &[0.1; 3],
+        &[0.9; 3],
+        &[],
+        &[],
+        None,
+        5,
+        None,
+        None,
+    );
+    let base = WorkspaceConfig {
+        process: ProcessConfig {
+            use_luma_average: true,
+            locked_floors: [0.3; 3],
+            ..ProcessConfig::default()
+        },
+        ..WorkspaceConfig::default()
+    };
+    let locked = WorkspaceConfig {
+        process: ProcessConfig {
+            use_luma_average: true,
+            lock_bounds: true,
+            ..ProcessConfig::default()
+        },
+        ..WorkspaceConfig::default()
+    };
+
+    assert_eq!(
+        roll_api::resolve_roll_baseline(&repo, &roll_id, "h1", &base),
+        base
+    );
+    assert_eq!(
+        roll_api::resolve_roll_baseline(&repo, &roll_id, "h1", &locked),
+        locked
+    );
+    assert_eq!(
+        roll_api::resolve_roll_baseline(&repo, &roll_id, "h1", &WorkspaceConfig::default()),
+        WorkspaceConfig::default()
+    );
+}
+
+#[test]
+fn stale_baselines_and_outliers_follow_the_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    let scene_id = roll_api::create_scene(&mut repo, &roll_id, "Beach", &["h1".into()]).unwrap();
+    roll_api::set_roll_normalization(
+        &mut repo,
+        &roll_id,
+        &[0.1; 3],
+        &[0.9; 3],
+        &[],
+        &[],
+        None,
+        negpy_backend::domain::models::workspace::BOUNDS_VERSION,
+        None,
+        None,
+    );
+    roll_api::set_scene_normalization(
+        &mut repo,
+        &roll_id,
+        &scene_id,
+        &[0.2; 3],
+        &[0.8; 3],
+        &["h1".into()],
+        None,
+        negpy_backend::domain::models::workspace::BOUNDS_VERSION,
+        None,
+        None,
+    );
+    let roll_source = ProcessConfig {
+        baseline_source: format!("roll:{roll_id}"),
+        ..ProcessConfig::default()
+    };
+    let scene_source = ProcessConfig {
+        baseline_source: format!("scene:{scene_id}"),
+        ..ProcessConfig::default()
+    };
+
+    assert!(!roll_api::frame_baseline_stale(&repo, &roll_source));
+    assert!(!roll_api::frame_baseline_stale(&repo, &scene_source));
+    assert!(roll_api::frame_is_outlier(&repo, &scene_source, "h1"));
+    assert!(roll_api::frame_is_outlier(
+        &repo,
+        &scene_source,
+        "h1#roll:x"
+    ));
+    assert!(!roll_api::frame_is_outlier(&repo, &scene_source, "h2"));
+    assert!(!roll_api::frame_is_outlier(&repo, &roll_source, "h1"));
+    assert_eq!(roll_api::average_scope(&roll_source), Some("roll"));
+    assert_eq!(roll_api::average_scope(&scene_source), None);
+}
+
+#[test]
+fn baseline_labels_name_live_legacy_and_deleted_sources() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll_id = create_virtual_roll(&mut repo, "Portra", &[]);
+    let scene_id = roll_api::create_scene(&mut repo, &roll_id, "Beach", &["h1".into()]).unwrap();
+    roll_api::rename_scene(&mut repo, &roll_id, &scene_id, "Shore");
+
+    let process = |source: &str, roll_name: Option<&str>| ProcessConfig {
+        baseline_source: source.to_string(),
+        roll_name: roll_name.map(str::to_string),
+        ..ProcessConfig::default()
+    };
+
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process(&format!("roll:{roll_id}"), None)),
+        "Roll “Portra”"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process(&format!("scene:{scene_id}"), None)),
+        "Scene “Shore”"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process("frame:f003.tif", None)),
+        "Frame “f003.tif”"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process("", Some("Tri-X"))),
+        "Roll “Tri-X”"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process("", None)),
+        "a saved baseline"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process("roll:gone", None)),
+        "a deleted roll"
+    );
+    assert_eq!(
+        roll_api::baseline_label(&repo, &process("scene:gone", None)),
+        "a deleted scene"
+    );
 }
