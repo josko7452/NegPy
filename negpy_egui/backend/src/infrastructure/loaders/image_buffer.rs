@@ -13,6 +13,21 @@ pub struct ImageBuffer {
     pub rgb_xyz_matrix: Option<[[f32; 3]; 3]>,
 }
 
+/// The metadata a loader hands to the pipeline with its pixels.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LoadedImage {
+    pub image: Option<ImageBuffer>,
+    pub orientation: u8,
+    pub color_space: Option<String>,
+    pub icc_profile: Option<Vec<u8>>,
+    /// The normalized IR plane, when the file carries one.
+    pub ir: Option<Vec<f32>>,
+    pub ir_width: usize,
+    pub ir_height: usize,
+    /// What Source Encoding did on a Positive frame.
+    pub source_encoding: Option<String>,
+}
+
 impl ImageBuffer {
     /// A float RGB buffer with `width * height * 3` samples.
     #[must_use]

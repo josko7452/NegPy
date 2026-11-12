@@ -1,10 +1,10 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 18:54 | **Last Commit:** `pending backend: detect Coolscan NEF and Flextight FFF`
+**Last Updated:** 2026-11-12 19:48 | **Last Commit:** `pending backend: add TIFF and JPEG decoders`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Next is D6 image decoders.
+Phases A–C, D1–D5 and D6 start are complete. Next is D6 RAW decoding.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -13,11 +13,12 @@ Phases A–C, D1–D5 and D6 start are complete. Next is D6 image decoders.
 - D6: constants, source kind, preview memory, JPEG XL boxes and metadata helpers.
 - D6: `ImageBuffer` and source encoding (ICC/TRC, untagged rules, gamut fit).
 - D6: shared TIFF walker; Coolscan NEF and Flextight FFF detection.
+- D6: TIFF/JPEG decoders, IR sidecars and the positive decode.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: TIFF and JPEG decoders
-2. [ ] D6 loaders: RawDecoder trait and camera RAW
-3. [ ] D6 loaders: JXL, Pakon and Noritsu decoders
+1. [ ] D6 loaders: RawDecoder trait and camera RAW
+2. [ ] D6 loaders: JXL, Pakon and Noritsu decoders
+3. [ ] D6 loaders: Coolscan NEF and Flextight FFF image decoding
 4. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas
@@ -39,5 +40,9 @@ Phases A–C, D1–D5 and D6 start are complete. Next is D6 image decoders.
   Flextight FFF need one shared TIFF walker.
 - D6: `tiff_walker::read_ifds` reads every reachable IFD; SubIFDs are marked so
   NEF and FFF rules can tell them from top-level directories.
+- D6: TIFF keeps uint16 samples when it is already linear; an untagged 8-bit
+  image decodes as sRGB and a profile supplies the positive decode.
+- Clippy `-D warnings` fails on existing storage/rolls code, so use
+  `cargo check --workspace` plus focused tests as the gate.
 - D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;
   the last full run passed.
