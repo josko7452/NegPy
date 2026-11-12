@@ -162,3 +162,63 @@ fn a_fork_or_composite_never_takes_a_path_fallback() {
     );
     assert!(repo.load_file_settings("h9").unwrap().is_some());
 }
+
+#[test]
+fn batch_promotion_fills_the_database_before_a_frame_opens() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = StorageRepository::new(
+        dir.path().join("edits.db").display().to_string(),
+        dir.path().join("settings.db").display().to_string(),
+    );
+    repo.initialize().unwrap();
+    let plain = dir.path().join("plain.NEF");
+    let edited = dir.path().join("edited.NEF");
+    let half = dir.path().join("half.NEF");
+    let composite = dir.path().join("comp.NEF");
+    let forked = dir.path().join("fork.NEF");
+    for path in [&plain, &edited, &composite, &forked] {
+        write_sidecar(path, &rich_config(), 0).unwrap();
+    }
+    write_sidecar(&half, &rich_config(), 2).unwrap();
+    let mut replacement = WorkspaceConfig::default();
+    replacement.exposure.density = 0.99;
+    repo.save_file_settings("edited", &replacement, &edited.to_string_lossy())
+        .unwrap();
+
+    negpy_backend::services::assets::sidecar::promote_sidecars(
+        &repo,
+        &[
+            ("plain".into(), plain, 0, false, false),
+            ("edited".into(), edited, 0, false, false),
+            ("half#2".into(), half, 2, false, false),
+            ("comp".into(), composite, 0, true, false),
+            ("fork#roll:r1".into(), forked, 0, false, true),
+        ],
+    )
+    .unwrap();
+
+    let plain_loaded = repo.load_file_settings("plain").unwrap().unwrap();
+    assert_eq!(plain_loaded.exposure.density, 0.42);
+    assert_eq!(plain_loaded.local.masks[0].stops, -0.7);
+    assert_eq!(
+        repo.load_file_settings("edited")
+            .unwrap()
+            .unwrap()
+            .exposure
+            .density,
+        0.99
+    );
+    assert_eq!(
+        repo.load_file_settings("half#2")
+            .unwrap()
+            .unwrap()
+            .exposure
+            .density,
+        0.42
+    );
+    assert!(
+        repo.saved_hashes(&["comp".to_string(), "fork#roll:r1".to_string()])
+            .unwrap()
+            .is_empty()
+    );
+}
