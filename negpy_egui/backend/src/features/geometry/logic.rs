@@ -441,3 +441,180 @@ pub fn crop(img: &ImageBuffer, roi: Option<Roi>) -> ImageBuffer {
     }
     ImageBuffer::from_rgb(x2 - x1, y2 - y1, pixels)
 }
+
+/// Whether the crop was drawn or adjusted by hand, so Auto must not overwrite it.
+#[must_use]
+pub fn has_manual_crop(geometry: &crate::domain::models::GeometryConfig) -> bool {
+    geometry.crop_rect.is_some() && !geometry.crop_from_auto
+}
+
+/// Everything border detection reads, as one comparable string.
+#[must_use]
+pub fn autocrop_detection_key(geometry: &crate::domain::models::GeometryConfig) -> String {
+    let mut parts = vec![
+        geometry.rotation.to_string(),
+        i64::from(geometry.flip_horizontal).to_string(),
+        i64::from(geometry.flip_vertical).to_string(),
+        format!("{:.4}", geometry.fine_rotation),
+        format!("{:.4}", geometry.converge_v),
+        format!("{:.4}", geometry.converge_h),
+        geometry.autocrop_ratio.as_str().to_string(),
+        geometry.autocrop_mode.as_str().to_string(),
+        format!("{:.4}", geometry.autocrop_rebate_trim),
+    ];
+    if geometry.distortion_k1 != 0.0 {
+        parts.push(format!("{:.4}", geometry.distortion_k1));
+    }
+    if geometry.autocrop_square {
+        parts.push("square".to_string());
+    }
+    parts.join("|")
+}
+
+/// The auto-crop key plus the source aspect.
+#[must_use]
+pub fn meter_detection_key(
+    geometry: &crate::domain::models::GeometryConfig,
+    width: usize,
+    height: usize,
+) -> String {
+    let aspect = if height == 0 {
+        0.0
+    } else {
+        width as f64 / height as f64
+    };
+    format!("{}|{aspect:.2}", autocrop_detection_key(geometry))
+}
+
+/// Translate a normalized `(x1, y1, x2, y2)` rect, clamped inside the frame.
+#[must_use]
+pub fn translate_normalized_rect(rect: [f64; 4], dx: f64, dy: f64) -> [f64; 4] {
+    let [x1, y1, x2, y2] = rect;
+    let (width, height) = (x2 - x1, y2 - y1);
+    let max_x1 = (1.0 - width).max(0.0);
+    let max_y1 = (1.0 - height).max(0.0);
+    let nx1 = (x1 + dx).clamp(0.0, max_x1);
+    let ny1 = (y1 + dy).clamp(0.0, max_y1);
+    [nx1, ny1, nx1 + width, ny1 + height]
+}
+
+/// Mirror a normalized rect across the vertical or horizontal center line.
+#[must_use]
+pub fn mirror_normalized_rect(rect: [f64; 4], horizontal: bool) -> [f64; 4] {
+    let [x1, y1, x2, y2] = rect;
+    if horizontal {
+        [1.0 - x2, y1, 1.0 - x1, y2]
+    } else {
+        [x1, 1.0 - y2, x2, 1.0 - y1]
+    }
+}
+
+/// Rotate a normalized rect by whole quarter-turns CCW.
+#[must_use]
+pub fn rotate_normalized_rect(rect: [f64; 4], quarter_turns_ccw: i64) -> [f64; 4] {
+    let mut current = rect;
+    for _ in 0..quarter_turns_ccw.rem_euclid(4) {
+        let [x1, y1, x2, y2] = current;
+        current = [y1, 1.0 - x2, y2, 1.0 - x1];
+    }
+    current
+}
+
+/// Rotate a frame's geometry and its analysis rect by quarter-turns CCW.
+#[must_use]
+pub fn rotate_geometry_and_analysis(
+    geometry: &crate::domain::models::GeometryConfig,
+    analysis_rect: Option<[f64; 4]>,
+    direction: i64,
+) -> (crate::domain::models::GeometryConfig, Option<[f64; 4]>) {
+    let mut new_geometry = geometry.clone();
+    new_geometry.rotation = (geometry.rotation + direction).rem_euclid(4);
+    if geometry.converge_v != 0.0 || geometry.converge_h != 0.0 {
+        let (mut converge_v, mut converge_h) = (geometry.converge_v, geometry.converge_h);
+        for _ in 0..direction.rem_euclid(4) {
+            (converge_v, converge_h) = (-converge_h, converge_v);
+        }
+        new_geometry.converge_v = converge_v;
+        new_geometry.converge_h = converge_h;
+    }
+    new_geometry.crop_rect = geometry
+        .crop_rect
+        .as_ref()
+        .filter(|rect| rect.len() == 4)
+        .map(|rect| {
+            rotate_normalized_rect([rect[0], rect[1], rect[2], rect[3]], direction).to_vec()
+        });
+    (
+        new_geometry,
+        analysis_rect.map(|rect| rotate_normalized_rect(rect, direction)),
+    )
+}
+
+/// Toggle a mirror so the result is an exact mirror of the current render.
+#[must_use]
+pub fn toggle_flip(
+    geometry: &crate::domain::models::GeometryConfig,
+    horizontal: bool,
+) -> crate::domain::models::GeometryConfig {
+    let mut new_geometry = geometry.clone();
+    if horizontal {
+        new_geometry.flip_horizontal = !geometry.flip_horizontal;
+        new_geometry.converge_h = -geometry.converge_h;
+    } else {
+        new_geometry.flip_vertical = !geometry.flip_vertical;
+        new_geometry.converge_v = -geometry.converge_v;
+    }
+    if geometry.fine_rotation != 0.0 {
+        new_geometry.fine_rotation = -geometry.fine_rotation;
+    }
+    new_geometry.crop_rect = geometry
+        .crop_rect
+        .as_ref()
+        .filter(|rect| rect.len() == 4)
+        .map(|rect| {
+            mirror_normalized_rect([rect[0], rect[1], rect[2], rect[3]], horizontal).to_vec()
+        });
+    new_geometry
+}
+
+/// Mirror geometry and its analysis rect.
+#[must_use]
+pub fn flip_geometry_and_analysis(
+    geometry: &crate::domain::models::GeometryConfig,
+    analysis_rect: Option<[f64; 4]>,
+    horizontal: bool,
+) -> (crate::domain::models::GeometryConfig, Option<[f64; 4]>) {
+    (
+        toggle_flip(geometry, horizontal),
+        analysis_rect.map(|rect| mirror_normalized_rect(rect, horizontal)),
+    )
+}
+
+/// Fine-rotation delta that levels a line drawn on the displayed image.
+#[must_use]
+pub fn straighten_delta_degrees(dx: f64, dy: f64) -> f64 {
+    let theta = dy.atan2(dx).to_degrees().rem_euclid(180.0);
+    if theta <= 45.0 {
+        theta
+    } else if theta < 135.0 {
+        theta - 90.0
+    } else {
+        theta - 180.0
+    }
+}
+
+/// Fine-rotation angle for a drag of the crop tool's rotation handle.
+#[must_use]
+pub fn rotation_drag_angle(
+    start_angle_deg: f64,
+    center: (f64, f64),
+    press: (f64, f64),
+    cursor: (f64, f64),
+    sensitivity: f64,
+    limit: f64,
+) -> f64 {
+    let a0 = (press.1 - center.1).atan2(press.0 - center.0);
+    let a1 = (cursor.1 - center.1).atan2(cursor.0 - center.0);
+    let delta = ((a1 - a0).sin().atan2((a1 - a0).cos())).to_degrees();
+    (start_angle_deg - delta * sensitivity).clamp(-limit, limit)
+}
