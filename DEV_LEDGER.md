@@ -1,12 +1,12 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 19:05 | **Last Commit:** `_ backend: add domain migrations`
+**Last Updated:** 2026-11-12 20:00 | **Last Commit:** `_ backend: add process and exposure config DTOs`
 
 ## Current Goal
 Port the `negpy/` Python layer to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`** (read it first each session).
 `MIGRATION_PLAN.md` is advisory. Phase B and C (event contract) are complete.
   **Phase D1 is complete. D2 is in progress**: `types` and `migrations` landed;
-  `models` (serde DTOs) and `tokens` are next.
+  `models` DTOs are landing; `tokens` follows.
 
 ## Completed (Recent)
 - A1–A5 Phase A scaffolding (workspace, crates, CI `negpy_egui` job, upstream clean).
