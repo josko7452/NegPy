@@ -8,6 +8,8 @@ use negpy_backend::infrastructure::loaders::source_kind::{
     LoaderKind, detect_noritsu_dims, is_pakon, pakon_header, select_loader,
     with_scanner_positive_default,
 };
+use tiff::encoder::TiffEncoder;
+use tiff::encoder::colortype::RGB16;
 
 fn slide() -> WorkspaceConfig {
     WorkspaceConfig {
@@ -73,4 +75,30 @@ fn a_noritsu_size_selects_the_noritsu_loader() {
     file.set_len(3711 * 5028 * 6).unwrap();
     assert_eq!(detect_noritsu_dims(&path), Some((3711, 5028)));
     assert_eq!(select_loader(&path), LoaderKind::Noritsu);
+}
+
+fn write_scanner_raw(path: &Path, extension: &str, width: u32, height: u32) {
+    let path = path.with_extension(extension);
+    let mut encoder = TiffEncoder::new(std::fs::File::create(path).unwrap()).unwrap();
+    encoder
+        .write_image::<RGB16>(width, height, &vec![0; (width * height * 3) as usize])
+        .unwrap();
+}
+
+#[test]
+fn a_scanner_raw_selects_its_own_loader() {
+    let dir = tempfile::tempdir().unwrap();
+    let fff = dir.path().join("scan");
+    write_scanner_raw(&fff, "fff", 600, 400);
+    assert_eq!(
+        select_loader(&fff.with_extension("fff")),
+        LoaderKind::FlextightFff
+    );
+
+    let camera = dir.path().join("camera.nef");
+    let mut encoder = TiffEncoder::new(std::fs::File::create(&camera).unwrap()).unwrap();
+    encoder
+        .write_image::<tiff::encoder::colortype::Gray16>(300, 200, &vec![0; 300 * 200])
+        .unwrap();
+    assert_eq!(select_loader(&camera), LoaderKind::CameraRaw);
 }

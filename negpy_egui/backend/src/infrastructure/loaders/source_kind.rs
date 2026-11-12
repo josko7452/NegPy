@@ -21,6 +21,8 @@ pub enum LoaderKind {
     Jxl,
     Pakon,
     Noritsu,
+    CoolscanNef,
+    FlextightFff,
     CameraRaw,
 }
 
@@ -173,6 +175,12 @@ pub fn select_loader(path: &Path) -> LoaderKind {
     }
     if is_noritsu(path) {
         return LoaderKind::Noritsu;
+    }
+    if crate::infrastructure::loaders::nef_loader::is_coolscan_nef(path) {
+        return LoaderKind::CoolscanNef;
+    }
+    if crate::infrastructure::loaders::fff_loader::is_flextight_fff(path) {
+        return LoaderKind::FlextightFff;
     }
     LoaderKind::CameraRaw
 }

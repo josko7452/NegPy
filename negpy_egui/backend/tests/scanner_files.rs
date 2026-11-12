@@ -8,6 +8,7 @@ use negpy_backend::infrastructure::loaders::fff_loader::{
 use negpy_backend::infrastructure::loaders::nef_loader::{
     find_rgb_subifd, is_coolscan_nef, load as load_nef,
 };
+use negpy_backend::infrastructure::loaders::source_kind::{LoaderKind, select_loader};
 use negpy_backend::infrastructure::loaders::tiff_walker::read_ifds;
 use tiff::encoder::colortype::{Gray16, RGB8, RGB16};
 use tiff::encoder::{Ifd, TiffEncoder, TiffKindStandard};
@@ -138,6 +139,7 @@ fn a_coolscan_nef_is_detected_by_its_rgb_subifd() {
     let ifds = read_ifds(&path).unwrap();
     assert_eq!(find_rgb_subifd(&ifds).unwrap().width, 300);
     assert!(is_coolscan_nef(&path));
+    assert_eq!(select_loader(&path), LoaderKind::CoolscanNef);
 }
 
 #[test]
