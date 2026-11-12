@@ -1,10 +1,10 @@
 # Development Ledger
-**Last Updated:** 2026-11-12 18:18 | **Last Commit:** `pending backend: add source encoding decode`
+**Last Updated:** 2026-11-12 18:54 | **Last Commit:** `pending backend: detect Coolscan NEF and Flextight FFF`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-Phases A–C, D1–D5 and D6 start are complete. Next is D6 scan detection.
+Phases A–C, D1–D5 and D6 start are complete. Next is D6 image decoders.
 
 ## Completed (Recent)
 - A–C: workspace, core audit, event contract and render worker.
@@ -12,13 +12,13 @@ Phases A–C, D1–D5 and D6 start are complete. Next is D6 scan detection.
 - D4–D5: storage, sidecars, presets, rolls, composites and analysis.
 - D6: constants, source kind, preview memory, JPEG XL boxes and metadata helpers.
 - D6: `ImageBuffer` and source encoding (ICC/TRC, untagged rules, gamut fit).
+- D6: shared TIFF walker; Coolscan NEF and Flextight FFF detection.
 
 ## Next Steps (Ordered)
-1. [ ] D6 loaders: Coolscan NEF and Flextight FFF detection
-2. [ ] D6 loaders: TIFF and JPEG decoders
-3. [ ] D6 loaders: RawDecoder trait and camera RAW
-4. [ ] D6 loaders: JXL, Pakon and Noritsu decoders
-5. [ ] D6 loaders: loader factory wiring
+1. [ ] D6 loaders: TIFF and JPEG decoders
+2. [ ] D6 loaders: RawDecoder trait and camera RAW
+3. [ ] D6 loaders: JXL, Pakon and Noritsu decoders
+4. [ ] D6 loaders: loader factory wiring
 
 ## Constraints / Gotchas
 - 5-commit hard stop; update this ledger before every commit. Keep it <60 lines.
@@ -37,5 +37,7 @@ Phases A–C, D1–D5 and D6 start are complete. Next is D6 scan detection.
 - D5: roll records stay flat JSON; only modeled sections take resolved defaults.
 - D6: `source_kind` selects TIFF/JPEG/JXL/Pakon/Noritsu; Coolscan NEF and
   Flextight FFF need one shared TIFF walker.
+- D6: `tiff_walker::read_ifds` reads every reachable IFD; SubIFDs are marked so
+  NEF and FFF rules can tell them from top-level directories.
 - D6: `cargo test --workspace` can take ~29 min and grow `target/` heavily;
   the last full run passed.
