@@ -11,3 +11,4 @@ pub mod metadata;
 pub mod process;
 pub mod retouch;
 pub mod toning;
+pub mod transparency;
