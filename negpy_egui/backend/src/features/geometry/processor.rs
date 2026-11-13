@@ -298,6 +298,122 @@ pub fn trim_film_edges(lum: &[f32], film_roi: Roi, height: usize, width: usize) 
     negpy_core::analysis::trim_film_edges(lum, height, width, film_roi)
 }
 
+/// `measure_film_border`: per-side bright border thickness, `(top, bottom, left, right)`.
+#[must_use]
+pub fn measure_film_border(lum: &[f32], film_roi: Roi, height: usize, width: usize) -> [f64; 4] {
+    let clamp = |v: i64| v.max(0) as usize;
+    negpy_core::analysis::measure_film_border(
+        lum,
+        height,
+        width,
+        (
+            clamp(film_roi.0),
+            clamp(film_roi.1),
+            clamp(film_roi.2),
+            clamp(film_roi.3),
+        ),
+    )
+}
+
+/// `measure_film_edges`: per-side holder-mask and film-base thickness.
+#[must_use]
+pub fn measure_film_edges(lum: &[f32], film_roi: Roi, height: usize, width: usize) -> [f64; 4] {
+    let clamp = |v: i64| v.max(0) as usize;
+    negpy_core::analysis::measure_film_edges(
+        lum,
+        height,
+        width,
+        (
+            clamp(film_roi.0),
+            clamp(film_roi.1),
+            clamp(film_roi.2),
+            clamp(film_roi.3),
+        ),
+    )
+}
+
+/// `_roi_from_measured_border`: inset a film box by its own border when an opposite pair agrees.
+#[must_use]
+pub fn roi_from_measured_border(
+    lum: &[f32],
+    film_roi: Roi,
+    height: usize,
+    width: usize,
+) -> Option<Roi> {
+    negpy_core::analysis::roi_from_measured_border(lum, height, width, film_roi)
+}
+
+/// `_find_rebate_level`: the brightest uniform rebate plateau on an opposite pair of sides.
+#[must_use]
+pub fn find_rebate_level(
+    lum: &[f32],
+    film_roi: Roi,
+    bed: Option<f64>,
+    height: usize,
+    width: usize,
+) -> Option<(f64, f64)> {
+    let clamp = |v: i64| v.max(0) as usize;
+    negpy_core::analysis::find_rebate_level(
+        lum,
+        height,
+        width,
+        (
+            clamp(film_roi.0),
+            clamp(film_roi.1),
+            clamp(film_roi.2),
+            clamp(film_roi.3),
+        ),
+        bed,
+    )
+}
+
+/// `_refine_film_roi_by_tiers`: the picture box from rebate/image occupancy runs.
+#[must_use]
+pub fn refine_film_roi_by_tiers(
+    lum: &[f32],
+    film_roi: Roi,
+    height: usize,
+    width: usize,
+) -> Option<negpy_core::analysis::TierRefinement> {
+    let clamp = |v: i64| v.max(0) as usize;
+    negpy_core::analysis::refine_film_roi_by_tiers(
+        lum,
+        height,
+        width,
+        (
+            clamp(film_roi.0),
+            clamp(film_roi.1),
+            clamp(film_roi.2),
+            clamp(film_roi.3),
+        ),
+    )
+}
+
+/// `film_and_picture`: the film box and the picture gate inside it.
+#[must_use]
+pub fn film_and_picture(image: &ImageBuffer) -> Option<(Option<Roi>, Roi)> {
+    negpy_core::analysis::film_and_picture(&image.pixels, image.height, image.width)
+}
+
+/// `rebate_mask`: inside the film box, outside the picture gate.
+#[must_use]
+pub fn rebate_mask((height, width): (usize, usize), film_roi: Option<Roi>, gate: Roi) -> Vec<bool> {
+    let mut mask = vec![false; height * width];
+    if let Some((fy1, fy2, fx1, fx2)) = film_roi {
+        for y in fy1.max(0) as usize..(fy2.min(height as i64).max(0) as usize) {
+            for x in fx1.max(0) as usize..(fx2.min(width as i64).max(0) as usize) {
+                mask[y * width + x] = true;
+            }
+        }
+        for y in gate.0.max(0) as usize..(gate.1.min(height as i64).max(0) as usize) {
+            for x in gate.2.max(0) as usize..(gate.3.min(width as i64).max(0) as usize) {
+                mask[y * width + x] = false;
+            }
+        }
+    }
+    mask
+}
+
 /// `scale_roi_inset`.
 #[must_use]
 pub fn scale_roi_inset(film_roi: Roi, roi: Roi, factor: f64) -> Roi {
