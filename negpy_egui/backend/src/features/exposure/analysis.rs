@@ -26,6 +26,7 @@ pub const WEDGE_STEP_DENSITY: f64 = 0.15;
 pub const WEDGE_SEPARATION: f64 = 0.004;
 
 const MAX_HIST_SAMPLES: usize = 2_000_000;
+const SCOPE_MAX_SAMPLES: usize = 262_144;
 
 /// The stride that keeps a whole frame near `max_samples` samples.
 #[must_use]
@@ -344,6 +345,57 @@ pub fn waveform_parade(pixels: &[f32], width: usize, height: usize) -> Option<Ve
         samples,
         negpy_core::histogram::Waveform::Parade,
     ))
+}
+
+/// (3, WAVEFORM_BINS, WAVEFORM_COLS) fixed-point R, G, B sums in each luma cell.
+#[must_use]
+pub fn waveform_color(pixels: &[f32], width: usize, height: usize) -> Option<Vec<f64>> {
+    let samples = samples(pixels, width, height, None)?;
+    Some(negpy_core::histogram::waveform(
+        samples,
+        negpy_core::histogram::Waveform::Color,
+    ))
+}
+
+/// (SCOPE_HUE_BINS, SCOPE_CHROMA_BINS) a*b* counts of an encoded frame.
+#[must_use]
+pub fn vectorscope_histogram(pixels: &[f32], width: usize, height: usize) -> Option<Vec<f64>> {
+    let step = frame_step(height, width, SCOPE_MAX_SAMPLES);
+    let samples = negpy_core::histogram::Samples {
+        img: pixels,
+        w: width,
+        cn: 3,
+        rows: (0, height),
+        cols: (0, width),
+        step,
+    };
+    let (space, _) = crate::domain::color::working_lab();
+    Some(negpy_core::histogram::vectorscope_histogram(
+        samples,
+        space,
+        WORKING_GAMMA as f32,
+    ))
+}
+
+/// (size, size) display density of a vectorscope histogram, +a right and +b up.
+#[must_use]
+pub fn vectorscope_density(counts: &[f64], size: usize, log: bool) -> Vec<f64> {
+    let (idx, area, orphans, px) = negpy_core::zones::scope_lookup(size, log);
+    negpy_core::zones::vectorscope_density(counts, (&idx, &area, &orphans, &px))
+}
+
+/// (luma, a*, b*) of one display-encoded pixel.
+#[must_use]
+pub fn scope_point(rgb: [f32; 3]) -> (f64, f64, f64) {
+    let encoded = rgb.map(|value| value.clamp(0.0, 1.0));
+    let luma = crate::domain::types::LUMA_R * encoded[0]
+        + crate::domain::types::LUMA_G * encoded[1]
+        + crate::domain::types::LUMA_B * encoded[2];
+    let linear = working_oetf_decode(&encoded);
+    let (space, _) = crate::domain::color::working_lab();
+    let mut lab = vec![0.0; 3];
+    negpy_core::color::rgb_to_lab(&linear, &mut lab, space);
+    (f64::from(luma), f64::from(lab[1]), f64::from(lab[2]))
 }
 
 /// Scan-density parade of a log frame.
