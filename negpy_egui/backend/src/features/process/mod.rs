@@ -5,6 +5,7 @@ pub mod chart;
 pub mod detect;
 pub mod fade;
 pub mod fade_auto_red;
+pub mod fade_estimate;
 pub mod hue;
 pub mod logic;
 pub mod path;

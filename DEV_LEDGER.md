@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 14:10 | **Last Commit:** `b1336f92 backend: blend IR through lit coverage`
+**Last Updated:** 2026-11-13 15:20 | **Last Commit:** `b4f5924e backend: collect crop evidence per frame`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -12,12 +12,16 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 - D9: transparency density grids and the Positive cast window landed; wire them into the render engine.
 - D9: `apply_lens` is exposed; Panasonic/Sony fill-chain pixel parity is still unpinned.
 - D9: stitch IR blending follows coverage; a real photograph panorama fixture remains.
-- D8: batch Auto Crop, film-border measurement, rebate helpers and `rebate_tone` remain.
+- D8: batch Auto Crop evidence and resolver landed; `rebate_tone` and the composite wiring remain.
 - D7: fade estimate orchestration, auto-red hints and analysis readouts remain.
 - D12: gear-preset conversion exists; startup wiring and asset/session glue remain.
 - D10-D11, D13/E1-E8: engine wiring, export/scanning, desktop glue and egui UI remain.
 
 ## Completed (This Session)
+- `b4f5924e` D8: per-frame crop evidence.
+- `dc2f7db5` D8: roll crop resolver.
+- `daabd314` D8: roll crop templates.
+- `91dc1038` D8: film border and rebate helpers.
 - `b1336f92` D9: stitch IR uses lit coverage.
 - `35b89497` D9: lens chain uses the Python entry point and cubic remap.
 - `93755351` D9: Positive cast window and retry.
@@ -26,11 +30,11 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 - `4b33cb3a` D9: stitch registration and blending.
 
 ## Next Steps (Ordered)
-1. [ ] D8: port film-border, film-edge, rebate and tier helpers.
-2. [ ] D8: port the roll crop evidence and resolver.
-3. [ ] D7: port fade estimate orchestration and remaining analysis readouts.
-4. [ ] D10: wire the density grids into the render engine.
-5. [ ] D11: port export and scanning services.
+1. [ ] D7: port fade estimate orchestration and remaining analysis readouts.
+2. [ ] D8: port `rebate_tone` and wire Auto Crop into the composite path.
+3. [ ] D10: wire the density grids into the render engine.
+4. [ ] D11: port export and scanning services.
+5. [ ] D12: port thumbnail and session glue.
 
 ## Constraints / Gotchas
 - Full workspace test: 2026-11-13 13:15, passed with `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast`; pre-final-commit state was green.
