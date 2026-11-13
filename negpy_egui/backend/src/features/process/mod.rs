@@ -3,6 +3,8 @@
 pub mod capture_color;
 pub mod chart;
 pub mod detect;
+pub mod fade;
 pub mod hue;
+pub mod logic;
 pub mod path;
 pub mod sensor;
