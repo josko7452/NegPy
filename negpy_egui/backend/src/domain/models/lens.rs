@@ -30,12 +30,7 @@ pub enum LensWarp {
         center: (f64, f64),
     },
     /// Panasonic's Ru = Rd + scale*(a*Rd^3 + b*Rd^5 + c*Rd^7).
-    Panasonic {
-        scale: f64,
-        a: f64,
-        b: f64,
-        c: f64,
-    },
+    Panasonic { scale: f64, a: f64, b: f64, c: f64 },
     /// Sony's radial knot factors.
     Sony {
         distortion: Vec<f64>,
@@ -71,7 +66,10 @@ impl LensWarp {
             Self::Panasonic { .. } => false,
             Self::Sony {
                 ca_red, ca_blue, ..
-            } => ca_red.iter().any(|value| *value != 0.0) || ca_blue.iter().any(|value| *value != 0.0),
+            } => {
+                ca_red.iter().any(|value| *value != 0.0)
+                    || ca_blue.iter().any(|value| *value != 0.0)
+            }
         }
     }
 }

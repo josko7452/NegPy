@@ -151,17 +151,14 @@ fn curve_density(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: 
         slope * (clipped - pivot) + curvature * clipped * clipped
     };
     if exposure.preflash > 0.0 {
-        let (v_th, gamma) = curve::preflash_params(
-            exposure.grade,
-            d_min,
-            Some(profile),
-            Some(midtone_gamma),
-        );
+        let (v_th, gamma) =
+            curve::preflash_params(exposure.grade, d_min, Some(profile), Some(midtone_gamma));
         v = curve::preflash_value(v, v_th, exposure.preflash, gamma);
     }
     if midtone_gamma != 0.0 {
         let v_star = curve::reference_linear_value(d_min, Some(profile), None);
-        v += midtone_gamma * constants.paper_gamma_width
+        v += midtone_gamma
+            * constants.paper_gamma_width
             * ((v - v_star) / constants.paper_gamma_width).tanh();
     }
     let (shadow, highlight) = split_grade_deltas(
@@ -243,17 +240,13 @@ fn curve_density(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: 
     let strength = c::TOE_SHOULDER_STRENGTH;
     let toe_eff = toe * strength;
     let shoulder_eff = shoulder * strength;
-    let d_min_eff =
-        (d_min + shoulder_eff * constants.shoulder_height).max(0.0);
+    let d_min_eff = (d_min + shoulder_eff * constants.shoulder_height).max(0.0);
     let a_hl = constants.shoulder_sharpness_base * c::TOESHOULDER_WIDTH_REF
         / exposure.shoulder_width.max(1e-6);
-    let a_sh_base = constants.toe_sharpness_base * c::TOESHOULDER_WIDTH_REF
-        / exposure.toe_width.max(1e-6);
+    let a_sh_base =
+        constants.toe_sharpness_base * c::TOESHOULDER_WIDTH_REF / exposure.toe_width.max(1e-6);
     let (d_max_eff, a_sh) = if toe_eff >= 0.0 {
-        (
-            constants.d_max - toe_eff * constants.toe_height,
-            a_sh_base,
-        )
+        (constants.d_max - toe_eff * constants.toe_height, a_sh_base)
     } else {
         (constants.d_max, a_sh_base * (1.0 - toe_eff * 4.0))
     };
@@ -276,12 +269,10 @@ fn encoded_output(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value:
 
 /// The zone the achromatic print curve puts `value` on under `exposure`.
 #[must_use]
-pub fn predicted_zone(
-    exposure: &ExposureConfig,
-    metrics: &AutoSliderMetrics,
-    value: f64,
-) -> f64 {
-    f64::from(zone_of_encoded(encoded_output(exposure, metrics, value) as f32))
+pub fn predicted_zone(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: f64) -> f64 {
+    f64::from(zone_of_encoded(
+        encoded_output(exposure, metrics, value) as f32
+    ))
 }
 
 fn solve_density(
@@ -314,12 +305,8 @@ fn solve_grade_and_density(
         graded.density = density;
         predicted_zone(&graded, metrics, light.val_luma) - light.target_zone
     };
-    let (grade, grade_clamped) = bisect_decreasing(
-        light_residual,
-        c::ISO_R_MIN,
-        c::ISO_R_MAX,
-        GRADE_RESOLUTION,
-    );
+    let (grade, grade_clamped) =
+        bisect_decreasing(light_residual, c::ISO_R_MIN, c::ISO_R_MAX, GRADE_RESOLUTION);
     let mut graded = candidate.clone();
     graded.grade = grade;
     let (density, density_clamped) = solve_density(&graded, metrics, dark);
@@ -352,8 +339,11 @@ fn solve_knee_field(
 ) -> (f64, bool) {
     bisect_monotone(
         |value| {
-            predicted_zone(&set_knee(base.clone(), knee.field, value), metrics, pin.val_luma)
-                - pin.target_zone
+            predicted_zone(
+                &set_knee(base.clone(), knee.field, value),
+                metrics,
+                pin.val_luma,
+            ) - pin.target_zone
         },
         knee.lo,
         knee.hi,
@@ -513,9 +503,15 @@ pub fn solve_placement(
         }
         _ => return None,
     };
-    let knee = solved
-        .knee
-        .map(|candidate| (candidate.field, round_digits(knee_value(&solved.candidate, candidate.field), candidate.digits)));
+    let knee = solved.knee.map(|candidate| {
+        (
+            candidate.field,
+            round_digits(
+                knee_value(&solved.candidate, candidate.field),
+                candidate.digits,
+            ),
+        )
+    });
     let mut solution = PlacementSolution {
         density: round_digits(solved.density, 2),
         grade: solved.grade.round_ties_even(),
@@ -547,12 +543,7 @@ fn round_digits(value: f64, digits: u32) -> f64 {
     (value * scale).round_ties_even() / scale
 }
 
-fn bisect_monotone(
-    f: impl Fn(f64) -> f64,
-    lo: f64,
-    hi: f64,
-    resolution: f64,
-) -> (f64, bool) {
+fn bisect_monotone(f: impl Fn(f64) -> f64, lo: f64, hi: f64, resolution: f64) -> (f64, bool) {
     if f(lo) >= f(hi) {
         bisect_decreasing(f, lo, hi, resolution)
     } else {

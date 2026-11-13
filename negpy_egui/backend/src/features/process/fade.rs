@@ -760,7 +760,8 @@ fn base_density(
 pub fn fade_density(process: &ProcessConfig, white_space: &str) -> FadeDensity {
     let (matrix, anchor, mut offset) = base_density(process, white_space);
     if process.fade_density_shift != 0.0 && render_path(process) != RenderPath::Print {
-        offset.iter_mut()
+        offset
+            .iter_mut()
             .for_each(|value| *value -= process.fade_density_shift);
     }
     FadeDensity {
@@ -773,7 +774,9 @@ pub fn fade_density(process: &ProcessConfig, white_space: &str) -> FadeDensity {
 /// `grid` through a fade affine, with each channel capped at the anchor first.
 #[must_use]
 pub fn through_density(grid: &[[f32; 3]], density: &FadeDensity) -> Vec<[f32; 3]> {
-    let linear = density.matrix.unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let linear = density
+        .matrix
+        .unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
     let anchor = density.anchor.unwrap_or([f32::INFINITY as f64; 3]);
     grid.iter()
         .map(|pixel| {

@@ -189,7 +189,10 @@ fn read_list(path: &Path) -> Vec<Map<String, Value>> {
     items.iter().filter_map(record).cloned().collect()
 }
 
-fn merge(bundled: Vec<Map<String, Value>>, user: Vec<Map<String, Value>>) -> Vec<Map<String, Value>> {
+fn merge(
+    bundled: Vec<Map<String, Value>>,
+    user: Vec<Map<String, Value>>,
+) -> Vec<Map<String, Value>> {
     let ids: Vec<String> = bundled
         .iter()
         .filter_map(|item| item.get("id").and_then(Value::as_str).map(str::to_string))
@@ -250,7 +253,14 @@ fn color_type_from_storage(value: &str) -> String {
         "BlackAndWhiteNegative" => "B&W Negative",
         "BlackAndWhiteSlide" => "B&W Slide",
         "" => "ColorNegative",
-        known if ["ColorNegative", "B&W Negative", "ColorSlide", "B&W Slide", "Other"]
+        known
+            if [
+                "ColorNegative",
+                "B&W Negative",
+                "ColorSlide",
+                "B&W Slide",
+                "Other",
+            ]
             .contains(&known) =>
         {
             known

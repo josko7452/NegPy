@@ -4,7 +4,11 @@ use negpy_backend::domain::models::{IDENTITY, LensCorrections, LensMetadata, Len
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 fn image() -> ImageBuffer {
-    ImageBuffer::from_rgb(60, 40, (0..60 * 40 * 3).map(|i| 0.2 + i as f32 * 0.0001).collect())
+    ImageBuffer::from_rgb(
+        60,
+        40,
+        (0..60 * 40 * 3).map(|i| 0.2 + i as f32 * 0.0001).collect(),
+    )
 }
 
 #[test]
@@ -31,7 +35,17 @@ fn identity_warps_choose_nothing() {
     assert!(!lens.ca());
     assert!(!lens.available());
     let source = image();
-    assert_eq!(lens.apply(&source, 1, LensCorrections { distortion: true, ca: true }), source);
+    assert_eq!(
+        lens.apply(
+            &source,
+            1,
+            LensCorrections {
+                distortion: true,
+                ca: true
+            }
+        ),
+        source
+    );
 }
 
 #[test]
@@ -63,7 +77,11 @@ fn a_warp_capability_names_its_own_axis() {
 
 #[test]
 fn a_strong_distortion_moves_the_edge_and_holds_the_center() {
-    let source = ImageBuffer::from_rgb(90, 60, (0..90 * 60 * 3).map(|i| i as f32 / 1000.0).collect());
+    let source = ImageBuffer::from_rgb(
+        90,
+        60,
+        (0..90 * 60 * 3).map(|i| i as f32 / 1000.0).collect(),
+    );
     let lens = LensMetadata {
         warps: vec![LensWarp::Rectilinear {
             coefficients: vec![[1.0, 0.05, 0.01, 0.0, 0.001, -0.002]],
@@ -71,7 +89,14 @@ fn a_strong_distortion_moves_the_edge_and_holds_the_center() {
         }],
         ..LensMetadata::default()
     };
-    let out = lens.apply(&source, 1, LensCorrections { distortion: true, ca: false });
+    let out = lens.apply(
+        &source,
+        1,
+        LensCorrections {
+            distortion: true,
+            ca: false,
+        },
+    );
     assert_eq!(out.width, source.width);
     assert_eq!(out.height, source.height);
     assert_ne!(out.pixels, source.pixels);
@@ -89,6 +114,12 @@ fn a_fill_scale_never_exceeds_one() {
         }],
         ..LensMetadata::default()
     };
-    let scale = lens.fill_scale((60, 90), LensCorrections { distortion: true, ca: false });
+    let scale = lens.fill_scale(
+        (60, 90),
+        LensCorrections {
+            distortion: true,
+            ca: false,
+        },
+    );
     assert!((0.5..=1.0).contains(&scale));
 }

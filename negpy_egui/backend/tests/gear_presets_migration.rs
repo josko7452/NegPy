@@ -50,7 +50,12 @@ fn a_gear_preset_resolves_to_metadata_fields_once() {
         Some(json!(true))
     );
 
-    store.save("FM2 combo", &json!({"developer": "D-76"}).as_object().unwrap().clone()).unwrap();
+    store
+        .save(
+            "FM2 combo",
+            &json!({"developer": "D-76"}).as_object().unwrap().clone(),
+        )
+        .unwrap();
     migrate_gear_presets(&mut repo, &gear, &bundled, &store);
     assert_eq!(store.load("FM2 combo").unwrap()["developer"], json!("D-76"));
 }
@@ -68,7 +73,12 @@ fn a_case_folded_name_is_never_overwritten() {
         json!([{"id": "p1", "displayName": "portra", "cameraId": "c1"}]),
     );
     let store = PresetStore::new(dir.path().join("presets"), "metadata");
-    store.save("Portra", &json!({"scanning": "mine"}).as_object().unwrap().clone()).unwrap();
+    store
+        .save(
+            "Portra",
+            &json!({"scanning": "mine"}).as_object().unwrap().clone(),
+        )
+        .unwrap();
 
     migrate_gear_presets(&mut repo, &gear, &bundled, &store);
 
@@ -88,7 +98,11 @@ fn a_damaged_source_keeps_the_migration_pending() {
 
     migrate_gear_presets(&mut repo, &gear, &bundled, &store);
 
-    assert!(repo.global_setting("gear_presets_migrated").unwrap().is_none());
+    assert!(
+        repo.global_setting("gear_presets_migrated")
+            .unwrap()
+            .is_none()
+    );
 
     std::fs::write(
         gear.join("gear_presets.json"),

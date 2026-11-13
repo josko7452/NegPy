@@ -30,7 +30,9 @@ pub fn build_proxy(rgb: &ImageBuffer) -> (Vec<u8>, f64) {
     if scale < 1.0 {
         let dw = ((rgb.width as f64 * scale).round() as usize).max(1);
         let dh = ((rgb.height as f64 * scale).round() as usize).max(1);
-        if let Some(resized) = negpy_core::resize::resize_area(&gray, rgb.height, rgb.width, 1, dh, dw) {
+        if let Some(resized) =
+            negpy_core::resize::resize_area(&gray, rgb.height, rgb.width, 1, dh, dw)
+        {
             gray = resized;
         }
     }
@@ -46,9 +48,13 @@ pub fn register_pair(
     (height, width): (usize, usize),
     min_inliers: usize,
 ) -> Result<(Affine, usize), StitchError> {
-    negpy_core::register::register_pair((reference, height, width), (moving, height, width), min_inliers)
-        .map(|(matrix, inliers)| (matrix, inliers))
-        .ok_or(StitchError(NO_OVERLAP_MSG))
+    negpy_core::register::register_pair(
+        (reference, height, width),
+        (moving, height, width),
+        min_inliers,
+    )
+    .map(|(matrix, inliers)| (matrix, inliers))
+    .ok_or(StitchError(NO_OVERLAP_MSG))
 }
 
 /// Proxy-coordinate affine -> full-resolution affine.
@@ -78,12 +84,18 @@ pub fn chain_affine(a: Affine, b: Affine) -> Affine {
 }
 
 fn transform_point(matrix: Affine, x: f64, y: f64) -> (f64, f64) {
-    (matrix[0] * x + matrix[1] * y + matrix[2], matrix[3] * x + matrix[4] * y + matrix[5])
+    (
+        matrix[0] * x + matrix[1] * y + matrix[2],
+        matrix[3] * x + matrix[4] * y + matrix[5],
+    )
 }
 
 /// The union bounding box of the warped parts, and the transforms shifted into it.
 #[must_use]
-pub fn compute_canvas(sizes: &[(usize, usize)], transforms: &[Affine]) -> ((usize, usize), Vec<Affine>) {
+pub fn compute_canvas(
+    sizes: &[(usize, usize)],
+    transforms: &[Affine],
+) -> ((usize, usize), Vec<Affine>) {
     let mut lo = (f64::INFINITY, f64::INFINITY);
     let mut hi = (f64::NEG_INFINITY, f64::NEG_INFINITY);
     for (&(w, h), &matrix) in sizes.iter().zip(transforms) {
@@ -98,7 +110,10 @@ pub fn compute_canvas(sizes: &[(usize, usize)], transforms: &[Affine]) -> ((usiz
     let shift = [1.0, 0.0, -lo.0, 0.0, 1.0, -lo.1];
     let shifted = transforms.iter().map(|&m| chain_affine(shift, m)).collect();
     (
-        ((hi.0 - lo.0).max(0.0) as usize, (hi.1 - lo.1).max(0.0) as usize),
+        (
+            (hi.0 - lo.0).max(0.0) as usize,
+            (hi.1 - lo.1).max(0.0) as usize,
+        ),
         shifted,
     )
 }
@@ -146,7 +161,8 @@ pub fn scale_transforms(
         .zip(decoded_sizes)
         .zip(&config.stitch_sizes)
     {
-        let mut matrix: Affine = std::array::from_fn(|index| flat.get(index).copied().unwrap_or(0.0));
+        let mut matrix: Affine =
+            std::array::from_fn(|index| flat.get(index).copied().unwrap_or(0.0));
         let part_scale = decoded_w as f64 / full_w.max(1) as f64;
         let ratio = reference_scale / part_scale;
         matrix[0] *= ratio;
@@ -160,8 +176,12 @@ pub fn scale_transforms(
     (
         out,
         (
-            (config.stitch_canvas[0] as f64 * reference_scale).round().max(0.0) as usize,
-            (config.stitch_canvas[1] as f64 * reference_scale).round().max(0.0) as usize,
+            (config.stitch_canvas[0] as f64 * reference_scale)
+                .round()
+                .max(0.0) as usize,
+            (config.stitch_canvas[1] as f64 * reference_scale)
+                .round()
+                .max(0.0) as usize,
         ),
     )
 }
@@ -182,7 +202,10 @@ pub fn warp_into_canvas(
     let mut warped = vec![0.0; canvas.0 * canvas.1 * 3];
     negpy_core::warp::warp_affine(
         &source,
-        (negpy_core::warp::Interp::Cubic, negpy_core::warp::Border::Constant),
+        (
+            negpy_core::warp::Interp::Cubic,
+            negpy_core::warp::Border::Constant,
+        ),
         transform,
         false,
         canvas.0,
@@ -198,7 +221,10 @@ pub fn warp_into_canvas(
     let mut mask_values = vec![0.0; canvas.0 * canvas.1];
     negpy_core::warp::warp_affine(
         &mask_source,
-        (negpy_core::warp::Interp::Linear, negpy_core::warp::Border::Constant),
+        (
+            negpy_core::warp::Interp::Linear,
+            negpy_core::warp::Border::Constant,
+        ),
         transform,
         false,
         canvas.0,
@@ -243,7 +269,8 @@ fn unlit_regions(unlit: &[bool], (h, w): (usize, usize)) -> (Vec<i32>, Vec<f32>)
         }
     }
     let u8s: Vec<u8> = unlit.iter().map(|value| u8::from(*value)).collect();
-    let depth = negpy_core::distance::distance_transform(&u8s, h, w, negpy_core::distance::Metric::L2Mask3);
+    let depth =
+        negpy_core::distance::distance_transform(&u8s, h, w, negpy_core::distance::Metric::L2Mask3);
     (labels, depth)
 }
 
@@ -262,15 +289,26 @@ fn lit_coverage(
         (w as f64 * scale).round().max(1.0) as usize,
         (h as f64 * scale).round().max(1.0) as usize,
     );
-    let near: Vec<Vec<bool>> = masks.iter().map(|mask| resize_mask(mask, (h, w), (sh, sw))).collect();
-    let u8s: Vec<Vec<u8>> = near.iter().map(|mask| mask.iter().map(|v| u8::from(*v)).collect()).collect();
+    let near: Vec<Vec<bool>> = masks
+        .iter()
+        .map(|mask| resize_mask(mask, (h, w), (sh, sw)))
+        .collect();
+    let u8s: Vec<Vec<u8>> = near
+        .iter()
+        .map(|mask| mask.iter().map(|v| u8::from(*v)).collect())
+        .collect();
     let valid: Vec<Vec<bool>> = u8s
         .iter()
         .map(|mask| {
-            negpy_core::distance::distance_transform(mask, sh, sw, negpy_core::distance::Metric::L2Mask3)
-                .into_iter()
-                .map(|value| value > 1.0)
-                .collect()
+            negpy_core::distance::distance_transform(
+                mask,
+                sh,
+                sw,
+                negpy_core::distance::Metric::L2Mask3,
+            )
+            .into_iter()
+            .map(|value| value > 1.0)
+            .collect()
         })
         .collect();
     if valid.iter().any(|mask| !mask.iter().any(|v| *v)) {
@@ -296,7 +334,12 @@ fn lit_coverage(
     }
     let mut peaks = Vec::new();
     for (plane, valid) in green.iter().zip(&valid) {
-        let values: Vec<f32> = plane.iter().zip(valid).filter(|(_, v)| **v).map(|(v, _)| *v).collect();
+        let values: Vec<f32> = plane
+            .iter()
+            .zip(valid)
+            .filter(|(_, v)| **v)
+            .map(|(v, _)| *v)
+            .collect();
         if values.is_empty() {
             return masks.to_vec();
         }
@@ -310,7 +353,8 @@ fn lit_coverage(
             *shared += u8::from(*value);
         }
     }
-    let margin = (LIT_MARGIN_FEATHERS * SEAM_FEATHER_PX as f32 * decoded_scale as f32 * scale as f32) as f64;
+    let margin =
+        (LIT_MARGIN_FEATHERS * SEAM_FEATHER_PX as f32 * decoded_scale as f32 * scale as f32) as f64;
     let mut regions = Vec::new();
     for (plane, valid) in green.iter().zip(&valid) {
         let unlit: Vec<bool> = (0..sw * sh)
@@ -318,10 +362,9 @@ fn lit_coverage(
             .collect();
         regions.push(unlit_regions(&unlit, (sh, sw)));
     }
-    if !regions
-        .iter()
-        .any(|(_, depth)| depth.iter().copied().fold(0.0f32, f32::max) as f64 > LIT_GATE_MARGINS as f64 * margin)
-    {
+    if !regions.iter().any(|(_, depth)| {
+        depth.iter().copied().fold(0.0f32, f32::max) as f64 > LIT_GATE_MARGINS as f64 * margin
+    }) {
         return masks.to_vec();
     }
     let mut lit_masks = Vec::new();
@@ -330,11 +373,18 @@ fn lit_coverage(
         for (i, value) in depth.iter().enumerate().skip(1) {
             keep[i] = *value > LIT_SPECKLE_MARGINS as f32 * margin as f32;
         }
-        let unlit: Vec<bool> = labels.iter().map(|label| keep.get(*label as usize).copied().unwrap_or(false)).collect();
+        let unlit: Vec<bool> = labels
+            .iter()
+            .map(|label| keep.get(*label as usize).copied().unwrap_or(false))
+            .collect();
         if unlit.iter().any(|v| *v) {
             let clear: Vec<u8> = unlit.iter().map(|v| u8::from(!*v)).collect();
-            let clear =
-                negpy_core::distance::distance_transform(&clear, sh, sw, negpy_core::distance::Metric::L2Mask3);
+            let clear = negpy_core::distance::distance_transform(
+                &clear,
+                sh,
+                sw,
+                negpy_core::distance::Metric::L2Mask3,
+            );
             lit_masks.push(
                 near.iter()
                     .zip(clear)
@@ -366,7 +416,12 @@ fn lit_coverage(
             }
         }
     }
-    if (0..lit_masks.len()).map(|i| root(&mut group, i)).collect::<std::collections::HashSet<_>>().len() > 1 {
+    if (0..lit_masks.len())
+        .map(|i| root(&mut group, i))
+        .collect::<std::collections::HashSet<_>>()
+        .len()
+        > 1
+    {
         return masks.to_vec();
     }
     let mut any_lit = vec![false; sw * sh];
@@ -381,7 +436,12 @@ fn lit_coverage(
             .map(|i| near[i] && !lit[i] && any_lit[i])
             .collect();
         let invert: Vec<u8> = removed.iter().map(|v| u8::from(!*v)).collect();
-        let beside = negpy_core::distance::distance_transform(&invert, sh, sw, negpy_core::distance::Metric::L2Mask3);
+        let beside = negpy_core::distance::distance_transform(
+            &invert,
+            sh,
+            sw,
+            negpy_core::distance::Metric::L2Mask3,
+        );
         let removed: Vec<bool> = removed
             .iter()
             .zip(beside)
@@ -389,14 +449,22 @@ fn lit_coverage(
             .map(|((removed, distance), near)| *removed || (distance <= 1.0 && !near))
             .collect();
         let upscaled = resize_mask(&removed, (sh, sw), (h, w));
-        cover.push(mask.iter().zip(upscaled).map(|(mask, removed)| *mask && !removed).collect());
+        cover.push(
+            mask.iter()
+                .zip(upscaled)
+                .map(|(mask, removed)| *mask && !removed)
+                .collect(),
+        );
     }
-    let mut orphan: Vec<bool> = masks.iter().fold(vec![false; h * w], |mut acc: Vec<bool>, mask| {
-        for (orphan, value) in acc.iter_mut().zip(mask) {
-            *orphan |= *value;
-        }
-        acc
-    });
+    let mut orphan: Vec<bool> =
+        masks
+            .iter()
+            .fold(vec![false; h * w], |mut acc: Vec<bool>, mask| {
+                for (orphan, value) in acc.iter_mut().zip(mask) {
+                    *orphan |= *value;
+                }
+                acc
+            });
     for c in &cover {
         for (orphan, value) in orphan.iter_mut().zip(c) {
             *orphan = *orphan && !*value;
@@ -415,7 +483,10 @@ fn lit_coverage(
 }
 
 fn seam_cost(img: &ImageBuffer) -> Vec<f32> {
-    img.pixels.iter().map(|value| value.clamp(0.0, 1.0).powf(1.0 / 2.2)).collect()
+    img.pixels
+        .iter()
+        .map(|value| value.clamp(0.0, 1.0).powf(1.0 / 2.2))
+        .collect()
 }
 
 /// Partition the covered canvas between parts along a minimum-error path.
@@ -437,13 +508,16 @@ pub fn find_seams(
     let small: Vec<Vec<f32>> = warped.iter().map(seam_cost).collect();
     let resized: Vec<Vec<f32>> = small
         .iter()
-        .map(|img| {
-            negpy_core::resize::resize_area(img, h, w, 3, sh, sw).unwrap_or_default()
-        })
+        .map(|img| negpy_core::resize::resize_area(img, h, w, 3, sh, sw).unwrap_or_default())
         .collect();
     let mut small_masks: Vec<Vec<u8>> = masks
         .iter()
-        .map(|mask| resize_mask(mask, (h, w), (sh, sw)).into_iter().map(u8::from).collect())
+        .map(|mask| {
+            resize_mask(mask, (h, w), (sh, sw))
+                .into_iter()
+                .map(u8::from)
+                .collect()
+        })
         .collect();
     let images: Vec<&[f32]> = resized.iter().map(Vec::as_slice).collect();
     negpy_core::seam::dp_seams(&images, &mut small_masks, (sh, sw));
@@ -462,14 +536,12 @@ pub fn find_seams(
             *seam &= *mask;
         }
     }
-    let mut orphan: Vec<bool> = masks
-        .iter()
-        .fold(vec![false; w * h], |mut acc, mask| {
-            for (orphan, value) in acc.iter_mut().zip(mask) {
-                *orphan |= *value;
-            }
-            acc
-        });
+    let mut orphan: Vec<bool> = masks.iter().fold(vec![false; w * h], |mut acc, mask| {
+        for (orphan, value) in acc.iter_mut().zip(mask) {
+            *orphan |= *value;
+        }
+        acc
+    });
     for seam in &seams {
         for (orphan, seam) in orphan.iter_mut().zip(seam) {
             *orphan &= !*seam;
@@ -500,7 +572,13 @@ pub fn seam_blend(
     let masks: Vec<&[bool]> = masks.iter().map(Vec::as_slice).collect();
     let seams: Vec<&[bool]> = seams.iter().map(Vec::as_slice).collect();
     let (width, height) = (warped[0].width, warped[0].height);
-    let out = negpy_core::stitch::seam_blend(&images, &masks, &seams, (height, width), feather_px.max(1.0));
+    let out = negpy_core::stitch::seam_blend(
+        &images,
+        &masks,
+        &seams,
+        (height, width),
+        feather_px.max(1.0),
+    );
     ImageBuffer::from_rgb(width, height, out)
 }
 
@@ -521,7 +599,8 @@ pub fn stitch_composite(
     irs: &[Option<Vec<f32>>],
     config: &StitchConfig,
 ) -> (ImageBuffer, Option<Vec<f32>>) {
-    let decoded_sizes: Vec<(usize, usize)> = parts.iter().map(|part| (part.width, part.height)).collect();
+    let decoded_sizes: Vec<(usize, usize)> =
+        parts.iter().map(|part| (part.width, part.height)).collect();
     let (transforms, canvas) = scale_transforms(config, &decoded_sizes);
     let decoded_scale = canvas.0 as f64 / config.stitch_canvas[0].max(1) as f64;
     let feather_px = SEAM_FEATHER_PX * decoded_scale;
@@ -572,7 +651,11 @@ pub fn stitch_composite(
             let source = ImageBuffer::from_rgb(parts[i].width, parts[i].height, plane.clone());
             let (warped_ir, mask) = warp_into_canvas(&source, transforms[i], canvas);
             let selected = seams.as_ref().map_or(&mask, |seams| &seams[i]);
-            let gray: Vec<f32> = warped_ir.pixels.chunks_exact(3).map(|pixel| pixel[0]).collect();
+            let gray: Vec<f32> = warped_ir
+                .pixels
+                .chunks_exact(3)
+                .map(|pixel| pixel[0])
+                .collect();
             negpy_core::stitch::ir_blend_into(&mut acc, &gray, selected, seams.is_none());
         }
         negpy_core::stitch::ir_finish(&mut acc);

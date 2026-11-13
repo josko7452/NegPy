@@ -114,7 +114,8 @@ pub fn scene_signature(mosaic: &[f32], height: usize, width: usize, black: f64) 
     }
     let mean = grad.iter().sum::<f32>() / grad.len() as f32;
     let centered: Vec<f32> = grad.iter().map(|value| value - mean).collect();
-    let sd = (centered.iter().map(|value| value * value).sum::<f32>() / centered.len() as f32).sqrt();
+    let sd =
+        (centered.iter().map(|value| value * value).sum::<f32>() / centered.len() as f32).sqrt();
     if sd > 0.0 {
         centered.iter().map(|value| value / sd).collect()
     } else {
@@ -157,7 +158,10 @@ pub fn looks_narrowband(all_means: &[[f64; 3]]) -> bool {
     if all_means.is_empty() {
         return false;
     }
-    let mut ratios: Vec<f64> = all_means.iter().map(|means| channel_dominance(means)).collect();
+    let mut ratios: Vec<f64> = all_means
+        .iter()
+        .map(|means| channel_dominance(means))
+        .collect();
     ratios.sort_by(f64::total_cmp);
     ratios[ratios.len() / 2] >= NARROWBAND_DOMINANCE
 }
@@ -165,7 +169,11 @@ pub fn looks_narrowband(all_means: &[[f64; 3]]) -> bool {
 /// Paths in capture order, or unchanged when any file states no capture time.
 #[must_use]
 pub fn capture_ordered(paths: &[String], times: &HashMap<String, String>) -> Vec<String> {
-    if paths.is_empty() || paths.iter().any(|path| times.get(path).is_none_or(String::is_empty)) {
+    if paths.is_empty()
+        || paths
+            .iter()
+            .any(|path| times.get(path).is_none_or(String::is_empty))
+    {
         return paths.to_vec();
     }
     let mut ordered = paths.to_vec();
@@ -261,20 +269,34 @@ pub fn group_triplets(
         }
         let mut triplet = Triplet {
             red: by_channel.get(&RED).map_or_else(
-                || chunk.first().map_or_else(String::new, |(path, _)| path.clone()),
+                || {
+                    chunk
+                        .first()
+                        .map_or_else(String::new, |(path, _)| path.clone())
+                },
                 |path| (*path).to_string(),
             ),
             green: by_channel.get(&GREEN).map_or_else(
-                || chunk.get(1).map_or_else(String::new, |(path, _)| path.clone()),
+                || {
+                    chunk
+                        .get(1)
+                        .map_or_else(String::new, |(path, _)| path.clone())
+                },
                 |path| (*path).to_string(),
             ),
             blue: by_channel.get(&BLUE).map_or_else(
-                || chunk.get(2).map_or_else(String::new, |(path, _)| path.clone()),
+                || {
+                    chunk
+                        .get(2)
+                        .map_or_else(String::new, |(path, _)| path.clone())
+                },
                 |path| (*path).to_string(),
             ),
             ok: chunk.len() == 3 && by_channel.len() == 3,
         };
-        if triplet.ok && let (Some(signatures), Some(affinity)) = (signatures, affinity.as_ref()) {
+        if triplet.ok
+            && let (Some(signatures), Some(affinity)) = (signatures, affinity.as_ref())
+        {
             let score = triplet_affinity(&triplet, signatures);
             if score.is_some_and(|score| {
                 score < min_affinity || !mutual_best(&triplet, &pools, affinity)
@@ -322,7 +344,12 @@ pub fn place_triplet(
 
 /// Sub-pixel translation of `mov` relative to `ref`, from phase correlation.
 #[must_use]
-pub fn estimate_shift(ref_gray: &[f32], mov_gray: &[f32], height: usize, width: usize) -> (f64, f64) {
+pub fn estimate_shift(
+    ref_gray: &[f32],
+    mov_gray: &[f32],
+    height: usize,
+    width: usize,
+) -> (f64, f64) {
     if width <= EST_WIDTH {
         let (dx, dy, _) = negpy_core::phase::phase_correlate(ref_gray, mov_gray, height, width);
         return (dx, dy);
@@ -356,7 +383,10 @@ fn align_to(reference: &[f32], mov: &ImageBuffer, channel: usize, max_shift: f64
     let mut out = vec![0.0; mov.pixels.len()];
     negpy_core::warp::warp_affine(
         &source,
-        (negpy_core::warp::Interp::Cubic, negpy_core::warp::Border::Replicate),
+        (
+            negpy_core::warp::Interp::Cubic,
+            negpy_core::warp::Border::Replicate,
+        ),
         matrix,
         false,
         mov.width,
@@ -389,10 +419,7 @@ pub fn assemble_rgb(
         blue = align_to(&ref_green, &blue, BLUE, max_shift);
     }
     let mut out = vec![0.0f32; red.pixels.len()];
-    negpy_core::convert::pick_channels(
-        [&red.pixels, &green.pixels, &blue.pixels],
-        &mut out,
-    );
+    negpy_core::convert::pick_channels([&red.pixels, &green.pixels, &blue.pixels], &mut out);
     Some(ImageBuffer::from_rgb(red.width, red.height, out))
 }
 
@@ -415,7 +442,10 @@ impl crate::domain::models::LensWarp {
         let (start, stop) = rows;
         let count = (stop.saturating_sub(start)) * width;
         match self {
-            crate::domain::models::LensWarp::Rectilinear { coefficients, center } => {
+            crate::domain::models::LensWarp::Rectilinear {
+                coefficients,
+                center,
+            } => {
                 use crate::domain::models::lens::IDENTITY;
                 let common = coefficients[if coefficients.len() == 1 { 0 } else { 1 }];
                 let selected = if corrections.ca && coefficients.len() == 3 {
@@ -490,7 +520,13 @@ impl crate::domain::models::LensWarp {
                         *factor += value / 16384.0;
                     }
                 }
-                let ca = if channel == 0 { ca_red } else if channel == 2 { ca_blue } else { &Vec::new() };
+                let ca = if channel == 0 {
+                    ca_red
+                } else if channel == 2 {
+                    ca_blue
+                } else {
+                    &Vec::new()
+                };
                 if corrections.ca && !ca.is_empty() {
                     for (factor, value) in factors.iter_mut().zip(ca) {
                         *factor *= 1.0 + value / 2_097_152.0;
@@ -580,7 +616,11 @@ fn apply_exif_orientation(img: &ImageBuffer, orientation: u8) -> ImageBuffer {
 impl crate::domain::models::LensMetadata {
     /// The largest scale up to 1 at which every output edge reads inside the source.
     #[must_use]
-    pub fn fill_scale(&self, (height, width): (usize, usize), corrections: crate::domain::models::LensCorrections) -> f64 {
+    pub fn fill_scale(
+        &self,
+        (height, width): (usize, usize),
+        corrections: crate::domain::models::LensCorrections,
+    ) -> f64 {
         let applied: Vec<&crate::domain::models::LensWarp> = self
             .warps
             .iter()
@@ -601,7 +641,9 @@ impl crate::domain::models::LensMetadata {
             let rows = [0, height.saturating_sub(1)];
             for channel in if corrections.ca { [0, 1, 2] } else { [0, 0, 0] } {
                 for row in rows {
-                    let Some((mx, my)) = last.maps(&lens, (height, width), (row, row + 1), channel, corrections) else {
+                    let Some((mx, my)) =
+                        last.maps(&lens, (height, width), (row, row + 1), channel, corrections)
+                    else {
                         continue;
                     };
                     for col in [0, width.saturating_sub(1)] {
@@ -672,11 +714,25 @@ impl crate::domain::models::LensMetadata {
                 negpy_core::convert::extract_channel(&source.pixels, 3, channel, &mut plane);
                 for start in (0..source.height).step_by(256) {
                     let stop = (start + 256).min(source.height);
-                    let Some((mx, my)) = warp.maps(lens, (source.height, source.width), (start, stop), channel, corrections) else {
+                    let Some((mx, my)) = warp.maps(
+                        lens,
+                        (source.height, source.width),
+                        (start, stop),
+                        channel,
+                        corrections,
+                    ) else {
                         continue;
                     };
                     let mut out = vec![0.0; (stop - start) * source.width];
-                    remap_plane(&plane, &mx, &my, source.width, source.height, start, &mut out);
+                    remap_plane(
+                        &plane,
+                        &mx,
+                        &my,
+                        source.width,
+                        source.height,
+                        start,
+                        &mut out,
+                    );
                     for row in 0..stop - start {
                         for col in 0..source.width {
                             result[((start + row) * source.width + col) * 3 + channel] =

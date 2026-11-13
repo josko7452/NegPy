@@ -134,8 +134,7 @@ pub fn auto_red(
     if let Some(after) = points_at(new) {
         let median_after = median(&after);
         let median_before = median(&points);
-        gain = (median_after - median_before)
-            .min(after[0] - AUTO_RED_LIGHT.min(points[0]));
+        gain = (median_after - median_before).min(after[0] - AUTO_RED_LIGHT.min(points[0]));
     }
     Some(AutoRed {
         red: new,

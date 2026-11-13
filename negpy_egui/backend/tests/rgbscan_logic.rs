@@ -21,7 +21,11 @@ fn assembling_picks_each_matching_channel() {
     let green = ImageBuffer::from_rgb(2, 2, [0.0, 2.0, 0.0].repeat(4));
     let blue = ImageBuffer::from_rgb(2, 2, [0.0, 0.0, 3.0].repeat(4));
     let out = assemble_rgb(&red, &green, &blue, false).unwrap();
-    assert!(out.pixels.chunks_exact(3).all(|pixel| pixel == [1.0, 2.0, 3.0]));
+    assert!(
+        out.pixels
+            .chunks_exact(3)
+            .all(|pixel| pixel == [1.0, 2.0, 3.0])
+    );
 }
 
 #[test]
@@ -36,7 +40,12 @@ fn a_shape_mismatch_is_rejected() {
 fn affinity_separates_the_same_scene_from_another() {
     let one: Vec<f32> = (0..100).map(|i| (i as f32 * 0.3).sin()).collect();
     let two: Vec<f32> = (0..100).map(|i| (i as f32 * 0.7).cos()).collect();
-    assert!((frame_affinity(Some(&one), Some(&one)) - one.iter().map(|v| v * v).sum::<f32>() as f64 / one.len() as f64).abs() < 1e-6);
+    assert!(
+        (frame_affinity(Some(&one), Some(&one))
+            - one.iter().map(|v| v * v).sum::<f32>() as f64 / one.len() as f64)
+            .abs()
+            < 1e-6
+    );
     assert!(frame_affinity(Some(&one), Some(&two)) < 0.5);
     assert_eq!(frame_affinity(None, Some(&one)), 0.0);
     assert_eq!(frame_affinity(Some(&one), Some(&one[..50])), 0.0);
@@ -44,7 +53,10 @@ fn affinity_separates_the_same_scene_from_another() {
 
 #[test]
 fn narrowband_folders_are_recognized_by_the_median_dominance() {
-    assert!(looks_narrowband(&[[500.0, 80.0, 20.0], [40.0, 360.0, 867.0]]));
+    assert!(looks_narrowband(&[
+        [500.0, 80.0, 20.0],
+        [40.0, 360.0, 867.0]
+    ]));
     assert!(!looks_narrowband(&[[100.0, 110.0, 105.0]]));
     assert!(!looks_narrowband(&[]));
 }
@@ -69,7 +81,11 @@ fn a_scrambled_chunk_is_placed_by_channel() {
     let triplets = group_triplets(&items, None, MIN_TRIPLET_AFFINITY);
     assert_eq!(triplets.len(), 1);
     assert_eq!(
-        (triplets[0].red.as_str(), triplets[0].green.as_str(), triplets[0].blue.as_str()),
+        (
+            triplets[0].red.as_str(),
+            triplets[0].green.as_str(),
+            triplets[0].blue.as_str()
+        ),
         ("f2", "f1", "f3")
     );
     assert!(triplets[0].ok);

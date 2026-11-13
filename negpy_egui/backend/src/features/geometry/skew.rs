@@ -154,7 +154,6 @@ fn least_squares(jacobian: [f64; 4], residual: [f64; 2]) -> (f64, f64) {
     )
 }
 
-
 /// A fitted frame edge in detection-buffer pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EdgeLine {
@@ -233,11 +232,7 @@ fn off_border(lo: f64, hi: f64, extent: usize) -> bool {
 }
 
 fn unrotate(line: EdgeLine, angle: f64, w: usize, h: usize) -> EdgeLine {
-    let m = negpy_core::warp::rotation_matrix(
-        (w as f32 / 2.0, h as f32 / 2.0),
-        angle,
-        1.0,
-    );
+    let m = negpy_core::warp::rotation_matrix((w as f32 / 2.0, h as f32 / 2.0), angle, 1.0);
     let inv = invert_affine(m);
     let map = |p: (f64, f64)| {
         (
@@ -267,7 +262,8 @@ fn invert_affine(m: [f64; 6]) -> [f64; 6] {
 
 fn frame_lines(lum: &[f32], dims: (usize, usize), rotated: &ImageBuffer) -> Vec<EdgeLine> {
     let (h, w) = dims;
-    let detection = negpy_core::detect::detect_film_bounds(&rotated.pixels, rotated.height, rotated.width, 3);
+    let detection =
+        negpy_core::detect::detect_film_bounds(&rotated.pixels, rotated.height, rotated.width, 3);
     let mut boxes: Vec<(&'static str, (i64, i64, i64, i64))> = Vec::new();
     if let Some(consensus) = detection.consensus.as_ref() {
         boxes.push(("film", consensus.roi));
@@ -299,7 +295,11 @@ fn frame_lines(lum: &[f32], dims: (usize, usize), rotated: &ImageBuffer) -> Vec<
             (false, x2 as f64, y1 as f64, y2 as f64, "right", 1, cols),
         ];
         for (horizontal, at, start, stop, side, outward, fit) in candidates {
-            if !fit || seen.iter().any(|(o, p)| *o == horizontal && (*p - at).abs() < 4.0) {
+            if !fit
+                || seen
+                    .iter()
+                    .any(|(o, p)| *o == horizontal && (*p - at).abs() < 4.0)
+            {
                 continue;
             }
             let label = if source == "film" {
@@ -317,11 +317,15 @@ fn frame_lines(lum: &[f32], dims: (usize, usize), rotated: &ImageBuffer) -> Vec<
                     _ => "gate-right",
                 }
             };
-            let Some(line) = fit_side_line(lum, dims, horizontal, at, start, stop, label, outward) else {
+            let Some(line) = fit_side_line(lum, dims, horizontal, at, start, stop, label, outward)
+            else {
                 continue;
             };
             let position = line.position();
-            if seen.iter().any(|(o, p)| *o == horizontal && (*p - position).abs() < 4.0) {
+            if seen
+                .iter()
+                .any(|(o, p)| *o == horizontal && (*p - position).abs() < 4.0)
+            {
                 continue;
             }
             lines.push(line);
@@ -364,11 +368,21 @@ fn pair_spread(lines: &[EdgeLine], horizontal: bool, extent: usize) -> f64 {
 }
 
 fn at_canvas_edges(lines: &[EdgeLine], lum: &[f32], dims: (usize, usize)) -> bool {
-    let placed: Vec<(bool, f64)> = lines.iter().map(|line| (line.horizontal, line.position())).collect();
+    let placed: Vec<(bool, f64)> = lines
+        .iter()
+        .map(|line| (line.horizontal, line.position()))
+        .collect();
     negpy_core::skew::at_canvas_edges(lum, dims, &placed)
 }
 
-fn map_points(points: &[(f64, f64)], angle: f64, cv: f64, ch: f64, w: usize, h: usize) -> Vec<(f64, f64)> {
+fn map_points(
+    points: &[(f64, f64)],
+    angle: f64,
+    cv: f64,
+    ch: f64,
+    w: usize,
+    h: usize,
+) -> Vec<(f64, f64)> {
     let m = negpy_core::warp::rotation_matrix((w as f32 / 2.0, h as f32 / 2.0), angle, 1.0);
     let rotated: Vec<(f64, f64)> = points
         .iter()
@@ -390,10 +404,7 @@ fn map_points(points: &[(f64, f64)], angle: f64, cv: f64, ch: f64, w: usize, h: 
 }
 
 fn line_angles(lines: &[EdgeLine], params: [f64; 3], w: usize, h: usize) -> Vec<f64> {
-    let points: Vec<(f64, f64)> = lines
-        .iter()
-        .flat_map(|line| [line.p1, line.p2])
-        .collect();
+    let points: Vec<(f64, f64)> = lines.iter().flat_map(|line| [line.p1, line.p2]).collect();
     let mapped = map_points(&points, params[0], params[1], params[2], w, h);
     mapped
         .chunks_exact(2)
@@ -438,7 +449,13 @@ fn solve_small(matrix: &mut [[f64; 4]; 4], rhs: &mut [f64; 4], n: usize) -> Opti
     Some(out)
 }
 
-fn solve(lines: &[EdgeLine], w: usize, h: usize, fit_v: bool, fit_h: bool) -> (f64, f64, f64, Vec<f64>) {
+fn solve(
+    lines: &[EdgeLine],
+    w: usize,
+    h: usize,
+    fit_v: bool,
+    fit_h: bool,
+) -> (f64, f64, f64, Vec<f64>) {
     let weights: Vec<f64> = lines
         .iter()
         .map(|line| (line.length() * line.inlier_fraction).sqrt())
@@ -463,11 +480,16 @@ fn solve(lines: &[EdgeLine], w: usize, h: usize, fit_v: bool, fit_h: bool) -> (f
             for (column, parameter) in free.iter().enumerate() {
                 let mut step = [0.0f64; 3];
                 step[*parameter] = 1e-3;
-                let moved = line_angles(lines, [
-                    params[0] + step[0],
-                    params[1] + step[1],
-                    params[2] + step[2],
-                ], w, h);
+                let moved = line_angles(
+                    lines,
+                    [
+                        params[0] + step[0],
+                        params[1] + step[1],
+                        params[2] + step[2],
+                    ],
+                    w,
+                    h,
+                );
                 row[column] = (moved[index] * weight - residual[index]) / 1e-3;
             }
             for r in 0..n {
@@ -502,14 +524,9 @@ fn normalize_detection(img: &ImageBuffer) -> ImageBuffer {
     let scale = AUTOCROP_DETECT_RES as f64 / long as f64;
     let dw = ((img.width as f64 * scale).round() as usize).max(1);
     let dh = ((img.height as f64 * scale).round() as usize).max(1);
-    let Some(pixels) = negpy_core::resize::resize_area(
-        &img.pixels,
-        img.height,
-        img.width,
-        3,
-        dh,
-        dw,
-    ) else {
+    let Some(pixels) =
+        negpy_core::resize::resize_area(&img.pixels, img.height, img.width, 3, dh, dw)
+    else {
         return img.clone();
     };
     ImageBuffer::from_rgb(dw, dh, pixels)
@@ -598,7 +615,8 @@ fn measure_from(det: &ImageBuffer, coarse: f64, fit_keystone: bool) -> (Option<F
     let rms = (residual.iter().map(|value| value * value).sum::<f64>()
         / residual.len().max(1) as f64)
         .sqrt();
-    let support = (lines.iter().map(EdgeLine::length).sum::<f64>() / (2.0 * (w + h) as f64)).min(1.0);
+    let support =
+        (lines.iter().map(EdgeLine::length).sum::<f64>() / (2.0 * (w + h) as f64)).min(1.0);
     let agreement = (1.0 - rms / MAX_LINE_RESIDUAL).clamp(0.0, 1.0);
     let count = (lines.len() as f64 / 4.0).min(1.0);
     let confidence = (0.45 * support + 0.35 * agreement + 0.20 * count).clamp(0.0, 1.0);

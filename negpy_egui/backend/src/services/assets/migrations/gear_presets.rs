@@ -50,15 +50,15 @@ fn read_presets(path: &Path) -> (bool, Vec<Value>) {
     };
     (
         true,
-        items
-            .into_iter()
-            .filter(|item| item.is_object())
-            .collect(),
+        items.into_iter().filter(|item| item.is_object()).collect(),
     )
 }
 
 fn safe_name(name: &str) -> String {
-    sanitize_preset_name(name).split_whitespace().collect::<Vec<_>>().join(" ")
+    sanitize_preset_name(name)
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn unique_name(base: &str, taken: &HashSet<String>) -> String {
@@ -72,10 +72,12 @@ fn unique_name(base: &str, taken: &HashSet<String>) -> String {
 }
 
 fn preset_id(preset: &Value) -> String {
-    preset.get("id").map_or_else(String::new, |value| match value {
-        Value::String(text) => text.clone(),
-        other => other.to_string(),
-    })
+    preset
+        .get("id")
+        .map_or_else(String::new, |value| match value {
+            Value::String(text) => text.clone(),
+            other => other.to_string(),
+        })
 }
 
 fn field<'a>(preset: &'a Value, names: &[&str]) -> &'a str {
@@ -108,15 +110,15 @@ fn fields(config: &MetadataConfig) -> serde_json::Map<String, Value> {
     );
     out.insert(
         "focal_length_mm".into(),
-        config.focal_length_mm.map_or(Value::Null, |value| {
-            serde_json::json!(value)
-        }),
+        config
+            .focal_length_mm
+            .map_or(Value::Null, |value| serde_json::json!(value)),
     );
     out.insert(
         "max_aperture".into(),
-        config.max_aperture.map_or(Value::Null, |value| {
-            serde_json::json!(value)
-        }),
+        config
+            .max_aperture
+            .map_or(Value::Null, |value| serde_json::json!(value)),
     );
     out.insert("film".into(), Value::String(config.film.clone()));
     out.insert(
@@ -125,9 +127,9 @@ fn fields(config: &MetadataConfig) -> serde_json::Map<String, Value> {
     );
     out.insert(
         "film_iso".into(),
-        config.film_iso.map_or(Value::Null, |value| {
-            serde_json::json!(value)
-        }),
+        config
+            .film_iso
+            .map_or(Value::Null, |value| serde_json::json!(value)),
     );
     out.insert(
         "film_color_type".into(),
@@ -170,13 +172,14 @@ pub fn migrate_gear_presets(
         .collect();
 
     let library = GearLibrary::load(gear_dir, bundled_dir);
-    let mut existing: HashSet<String> = store.list().iter().map(|name| name.to_lowercase()).collect();
+    let mut existing: HashSet<String> = store
+        .list()
+        .iter()
+        .map(|name| name.to_lowercase())
+        .collect();
     let mut unstored = false;
     for preset in presets {
-        let mut name = safe_name(field(
-            preset,
-            &["displayName", "display_name"],
-        ));
+        let mut name = safe_name(field(preset, &["displayName", "display_name"]));
         if name.is_empty() {
             name = unique_name(UNNAMED, &existing);
         }
@@ -196,7 +199,10 @@ pub fn migrate_gear_presets(
             .map_or_else(String::new, |value| {
                 value.as_str().unwrap_or_default().to_string()
             });
-        if store.save(&name, &with_preset_notes(&fields(&resolved), &notes)).is_err() {
+        if store
+            .save(&name, &with_preset_notes(&fields(&resolved), &notes))
+            .is_err()
+        {
             log::warn!("Gear preset {name:?} not converted");
             unstored = true;
             continue;

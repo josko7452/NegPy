@@ -1,12 +1,12 @@
 //! Ports the slide curve checks in tests/test_transparency_transfer.py and test_slide_*.py.
 
 use negpy_backend::domain::models::{ExposureConfig, ProcessConfig, ProcessMode};
+use negpy_backend::features::exposure::auto_metrics::AutoSliderMetrics;
 use negpy_backend::features::transparency::logic::{
     TRANSFER_DENSITY_RANGE, TRANSFER_GRADE_REF, TransferSettings, apply_transfer_curve,
     contrast_free_cmy, transfer_auto_terms, transfer_bounds, transfer_curve_params,
     transfer_point_offsets, transfer_shown_values, transfer_stored_value, transfer_widths,
 };
-use negpy_backend::features::exposure::auto_metrics::AutoSliderMetrics;
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 #[test]
@@ -77,22 +77,18 @@ fn white_and_black_point_negate_on_the_slide_window() {
 #[test]
 fn filtration_is_divided_by_the_contrast() {
     assert_eq!(contrast_free_cmy([0.2, -0.4, 0.0], 2.0), [0.1, -0.2, 0.0]);
-    assert_eq!(contrast_free_cmy([0.2, 0.0, 0.0], 0.0), [200000.00000000003, 0.0, 0.0]);
+    assert_eq!(
+        contrast_free_cmy([0.2, 0.0, 0.0], 0.0),
+        [200000.00000000003, 0.0, 0.0]
+    );
 }
 
 #[test]
 fn autos_place_the_anchor_at_the_contrast_pivot() {
     let mut exposure = ExposureConfig::default();
     exposure.auto_exposure = true;
-    let (offset, contrast, _, _) = transfer_auto_terms(
-        &exposure,
-        0.0,
-        1.0,
-        None,
-        Some(0.25),
-        None,
-        None,
-    );
+    let (offset, contrast, _, _) =
+        transfer_auto_terms(&exposure, 0.0, 1.0, None, Some(0.25), None, None);
     assert!((offset - 0.0).abs() < 1e-9);
     assert_eq!(contrast, 1.0);
 }
@@ -120,7 +116,10 @@ fn shown_values_invert_to_the_stored_values() {
             _ => exposure.highlight_density,
         };
         if field == "grade" {
-            assert!(stored >= 50.0 && stored <= 180.0, "grade inverted to {stored}");
+            assert!(
+                stored >= 50.0 && stored <= 180.0,
+                "grade inverted to {stored}"
+            );
             continue;
         }
         assert!(

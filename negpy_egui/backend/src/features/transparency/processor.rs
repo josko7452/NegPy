@@ -57,15 +57,19 @@ pub fn process(
         exposure.highlight_magenta * cmy_max,
         exposure.highlight_yellow * cmy_max,
     ];
-    let (cast_gain, cast_offset) = context.metrics.bounds.map_or(([1.0; 3], [0.0; 3]), |bounds| {
-        transfer_cast_affine(
-            bounds,
-            context.metrics.neutral_axis,
-            exposure.cast_removal_strength,
-            context.white_target,
-        )
-    });
-    let cast_offset = cast_offset.map(|value| value * crate::features::transparency::logic::TRANSFER_DENSITY_RANGE);
+    let (cast_gain, cast_offset) = context
+        .metrics
+        .bounds
+        .map_or(([1.0; 3], [0.0; 3]), |bounds| {
+            transfer_cast_affine(
+                bounds,
+                context.metrics.neutral_axis,
+                exposure.cast_removal_strength,
+                context.white_target,
+            )
+        });
+    let cast_offset = cast_offset
+        .map(|value| value * crate::features::transparency::logic::TRANSFER_DENSITY_RANGE);
     let (toe_width, shoulder_width) = transfer_widths(exposure);
     let (toe, shoulder) = transfer_shape(exposure);
     let settings = TransferSettings {

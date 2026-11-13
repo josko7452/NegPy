@@ -1,9 +1,9 @@
 //! Ports the affine and canvas cases of tests/test_stitch.py.
 
+use negpy_backend::domain::models::StitchConfig;
 use negpy_backend::features::stitch::{
     Affine, chain_affine, compute_canvas, scale_affine, scale_transforms,
 };
-use negpy_backend::domain::models::StitchConfig;
 
 #[test]
 fn scale_affine_moves_proxy_coordinates_to_full_resolution() {

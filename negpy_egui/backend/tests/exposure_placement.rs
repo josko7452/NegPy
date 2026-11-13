@@ -52,12 +52,8 @@ fn two_pins_land_on_both_targets() {
 
 #[test]
 fn an_unreachable_target_clamps() {
-    let solution = solve_placement(
-        &ExposureConfig::default(),
-        &metrics(),
-        &[pin(0.2, 0.0)],
-    )
-    .unwrap();
+    let solution =
+        solve_placement(&ExposureConfig::default(), &metrics(), &[pin(0.2, 0.0)]).unwrap();
     assert!(solution.clamped);
     assert_eq!(solution.density, DENSITY_RANGE.1);
     assert!(solution.achieved[0] > 0.3);
@@ -70,19 +66,22 @@ fn a_split_grade_still_converges() {
         highlight_grade: -15.0,
         ..ExposureConfig::default()
     };
-    let solution = solve_placement(&exposure, &metrics(), &[pin(0.65, 3.0), pin(0.30, 8.0)]).unwrap();
+    let solution =
+        solve_placement(&exposure, &metrics(), &[pin(0.65, 3.0), pin(0.30, 8.0)]).unwrap();
     assert!((solution.achieved[0] - 3.0).abs() < 0.15);
     assert!((solution.achieved[1] - 8.0).abs() < 0.15);
 }
 
 #[test]
 fn degenerate_two_pins_return_none() {
-    assert!(solve_placement(
-        &ExposureConfig::default(),
-        &metrics(),
-        &[pin(0.5, 3.0), pin(0.5, 8.0)],
-    )
-    .is_none());
+    assert!(
+        solve_placement(
+            &ExposureConfig::default(),
+            &metrics(),
+            &[pin(0.5, 3.0), pin(0.5, 8.0)],
+        )
+        .is_none()
+    );
 }
 
 #[test]
@@ -105,9 +104,18 @@ fn three_pins_solve_one_knee_control() {
     let applied = two.apply(&exposure);
     let start = predicted_zone(&applied, &metrics(), 0.48);
     let middle = pin(0.48, start + 0.4);
-    let solution = solve_placement(&exposure, &metrics(), &[pin(0.65, 3.0), pin(0.30, 8.0), middle]).unwrap();
+    let solution = solve_placement(
+        &exposure,
+        &metrics(),
+        &[pin(0.65, 3.0), pin(0.30, 8.0), middle],
+    )
+    .unwrap();
     let knee = solution.knee.expect("a knee control is chosen");
-    assert!(KNEE_CANDIDATES.iter().any(|candidate| candidate.field == knee.0));
+    assert!(
+        KNEE_CANDIDATES
+            .iter()
+            .any(|candidate| candidate.field == knee.0)
+    );
     assert!((solution.achieved[0] - 3.0).abs() < 0.2);
     assert!((solution.achieved[1] - 8.0).abs() < 0.2);
 }

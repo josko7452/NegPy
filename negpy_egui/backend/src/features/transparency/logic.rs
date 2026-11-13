@@ -9,13 +9,11 @@ use std::f64::consts::LOG10_2;
 use crate::domain::models::{ExposureConfig, ProcessConfig};
 use crate::features::exposure::analysis::working_oetf_encode;
 use crate::features::exposure::constants as c;
-use crate::features::exposure::curve::{
-    effective_grade_range, grade_to_slope, slope_to_grade,
-};
+use crate::features::exposure::curve::{effective_grade_range, grade_to_slope, slope_to_grade};
+use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::print::{
     per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths,
 };
-use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::processor::NeutralAxisRefs;
 
 /// Log-density window the fixed-bounds normalization maps to [0, 1].
@@ -84,7 +82,10 @@ pub fn transfer_widths(exposure: &ExposureConfig) -> ([f64; 3], [f64; 3]) {
         ],
     );
     let scale = TRANSFER_KNEE_WIDTH / TRANSFER_WIDTH_REF;
-    (toe.map(|value| value * scale), shoulder.map(|value| value * scale))
+    (
+        toe.map(|value| value * scale),
+        shoulder.map(|value| value * scale),
+    )
 }
 
 /// The exposure offset and contrast the manual sliders ask for.
@@ -172,11 +173,15 @@ pub fn transfer_auto_terms(
     let pivot = TRANSFER_CONTRAST_PIVOT;
     let range = TRANSFER_DENSITY_RANGE;
     let mut offset = manual_offset;
-    if exposure.auto_exposure && let Some(anchor) = anchor {
+    if exposure.auto_exposure
+        && let Some(anchor) = anchor
+    {
         offset += anchor * range - pivot;
     }
     let mut contrast = manual_contrast;
-    if exposure.auto_normalize_contrast && let Some(textural) = textural_range {
+    if exposure.auto_normalize_contrast
+        && let Some(textural) = textural_range
+    {
         let effective = effective_grade_range(true, Some(range), Some(textural)).unwrap_or(range);
         let reference = grade_to_slope(TRANSFER_GRADE_REF, Some(range), 1.0);
         if reference > 1e-9 {
@@ -196,7 +201,9 @@ pub fn transfer_auto_terms(
         }
     }
     let mut highlight_auto = 0.0;
-    if exposure.auto_normalize_contrast && let Some(highlight_point) = highlight_point {
+    if exposure.auto_normalize_contrast
+        && let Some(highlight_point) = highlight_point
+    {
         let target = transfer_highlight_hold_density();
         let d_highlight = pivot + (highlight_point * range - offset - pivot) * contrast;
         if d_highlight < target {
@@ -206,7 +213,9 @@ pub fn transfer_auto_terms(
         }
     }
     let mut shadow_auto = 0.0;
-    if exposure.auto_normalize_contrast && let Some(shadow_point) = shadow_point {
+    if exposure.auto_normalize_contrast
+        && let Some(shadow_point) = shadow_point
+    {
         let strength = c::SHADOW_HOLD_STRENGTH;
         if strength > 0.0 {
             let d_shadow = pivot + (shadow_point * range - offset - pivot) * contrast;
@@ -244,9 +253,8 @@ fn neutral_axis_affine(
         return ([1.0; 3], [0.0; 3]);
     };
     let limit = c::MIDTONE_CAST_MAX_OFFSET;
-    let clamp_dev = |green: f64, value: f64| {
-        green + (strength * (value - green)).clamp(-limit, limit)
-    };
+    let clamp_dev =
+        |green: f64, value: f64| green + (strength * (value - green)).clamp(-limit, limit);
     let (m_g, s_g) = (mid[1], shadow[1]);
     let mut gains = [1.0; 3];
     let mut offsets = [0.0; 3];
@@ -443,10 +451,7 @@ pub fn slide_exposure(process: &ProcessConfig, exposure: &ExposureConfig) -> Exp
 
 /// The B&W collapse weights a slide uses, or `None` for a color slide.
 #[must_use]
-pub fn slide_mono_weights(
-    process: &ProcessConfig,
-    exposure: &ExposureConfig,
-) -> Option<[f32; 3]> {
+pub fn slide_mono_weights(process: &ProcessConfig, exposure: &ExposureConfig) -> Option<[f32; 3]> {
     process
         .slide_bw
         .then(|| crate::features::exposure::bw_filter::collapse_weights(process, exposure))
