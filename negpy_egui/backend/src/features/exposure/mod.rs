@@ -1,6 +1,8 @@
 //! Exposure kernels and their pure configuration.
 
 pub mod analysis;
+pub mod auto_metrics;
+pub mod auto_sliders;
 pub mod bw_filter;
 pub mod constants;
 pub mod curve;

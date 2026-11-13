@@ -161,6 +161,55 @@ pub fn per_channel_curve_params(
     (slopes, pivots, [0.0; 3])
 }
 
+/// The per-channel curve re-derived from the metrics a render published.
+#[must_use]
+pub fn curve_params_from_metrics(
+    exposure: &crate::domain::models::ExposureConfig,
+    mode: Option<crate::domain::models::ProcessMode>,
+    metrics: &crate::features::exposure::auto_metrics::AutoSliderMetrics,
+) -> ([f64; 3], [f64; 3], [f64; 3]) {
+    let profile =
+        crate::features::exposure::papers::effective_paper_profile(&exposure.paper_profile, mode);
+    let d_min = if exposure.paper_dmin {
+        profile.tonal.d_min
+    } else {
+        0.0
+    };
+    let anchor = exposure
+        .auto_exposure
+        .then_some(metrics.metered_anchor)
+        .flatten();
+    let (strength, neutral_axis) = cast_solve_inputs(
+        metrics
+            .bounds
+            .unwrap_or(LogNegativeBounds::new([-1.0; 3], [0.0; 3])),
+        metrics.neutral_axis,
+        exposure.cast_removal_strength,
+    );
+    per_channel_curve_params(
+        exposure.grade,
+        exposure.density,
+        exposure.auto_normalize_contrast,
+        strength,
+        metrics.norm_density_range,
+        metrics.textural_range,
+        d_min,
+        anchor,
+        Some(profile),
+        if strength > 0.0 { neutral_axis } else { None },
+        [
+            exposure.grade_trim_red,
+            exposure.grade_trim_green,
+            exposure.grade_trim_blue,
+        ],
+        metrics.shadow_point,
+        Some(effective_midtone_gamma(
+            Some(profile),
+            exposure.midtone_gamma,
+        )),
+    )
+}
+
 /// (midtone, shadow, highlight) references in normalized density.
 pub type NeutralAxisNorm = ([f64; 3], [f64; 3], Option<[f64; 3]>);
 
