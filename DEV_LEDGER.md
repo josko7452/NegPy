@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 10:50 | **Last Commit:** `7bcb8715 backend: finish roll card split migrations`
+**Last Updated:** 2026-11-13 11:10 | **Last Commit:** `1d76ce16 backend: port fade restoration helpers`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -25,6 +25,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D12: Cast Removal moved from roll cards to frames (tests green).
 - D12: Section pushes, Raw Decode, Auto Crop and Film encoding migrations (tests green).
 - D7: Fade matrix/white-space helpers and process decode logic (tests green).
+- D8: Keystone inverse and four-edge solver (tests green).
 - `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
 - `d9c0ce50` D12: hash rehome and ambiguity.
 - `cf05350b` D12: normalization-roll baselines.

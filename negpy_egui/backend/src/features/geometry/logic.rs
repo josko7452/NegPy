@@ -233,6 +233,18 @@ pub fn keystone_matrix_normalized(converge_v: f64, converge_h: f64) -> [[f64; 3]
     [[m[0], m[1], m[2]], [m[3], m[4], m[5]], [m[6], m[7], m[8]]]
 }
 
+/// The keystone's inverse in normalized coordinates, which the shader consumes.
+#[must_use]
+pub fn keystone_inverse_normalized(converge_v: f64, converge_h: f64) -> [[f64; 3]; 3] {
+    if converge_v.abs() < KEYSTONE_EPS && converge_h.abs() < KEYSTONE_EPS {
+        return [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    }
+    let inverse = invert3(keystone_matrix_normalized(converge_v, converge_h))
+        .expect("the keystone matrix is invertible");
+    let scale = inverse[2][2];
+    inverse.map(|row| row.map(|value| value / scale))
+}
+
 /// `keystone_matrix`: the same map in pixel-index coordinates.
 #[must_use]
 pub fn keystone_matrix(

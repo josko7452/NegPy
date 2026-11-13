@@ -59,7 +59,7 @@ pub fn fade_white_space(
     let mut named = b"camera-gains".to_vec();
     if let Some(gains) = gains {
         for value in gains {
-            named.extend_from_slice(&(value as f64).round().to_le_bytes());
+            named.extend_from_slice(&value.round().to_le_bytes());
         }
     }
     if let Some(crosstalk) = crosstalk {
