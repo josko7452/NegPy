@@ -28,8 +28,9 @@ brotli-decompressor = "5.0.3"
 rawler = "0.8.0"
 jxl-oxide = "0.12.6"
 zip = { version = "4", default-features = false, features = ["deflate"] }
-npyz = "0.8"
+npyz = { version = "0.8.4", features = ["half"] }
 blake2 = "0.11.0"
+half = "2.7.1"
 
 [dev-dependencies]
 tempfile = "3"
