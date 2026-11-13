@@ -4,8 +4,9 @@ use negpy_backend::domain::models::{ExposureConfig, ProcessConfig, ProcessMode};
 use negpy_backend::features::exposure::auto_metrics::AutoSliderMetrics;
 use negpy_backend::features::transparency::logic::{
     TRANSFER_DENSITY_RANGE, TRANSFER_GRADE_REF, TransferSettings, apply_transfer_curve,
-    contrast_free_cmy, transfer_auto_terms, transfer_bounds, transfer_curve_params,
-    transfer_point_offsets, transfer_shown_values, transfer_stored_value, transfer_widths,
+    contrast_free_cmy, measure_transfer_neutral_axis, transfer_auto_terms, transfer_axis_bounds,
+    transfer_bounds, transfer_curve_params, transfer_point_offsets, transfer_shown_values,
+    transfer_stored_value, transfer_widths,
 };
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
@@ -144,4 +145,62 @@ fn the_stage_shapes_a_normalized_slide() {
     );
     assert_eq!(out.pixels.len(), 3);
     assert!(out.pixels.iter().all(|value| value.is_finite()));
+}
+
+fn wedge(dark: f32, bright: f32) -> Vec<f32> {
+    let mut image = Vec::with_capacity(96 * 96 * 3);
+    for index in 0..96 * 96 {
+        let value = dark * (bright / dark).powf(index as f32 / (96.0 * 96.0));
+        image.extend_from_slice(&[value, value * 0.86, value * 0.74]);
+    }
+    negpy_backend::features::exposure::normalization::prefilter_log_grid(&image, 96, 96, None, 0.0)
+        .0
+}
+
+#[test]
+fn other_frames_take_the_fixed_transfer_window() {
+    let grid = wedge(5e-4, 0.9);
+    assert_eq!(
+        transfer_axis_bounds(&grid, false),
+        transfer_bounds(TRANSFER_DENSITY_RANGE)
+    );
+}
+
+#[test]
+fn a_flat_positive_takes_the_fixed_transfer_window() {
+    let grid = vec![-1.0f32; 32 * 32 * 3];
+    assert_eq!(
+        transfer_axis_bounds(&grid, true),
+        transfer_bounds(TRANSFER_DENSITY_RANGE)
+    );
+}
+
+#[test]
+fn a_positive_window_uses_one_range_on_every_channel() {
+    let grid = wedge(8e-3, 0.45);
+    let bounds = transfer_axis_bounds(&grid, true);
+    assert_eq!(bounds.floors[0], bounds.floors[1]);
+    assert_eq!(bounds.floors[0], bounds.floors[2]);
+    assert_eq!(bounds.ceils, [bounds.ceils[0]; 3]);
+    assert!(bounds.floors[0] > bounds.ceils[0]);
+}
+
+#[test]
+fn a_dark_positive_gets_a_neutral_axis() {
+    let grid = wedge(8e-3, 0.45);
+    assert!(measure_transfer_neutral_axis(&grid, 96, 96, false).is_none());
+    assert!(measure_transfer_neutral_axis(&grid, 96, 96, true).is_some());
+}
+
+#[test]
+fn a_black_border_falls_outside_the_retry_window() {
+    let mut grid = wedge(8e-3, 0.45);
+    for row in 0..96 {
+        for col in 0..14 {
+            let at = (row * 96 + col) * 3;
+            grid[at..at + 3].fill(5e-4f32.log10());
+        }
+    }
+    let axis = measure_transfer_neutral_axis(&grid, 96, 96, true).expect("a retry axis");
+    assert!(axis.mid.iter().all(|value| value.is_finite()));
 }

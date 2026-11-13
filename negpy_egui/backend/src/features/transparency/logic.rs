@@ -7,6 +7,7 @@
 use std::f64::consts::LOG10_2;
 
 use crate::domain::models::{ExposureConfig, ProcessConfig};
+use crate::domain::types::{LUMA_B, LUMA_G, LUMA_R};
 use crate::features::exposure::analysis::working_oetf_encode;
 use crate::features::exposure::constants as c;
 use crate::features::exposure::curve::{effective_grade_range, grade_to_slope, slope_to_grade};
@@ -35,11 +36,73 @@ pub const TRANSFER_SHOULDER_KNEE: f64 = 0.35;
 pub const TRANSFER_BASELINE_EV: f64 = 0.7;
 pub const TRANSFER_KNEE_WIDTH: f64 = 0.45;
 pub const TRANSFER_WIDTH_REF: f64 = 2.5;
+/// Luma percentiles of a Positive frame's meter grid that span its neutral-axis window.
+pub const POSITIVE_AXIS_PERCENTILES: [f64; 2] = [1.0, 99.0];
+/// Narrowest Positive window, in decades: a flatter frame takes the fixed window.
+pub const POSITIVE_AXIS_MIN_RANGE: f64 = 1e-3;
+/// Decades above the window's dark end that a cell must clear to count in the retry window.
+pub const POSITIVE_AXIS_FLOOR_MARGIN: f64 = 0.1;
 
 /// The fixed log window a slide normalizes with.
 #[must_use]
 pub fn transfer_bounds(density_range: f64) -> LogNegativeBounds {
     LogNegativeBounds::new([0.0; 3], [-density_range; 3])
+}
+
+fn grid_luma(grid: &[f32]) -> Vec<f32> {
+    grid.as_chunks::<3>()
+        .0
+        .iter()
+        .map(|pixel| LUMA_R * pixel[0] + LUMA_G * pixel[1] + LUMA_B * pixel[2])
+        .collect()
+}
+
+fn positive_window(bright: f64, dark: f64) -> Option<LogNegativeBounds> {
+    (bright.is_finite() && dark.is_finite() && bright - dark > POSITIVE_AXIS_MIN_RANGE)
+        .then_some(LogNegativeBounds::new([bright; 3], [dark; 3]))
+}
+
+/// `transfer_axis_bounds`: a Positive frame's own luma range, else the fixed window.
+#[must_use]
+pub fn transfer_axis_bounds(grid: &[f32], positive: bool) -> LogNegativeBounds {
+    if positive
+        && let Some(percentiles) =
+            negpy_core::stats::np_percentiles(&grid_luma(grid), &POSITIVE_AXIS_PERCENTILES)
+        && let Some(window) = positive_window(percentiles[1] as f64, percentiles[0] as f64)
+    {
+        return window;
+    }
+    transfer_bounds(TRANSFER_DENSITY_RANGE)
+}
+
+/// `measure_transfer_neutral_axis`: Cast Removal's axis in the transfer window, with one retry
+/// that drops a clipped dark band from a Positive frame's window.
+#[must_use]
+pub fn measure_transfer_neutral_axis(
+    grid: &[f32],
+    width: usize,
+    height: usize,
+    positive: bool,
+) -> Option<negpy_core::meter::NeutralAxis> {
+    let fixed = transfer_bounds(TRANSFER_DENSITY_RANGE);
+    let bounds = transfer_axis_bounds(grid, positive);
+    let refs = crate::features::exposure::metering::measure_neutral_axis(
+        grid, width, height, bounds, false,
+    );
+    if refs.is_some() || !positive || bounds == fixed {
+        return refs;
+    }
+    let luma = grid_luma(grid);
+    let above: Vec<f32> = luma
+        .into_iter()
+        .filter(|value| *value > bounds.ceils[0] as f32 + POSITIVE_AXIS_FLOOR_MARGIN as f32)
+        .collect();
+    if above.is_empty() {
+        return None;
+    }
+    let dark = negpy_core::stats::np_percentiles(&above, &[POSITIVE_AXIS_PERCENTILES[0]])?[0];
+    let window = positive_window(bounds.floors[0], dark as f64)?;
+    crate::features::exposure::metering::measure_neutral_axis(grid, width, height, window, false)
 }
 
 /// White and Black Point offsets on the fixed window, negated.
