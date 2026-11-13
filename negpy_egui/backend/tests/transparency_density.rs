@@ -5,9 +5,11 @@ use negpy_backend::features::process::capture_color::{
     camera_matrix_parts, camera_to_working_matrix,
 };
 use negpy_backend::features::transparency::logic::{
-    density_channels, density_stage, slide_kelvin_to_wb, slide_pick_wb, slide_wb_to_kelvin,
+    density_channels, density_stage, density_stage_grid, fade_white_grid, faded_stage_grid,
+    relog_matrix_image, slide_kelvin_to_wb, slide_pick_wb, slide_wb_to_kelvin,
     transfer_total_contrast,
 };
+use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 const CAMERA: [[f64; 3]; 3] = [
     [0.6722, -0.0635, -0.0963],
@@ -128,4 +130,74 @@ fn the_total_contrast_is_the_transfer_grade() {
     let exposure = negpy_backend::domain::models::ExposureConfig::default();
     let metrics = negpy_backend::features::exposure::auto_metrics::AutoSliderMetrics::default();
     assert_eq!(transfer_total_contrast(&exposure, &metrics), 1.0);
+}
+
+fn flat_image(value: f32) -> ImageBuffer {
+    ImageBuffer::from_rgb(4, 3, vec![value; 4 * 3 * 3])
+}
+
+#[test]
+fn the_white_grid_reads_the_balanced_camera_channels() {
+    let balanced = [0.5, 0.2, 0.1];
+    let pixels = [
+        balanced[0] / WB[0] as f32,
+        balanced[1],
+        balanced[2] / WB[2] as f32,
+    ];
+    let image = ImageBuffer::from_rgb(4, 3, pixels.repeat(12));
+    let grid = fade_white_grid(
+        &slide(false),
+        Some(ProcessMode::E6),
+        Some(CAMERA),
+        Some(&WB),
+        &image,
+        None,
+        0.0,
+        None,
+    );
+    for pixel in grid.pixels.chunks_exact(3) {
+        for channel in 0..3 {
+            assert!((pixel[channel] - balanced[channel].log10() as f32).abs() < 1e-5);
+        }
+    }
+}
+
+#[test]
+fn a_stage_without_a_matrix_reads_its_prefiltered_input() {
+    let image = flat_image(0.4);
+    let stage = negpy_backend::features::transparency::logic::density_stage(
+        &slide(false),
+        None,
+        None,
+        Some([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        None,
+    );
+    let grid = faded_stage_grid(&stage, &image, None, 0.0, None);
+    let white = 0.4f32.log10();
+    for pixel in grid.pixels.chunks_exact(3) {
+        for channel in 0..3 {
+            assert!((pixel[channel] - white).abs() < 1e-5);
+        }
+    }
+}
+
+#[test]
+fn a_working_grid_turns_the_primaries_back_on() {
+    let image = flat_image(0.4);
+    let stage = density_stage(
+        &slide(false),
+        None,
+        None,
+        Some([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        None,
+    );
+    let grid = density_stage_grid(&stage, &image, None, 0.0, None, None);
+    let white = 0.4f32.log10();
+    for pixel in grid.pixels.chunks_exact(3) {
+        for channel in 0..3 {
+            assert!((pixel[channel] - white).abs() < 1e-5);
+        }
+    }
+    let raw = ImageBuffer::from_rgb(1, 1, vec![white; 3]);
+    assert_eq!(relog_matrix_image(&raw, None), raw);
 }

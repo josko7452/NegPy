@@ -118,6 +118,17 @@ pub fn camera_matrix_parts(
     (wb_gains(camera_wb), Some(primaries))
 }
 
+/// Camera primaries -> working space. A None matrix passes the buffer through.
+#[must_use]
+pub fn apply_camera_matrix(image: &[f32], matrix: Option<[[f64; 3]; 3]>) -> Vec<f32> {
+    let Some(matrix) = matrix else {
+        return image.to_vec();
+    };
+    let mut out = vec![0.0; image.len()];
+    negpy_core::color::matmul_3x3(image, &mut out, matrix.map(|row| row.map(|v| v as f32)));
+    out
+}
+
 /// `_WORKING_TO_XYZ` in the matrix type both paths share.
 #[must_use]
 pub fn working_to_xyz() -> [[f64; 3]; 3] {

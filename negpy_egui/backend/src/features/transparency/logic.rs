@@ -10,11 +10,13 @@ use crate::domain::models::{ExposureConfig, ProcessConfig};
 use crate::features::exposure::analysis::working_oetf_encode;
 use crate::features::exposure::constants as c;
 use crate::features::exposure::curve::{effective_grade_range, grade_to_slope, slope_to_grade};
-use crate::features::exposure::normalization::LogNegativeBounds;
+use crate::features::exposure::normalization::{LogNegativeBounds, prefilter_log_grid};
 use crate::features::exposure::print::{
     per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths,
 };
 use crate::features::exposure::processor::NeutralAxisRefs;
+use crate::features::process::fade::{CrossoverOffsets, apply_crossover};
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
 /// Log-density window the fixed-bounds normalization maps to [0, 1].
 pub const TRANSFER_DENSITY_RANGE: f64 = 3.0;
@@ -641,6 +643,143 @@ pub fn density_stage(
         post: channels.post,
         anchor,
     }
+}
+
+/// `_pre_log_grid`: the prefiltered log grid through the stage's camera matrix, reusing a
+/// caller's grid when there is no matrix.
+fn pre_log_grid(
+    pre: Option<[[f64; 3]; 3]>,
+    linear: &ImageBuffer,
+    roi: Option<(usize, usize, usize, usize)>,
+    analysis_buffer: f32,
+    log_grid: Option<&ImageBuffer>,
+) -> ImageBuffer {
+    if pre.is_none()
+        && let Some(grid) = log_grid
+    {
+        return grid.clone();
+    }
+    let mapped = pre.map(|matrix| {
+        let pixels = crate::features::process::capture_color::apply_camera_matrix(
+            &linear.pixels,
+            Some(matrix),
+        );
+        ImageBuffer::from_rgb(linear.width, linear.height, pixels)
+    });
+    let source = mapped.as_ref().unwrap_or(linear);
+    let (pixels, width, height) = prefilter_log_grid(
+        &source.pixels,
+        source.width,
+        source.height,
+        roi,
+        analysis_buffer,
+    );
+    ImageBuffer::from_rgb(width, height, pixels)
+}
+
+/// `faded_stage_grid`: the meter grid after the stage's density matrix, before its primaries.
+#[must_use]
+pub fn faded_stage_grid(
+    stage: &DensityStage,
+    linear: &ImageBuffer,
+    roi: Option<(usize, usize, usize, usize)>,
+    analysis_buffer: f32,
+    log_grid: Option<&ImageBuffer>,
+) -> ImageBuffer {
+    let grid = pre_log_grid(stage.pre, linear, roi, analysis_buffer, log_grid);
+    apply_density_matrix(&grid, stage.unmix.as_ref(), stage.anchor)
+}
+
+fn apply_density_matrix(
+    grid: &ImageBuffer,
+    matrix: Option<&[[f64; 4]; 3]>,
+    anchor: Option<[f64; 3]>,
+) -> ImageBuffer {
+    let Some(matrix) = matrix else {
+        return grid.clone();
+    };
+    let linear: [[f32; 3]; 3] = std::array::from_fn(|row| {
+        [
+            matrix[row][0] as f32,
+            matrix[row][1] as f32,
+            matrix[row][2] as f32,
+        ]
+    });
+    let mut out = vec![0.0; grid.pixels.len()];
+    if let Some(anchor) = anchor {
+        let offset = std::array::from_fn(|row| matrix[row][3] as f32);
+        negpy_core::analysis::unmix_log_anchored(
+            &grid.pixels,
+            linear,
+            anchor.map(|value| value as f32),
+            offset,
+            &mut out,
+        );
+    } else {
+        negpy_core::analysis::unmix_log(&grid.pixels, linear, &mut out);
+        let offset: [f32; 3] = std::array::from_fn(|row| matrix[row][3] as f32);
+        for pixel in out.chunks_exact_mut(3) {
+            for channel in 0..3 {
+                pixel[channel] += offset[channel];
+            }
+        }
+    }
+    ImageBuffer::from_rgb(grid.width, grid.height, out)
+}
+
+/// `density_stage_grid`: the working-space meter grid through the stage and its crossover.
+#[must_use]
+pub fn density_stage_grid(
+    stage: &DensityStage,
+    linear: &ImageBuffer,
+    roi: Option<(usize, usize, usize, usize)>,
+    analysis_buffer: f32,
+    log_grid: Option<&ImageBuffer>,
+    crossover: Option<&CrossoverOffsets>,
+) -> ImageBuffer {
+    let faded = faded_stage_grid(stage, linear, roi, analysis_buffer, log_grid);
+    let crossed = apply_crossover(&faded, crossover);
+    relog_matrix_image(&crossed, stage.post)
+}
+
+/// `relog_matrix_image`: 10^v, the linear matrix, then the log clamped at 1e-6.
+#[must_use]
+pub fn relog_matrix_image(image: &ImageBuffer, matrix: Option<[[f64; 3]; 3]>) -> ImageBuffer {
+    let Some(matrix) = matrix else {
+        return image.clone();
+    };
+    let mut out = vec![0.0; image.pixels.len()];
+    negpy_core::analysis::relog_matrix(
+        &image.pixels,
+        matrix.map(|row| row.map(|value| value as f32)),
+        &mut out,
+    );
+    ImageBuffer::from_rgb(image.width, image.height, out)
+}
+
+/// `fade_white_grid`: the white-balanced camera channels after the crosstalk unmix, with no
+/// fade or white.
+#[must_use]
+pub fn fade_white_grid(
+    process: &ProcessConfig,
+    process_mode: Option<crate::domain::models::ProcessMode>,
+    cam_xyz: Option<[[f64; 3]; 3]>,
+    camera_wb: Option<&[f64]>,
+    image: &ImageBuffer,
+    roi: Option<(usize, usize, usize, usize)>,
+    analysis_buffer: f32,
+    log_grid: Option<&ImageBuffer>,
+) -> ImageBuffer {
+    let crosstalk =
+        crate::features::exposure::metering::effective_crosstalk_matrix(process, process_mode)
+            .map(|matrix| matrix.map(|row| row.map(f64::from)));
+    let channels = if crosstalk.is_none() {
+        density_channels(process, cam_xyz, camera_wb)
+    } else {
+        density_stage(process, cam_xyz, camera_wb, crosstalk, None)
+    };
+    let grid = pre_log_grid(channels.pre, image, roi, analysis_buffer, log_grid);
+    apply_density_matrix(&grid, channels.unmix.as_ref(), channels.anchor)
 }
 
 /// The slide Temperature of a `(cyan, yellow)` pair, in the mired domain.
