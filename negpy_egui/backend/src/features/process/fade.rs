@@ -666,3 +666,158 @@ pub fn neutral_axis_midtone(grid: &ImageBuffer) -> Option<f64> {
 fn midtone_level(mid: [f64; 3]) -> f64 {
     mid[0] * CROSSOVER_WEIGHTS[0] + mid[1] * CROSSOVER_WEIGHTS[1] + mid[2] * CROSSOVER_WEIGHTS[2]
 }
+
+/// The log-density matrix and anchor `fade_density` applies after the crosstalk unmix.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FadeDensity {
+    pub matrix: Option<[[f64; 3]; 3]>,
+    pub offset: [f64; 3],
+    pub anchor: Option<[f64; 3]>,
+}
+
+fn inverse(matrix: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+    let a = matrix;
+    let det = a[0][0] * (a[1][1] * a[2][2] - a[1][2] * a[2][1])
+        - a[0][1] * (a[1][0] * a[2][2] - a[1][2] * a[2][0])
+        + a[0][2] * (a[1][0] * a[2][1] - a[1][1] * a[2][0]);
+    if det.abs() < 1e-12 {
+        return None;
+    }
+    let inv_det = 1.0 / det;
+    Some([
+        [
+            (a[1][1] * a[2][2] - a[1][2] * a[2][1]) * inv_det,
+            (a[0][2] * a[2][1] - a[0][1] * a[2][2]) * inv_det,
+            (a[0][1] * a[1][2] - a[0][2] * a[1][1]) * inv_det,
+        ],
+        [
+            (a[1][2] * a[2][0] - a[1][0] * a[2][2]) * inv_det,
+            (a[0][0] * a[2][2] - a[0][2] * a[2][0]) * inv_det,
+            (a[0][2] * a[1][0] - a[0][0] * a[1][2]) * inv_det,
+        ],
+        [
+            (a[1][0] * a[2][1] - a[1][1] * a[2][0]) * inv_det,
+            (a[0][1] * a[2][0] - a[0][0] * a[2][1]) * inv_det,
+            (a[0][0] * a[1][1] - a[0][1] * a[1][0]) * inv_det,
+        ],
+    ])
+}
+
+fn multiply(left: [[f64; 3]; 3], right: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    std::array::from_fn(|row| {
+        std::array::from_fn(|col| (0..3).map(|k| left[row][k] * right[k][col]).sum())
+    })
+}
+
+fn apply(matrix: [[f64; 3]; 3], point: [f64; 3]) -> [f64; 3] {
+    std::array::from_fn(|row| (0..3).map(|col| matrix[row][col] * point[col]).sum())
+}
+
+fn white_terms(
+    process: &ProcessConfig,
+    white_space: &str,
+    fade_acts: bool,
+) -> Option<([f64; 3], [f64; 3])> {
+    let white = fade_white(process, white_space)?;
+    if process.fade_white_anchor {
+        let target = white_target(white);
+        return Some((white, [target, target, target]));
+    }
+    if !white_space.is_empty() && fade_acts {
+        let level = density_anchor(white, false);
+        return Some((level, level));
+    }
+    None
+}
+
+fn base_density(
+    process: &ProcessConfig,
+    white_space: &str,
+) -> (Option<[[f64; 3]; 3]>, Option<[f64; 3]>, [f64; 3]) {
+    let unmix = effective_crosstalk_matrix(process, Some(process.process_mode))
+        .map(|matrix| matrix.map(|row| row.map(f64::from)));
+    let fade = fade_matrix(process);
+    let matrix = match (fade, unmix) {
+        (None, unmix) => unmix,
+        (Some(fade), None) => Some(fade),
+        (Some(fade), Some(unmix)) => Some(multiply(fade, unmix)),
+    };
+    let Some((white, target)) = white_terms(process, white_space, fade.is_some()) else {
+        return (matrix, None, [0.0; 3]);
+    };
+    let anchor = unmix
+        .and_then(inverse)
+        .map_or(white, |inverse| apply(inverse, white));
+    let linear = matrix.unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let mapped = apply(linear, anchor);
+    let offset = std::array::from_fn(|channel| target[channel] - mapped[channel]);
+    let anchor = (!white_space.is_empty()).then_some(anchor);
+    (Some(linear), anchor, offset)
+}
+
+/// The log-density matrix and anchor a render applies after the crosstalk unmix.
+#[must_use]
+pub fn fade_density(process: &ProcessConfig, white_space: &str) -> FadeDensity {
+    let (matrix, anchor, mut offset) = base_density(process, white_space);
+    if process.fade_density_shift != 0.0 && render_path(process) != RenderPath::Print {
+        offset.iter_mut()
+            .for_each(|value| *value -= process.fade_density_shift);
+    }
+    FadeDensity {
+        matrix,
+        offset,
+        anchor,
+    }
+}
+
+/// `grid` through a fade affine, with each channel capped at the anchor first.
+#[must_use]
+pub fn through_density(grid: &[[f32; 3]], density: &FadeDensity) -> Vec<[f32; 3]> {
+    let linear = density.matrix.unwrap_or([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]);
+    let anchor = density.anchor.unwrap_or([f32::INFINITY as f64; 3]);
+    grid.iter()
+        .map(|pixel| {
+            let capped = [
+                f64::from(pixel[0]).min(anchor[0]),
+                f64::from(pixel[1]).min(anchor[1]),
+                f64::from(pixel[2]).min(anchor[2]),
+            ];
+            std::array::from_fn(|channel| {
+                let sum: f64 = (0..3).map(|col| linear[channel][col] * capped[col]).sum();
+                (sum + density.offset[channel]) as f32
+            })
+        })
+        .collect()
+}
+
+/// The fade a fresh slide render takes with `survivals`, its measured white and a shift.
+#[must_use]
+pub fn survival_density(
+    survivals: [f64; 3],
+    white: Option<[f64; 3]>,
+    white_anchor: bool,
+    camera_raw: bool,
+    white_space: &str,
+    shift: f64,
+) -> FadeDensity {
+    let mut process = ProcessConfig {
+        process_mode: crate::domain::models::ProcessMode::E6,
+        fade_ratio_r: survivals[0],
+        fade_ratio_g: survivals[1],
+        fade_ratio_b: survivals[2],
+        fade_white_anchor: white_anchor,
+        fade_density_shift: shift,
+        ..ProcessConfig::default()
+    };
+    let space = if white_space.is_empty() && camera_raw {
+        "estimate"
+    } else {
+        white_space
+    };
+    let white = white.unwrap_or([0.0; 3]);
+    process.fade_white_r = white[0];
+    process.fade_white_g = white[1];
+    process.fade_white_b = white[2];
+    process.fade_white_space = space.to_string();
+    fade_density(&process, space)
+}
