@@ -3,6 +3,7 @@
 pub mod exposure;
 pub mod finish;
 pub mod geometry;
+pub mod hdr;
 pub mod lab;
 pub mod local;
 pub mod process;
