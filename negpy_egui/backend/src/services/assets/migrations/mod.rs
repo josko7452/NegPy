@@ -7,6 +7,7 @@ pub mod bounds;
 pub mod cast_removal;
 mod common;
 pub mod flatfield;
+pub mod gear_presets;
 pub mod hash;
 pub mod normalization_roll;
 pub mod positive_auto;

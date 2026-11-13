@@ -7,6 +7,7 @@ pub mod geometry;
 pub mod hdr;
 pub mod lab;
 pub mod local;
+pub mod metadata;
 pub mod process;
 pub mod retouch;
 pub mod toning;
