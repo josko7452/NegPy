@@ -285,6 +285,92 @@ impl FlatFieldProfiles {
     pub fn delete(&self, profile_id: &str) {
         let _ = std::fs::remove_file(self.path_for_id(profile_id));
     }
+
+    /// Rewrite one unmarked legacy profile into sensor layout when its reference tells how.
+    ///
+    /// A profile that cannot be told stays unmarked, applies as baked and is retried.
+    pub fn migrate_layout_file(&self, profile_id: &str) -> std::io::Result<()> {
+        let members = self
+            .read(
+                profile_id,
+                &["gain", "source", "reference", "check", "layout"],
+            )
+            .ok_or_else(|| {
+                std::io::Error::new(std::io::ErrorKind::NotFound, "profile is unreadable")
+            })?;
+        if members.contains_key("layout") || !members.contains_key("gain") {
+            return Ok(());
+        }
+        let gain = self.read_f32(profile_id, "gain").ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidData, "profile has no gain")
+        })?;
+        let source = read_text(&members, "source").unwrap_or_default();
+        if source.is_empty() || !Path::new(&source).exists() {
+            return Ok(());
+        }
+        let Some(orientation) = baked_orientation(&source, &gain) else {
+            return Ok(());
+        };
+        let sensor_gain = to_sensor_layout(&gain, Some(orientation));
+        let reference = self
+            .read_f16(profile_id, "reference")
+            .map(|reference| to_sensor_layout(&reference, Some(orientation)));
+        let check = self.read_check(profile_id);
+        let metadata = self.get(profile_id).unwrap_or(FlatFieldProfile {
+            id: profile_id.to_string(),
+            name: profile_id.to_string(),
+            k1: 0.0,
+            source: source.clone(),
+        });
+        self.write(
+            profile_id,
+            &sensor_gain,
+            &metadata.name,
+            metadata.k1,
+            &source,
+            reference.as_ref(),
+            check,
+        )?;
+        Ok(())
+    }
+
+    fn read_check(&self, profile_id: &str) -> Option<Evenness> {
+        self.load_check(profile_id)?.check
+    }
+}
+
+const TIFF_MARKERS: [&[u8]; 4] = [b"II*\x00", b"MM\x00*", b"II+\x00", b"MM\x00+"];
+const JXL_EXTENSION: &str = "jxl";
+
+fn baked_orientation(source: &str, gain: &ImageBuffer) -> Option<u8> {
+    let extension = Path::new(source)
+        .extension()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_lowercase();
+    if extension == JXL_EXTENSION {
+        return Some(1);
+    }
+    let head = std::fs::read(source).ok()?;
+    let tiff = head
+        .get(..4)
+        .is_some_and(|magic| TIFF_MARKERS.contains(&magic));
+    let tag = crate::infrastructure::loaders::helpers::read_orientation(Path::new(source));
+    if tag == 1 || tiff {
+        return Some(tag);
+    }
+    if !matches!(tag, 5 | 6 | 7 | 8) {
+        return None;
+    }
+    let raw = rawler::decode_file(Path::new(source)).ok()?;
+    let (sensor_width, sensor_height) = (raw.width, raw.height);
+    let sensor_portrait = sensor_height > sensor_width;
+    let gain_portrait = gain.height > gain.width;
+    Some(if gain_portrait != sensor_portrait {
+        tag
+    } else {
+        1
+    })
 }
 
 impl crate::features::flatfield::logic::GainProvider for FlatFieldProfiles {

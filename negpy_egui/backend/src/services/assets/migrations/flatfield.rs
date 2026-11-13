@@ -119,3 +119,22 @@ pub fn migrate_legacy_flatfield_profiles(repo: &mut StorageRepository, store: &F
         log::error!("Could not record the Flat-field migration: {error}");
     }
 }
+
+/// Turn every unmarked profile whose reference can be read into sensor layout.
+pub fn migrate_flatfield_sensor_layout(store: &FlatFieldProfiles) {
+    let Ok(entries) = std::fs::read_dir(&store.directory) else {
+        return;
+    };
+    let mut names: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.ends_with(".npz"))
+        .collect();
+    names.sort();
+    for name in names {
+        let id = &name[..name.len() - 4];
+        if let Err(error) = store.migrate_layout_file(id) {
+            log::error!("Flat-field: could not move {name} to sensor layout: {error}");
+        }
+    }
+}
