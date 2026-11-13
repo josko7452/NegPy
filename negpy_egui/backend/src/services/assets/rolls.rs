@@ -1655,6 +1655,18 @@ pub fn restore_roll_fields(
     write(repo, store);
 }
 
+/// Remove the retired whole-roll apply record from every roll.
+pub fn drop_section_pushes(repo: &mut StorageRepository) {
+    let mut store = read(repo);
+    if store.values_mut().any(|entry| {
+        entry
+            .as_object_mut()
+            .is_some_and(|entry| entry.remove("section_pushes").is_some())
+    }) {
+        write(repo, store);
+    }
+}
+
 /// Copy a roll's defaults, frame seed and the named frames' card locks.
 pub fn copy_roll_settings(
     repo: &mut StorageRepository,

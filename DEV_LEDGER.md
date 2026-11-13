@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 10:30 | **Last Commit:** `ac3e738c backend: split roll baseline card locks`
+**Last Updated:** 2026-11-13 10:40 | **Last Commit:** `c2898d0c backend: move Cast Removal onto frames`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -23,6 +23,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D12: New roll-field card locks (tests green).
 - D12: Baseline card split migration (tests green).
 - D12: Cast Removal moved from roll cards to frames (tests green).
+- D12: Section pushes, Raw Decode, Auto Crop and Film encoding migrations (tests green).
 - `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
 - `d9c0ce50` D12: hash rehome and ambiguity.
 - `cf05350b` D12: normalization-roll baselines.

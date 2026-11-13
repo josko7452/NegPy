@@ -246,3 +246,122 @@ pub fn migrate_cast_removal_to_frames(repo: &mut StorageRepository) {
         log::error!("Could not record the Cast Removal migration: {error}");
     }
 }
+
+const SECTION_PUSHES_FLAG: &str = "section_pushes_dropped_v1";
+
+/// Drop the retired whole-roll apply records, once.
+pub fn migrate_drop_section_pushes(repo: &mut StorageRepository) {
+    if setting_truthy(repo, SECTION_PUSHES_FLAG) {
+        return;
+    }
+    crate::services::assets::rolls::drop_section_pushes(repo);
+    if let Err(error) = save_setting(repo, SECTION_PUSHES_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the section-push cleanup: {error}");
+    }
+}
+
+const RAW_DECODE_SPLIT_FLAG: &str = "raw_decode_linear_raw_v1";
+
+/// Give every frame locked on the old Calibration card the new Raw Decode half.
+pub fn migrate_linear_raw_card_split(repo: &mut StorageRepository) {
+    if setting_truthy(repo, RAW_DECODE_SPLIT_FLAG) {
+        return;
+    }
+    let saved = crate::services::assets::rolls::saved_rolls(repo);
+    for (roll_id, entry) in saved {
+        let overrides = entry
+            .get("frame_overrides")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        for (file_hash, cards) in overrides {
+            let sensor_locked = cards
+                .as_array()
+                .is_some_and(|cards| cards.iter().any(|card| card.as_str() == Some("sensor")));
+            if sensor_locked {
+                set_frame_override(repo, &roll_id, &file_hash, "demosaic", true, None);
+            }
+        }
+    }
+    if let Err(error) = save_setting(repo, RAW_DECODE_SPLIT_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the Raw Decode card split: {error}");
+    }
+}
+
+const AUTO_CROP_FLAG: &str = "auto_crop_roll_card_v1";
+
+/// Lock the Auto Crop card on every frame saved with Auto Crop on.
+///
+/// A hand-drawn crop needs no lock, so only `crop_from_auto` rows are read.
+pub fn migrate_auto_crop_roll_locks(repo: &mut StorageRepository) {
+    if setting_truthy(repo, AUTO_CROP_FLAG) {
+        return;
+    }
+    let result = (|| -> rusqlite::Result<()> {
+        let connection = rusqlite::Connection::open(&repo.edits_db_path)?;
+        let mut statement =
+            connection.prepare("SELECT file_hash, settings_json, file_path FROM file_settings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(statement);
+        for (file_hash, settings, file_path) in rows {
+            let data = settings
+                .as_deref()
+                .and_then(|settings| serde_json::from_str::<Value>(settings).ok())
+                .and_then(|value| value.as_object().cloned())
+                .unwrap_or_default();
+            if !data
+                .get("crop_from_auto")
+                .is_some_and(super::common::truthy)
+            {
+                continue;
+            }
+            let base = unforked_hash(&file_hash);
+            for roll_id in rolls_for_row(repo, &file_hash, file_path.as_deref()) {
+                set_frame_override(repo, &roll_id, &base, "auto_crop", true, None);
+            }
+        }
+        Ok(())
+    })();
+    if let Err(error) = result {
+        log::error!("Auto Crop roll-card lock migration failed; continuing without it: {error}");
+    }
+    if let Err(error) = save_setting(repo, AUTO_CROP_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the Auto Crop lock migration: {error}");
+    }
+}
+
+const FILM_ENCODING_FLAG: &str = "film_card_source_encoding_v1";
+
+/// Give each roll with Film defaults the Auto encoding, once.
+pub fn migrate_film_card_source_encoding(repo: &mut StorageRepository) {
+    if setting_truthy(repo, FILM_ENCODING_FLAG) {
+        return;
+    }
+    for (roll_id, entry) in crate::services::assets::rolls::saved_rolls(repo) {
+        let defaults = entry
+            .get("defaults")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if !defaults.contains_key("source_encoding")
+            && (defaults.contains_key("process_mode") || defaults.contains_key("positive_source"))
+        {
+            let mut fields = Map::new();
+            fields.insert(
+                "source_encoding".to_string(),
+                Value::String("auto".to_string()),
+            );
+            crate::services::assets::rolls::set_roll_defaults(repo, &roll_id, fields);
+        }
+    }
+    if let Err(error) = save_setting(repo, FILM_ENCODING_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the Film card encoding migration: {error}");
+    }
+}

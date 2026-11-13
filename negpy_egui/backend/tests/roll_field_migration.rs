@@ -6,6 +6,7 @@ use negpy_backend::services::assets::migrations::roll_fields::migrate_new_roll_f
 use negpy_backend::services::assets::rolls::{
     create_virtual_roll, frame_override_cards, roll_edit_hash,
 };
+use serde_json::Value;
 
 fn repository(dir: &std::path::Path) -> StorageRepository {
     let repo = StorageRepository::new(
@@ -177,5 +178,120 @@ fn a_frame_that_followed_its_roll_keeps_the_rolls_cast_removal() {
     assert_eq!(
         frame_seed(&repo, &roll).get("cast_removal_strength"),
         Some(&serde_json::json!(0.4))
+    );
+}
+
+#[test]
+fn section_pushes_are_dropped_once() {
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_drop_section_pushes;
+    use negpy_backend::services::assets::rolls::{ROLLS_KEY, roll_for_id, saved_rolls};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(&mut repo, "Roll", &["/r/a.tif".to_string()]);
+    let mut store = saved_rolls(&repo);
+    store[&roll].as_object_mut().unwrap().insert(
+        "section_pushes".to_string(),
+        serde_json::json!({"tone": {"density": 1.2}}),
+    );
+    let mut values = serde_json::Map::new();
+    values.insert(ROLLS_KEY.to_string(), Value::Object(store));
+    repo.save_global_settings(&values).unwrap();
+
+    migrate_drop_section_pushes(&mut repo);
+    let mut store = saved_rolls(&repo);
+    store[&roll].as_object_mut().unwrap().insert(
+        "section_pushes".to_string(),
+        serde_json::json!({"tone": {"density": 1.2}}),
+    );
+    let mut values = serde_json::Map::new();
+    values.insert(ROLLS_KEY.to_string(), Value::Object(store));
+    repo.save_global_settings(&values).unwrap();
+    migrate_drop_section_pushes(&mut repo);
+
+    assert_eq!(
+        roll_for_id(&repo, &roll)
+            .unwrap()
+            .get("section_pushes")
+            .cloned(),
+        Some(serde_json::json!({"tone": {"density": 1.2}})),
+        "runs once"
+    );
+    let mut values = serde_json::Map::new();
+    values.insert("section_pushes_dropped_v1".to_string(), Value::Bool(false));
+    repo.save_global_settings(&values).unwrap();
+    migrate_drop_section_pushes(&mut repo);
+    assert!(
+        roll_for_id(&repo, &roll)
+            .unwrap()
+            .get("section_pushes")
+            .is_none()
+    );
+}
+
+#[test]
+fn a_calibration_lock_becomes_both_halves_of_the_raw_decode_split() {
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_linear_raw_card_split;
+    use negpy_backend::services::assets::rolls::set_frame_override;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(&mut repo, "Roll", &["/r/a.tif".to_string()]);
+    set_frame_override(&mut repo, &roll, "a", "sensor", true, None);
+
+    migrate_linear_raw_card_split(&mut repo);
+
+    assert_eq!(cards(&repo, &roll, "a"), ["demosaic", "sensor"]);
+}
+
+#[test]
+fn auto_crop_locks_only_a_frame_saved_with_it_on() {
+    use negpy_backend::domain::models::workspace::WorkspaceConfig;
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_auto_crop_roll_locks;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(
+        &mut repo,
+        "Roll",
+        &["/r/a.tif", "/r/b.tif", "/r/c.tif"].map(str::to_string),
+    );
+
+    let mut a = WorkspaceConfig::default();
+    a.geometry.crop_rect = Some(vec![0.1, 0.1, 0.9, 0.9]);
+    a.geometry.crop_from_auto = true;
+    let mut b = WorkspaceConfig::default();
+    b.geometry.crop_rect = Some(vec![0.1, 0.1, 0.9, 0.9]);
+    save(&repo, "a", &a, "/r/a.tif");
+    save(&repo, "b", &b, "/r/b.tif");
+    save(&repo, "c", &WorkspaceConfig::default(), "/r/c.tif");
+
+    migrate_auto_crop_roll_locks(&mut repo);
+
+    assert_eq!(cards(&repo, &roll, "a"), ["auto_crop"]);
+    assert!(cards(&repo, &roll, "b").is_empty());
+    assert!(cards(&repo, &roll, "c").is_empty());
+}
+
+#[test]
+fn a_roll_with_film_defaults_gets_auto_encoding() {
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_film_card_source_encoding;
+    use negpy_backend::services::assets::rolls::{roll_defaults, set_roll_defaults};
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(&mut repo, "Roll", &["/r/a.tif".to_string()]);
+    let mut defaults = serde_json::Map::new();
+    defaults.insert(
+        "process_mode".to_string(),
+        Value::String("Transparency".to_string()),
+    );
+    set_roll_defaults(&mut repo, &roll, defaults);
+
+    migrate_film_card_source_encoding(&mut repo);
+
+    assert_eq!(
+        roll_defaults(&repo, &roll).get("source_encoding"),
+        Some(&Value::String("auto".to_string()))
     );
 }
