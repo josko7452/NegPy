@@ -96,3 +96,25 @@ fn the_migration_runs_once() {
 
     assert!(cards(&repo, &roll, "a").is_empty());
 }
+
+#[test]
+fn a_normalization_lock_becomes_both_halves_of_the_split() {
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_baseline_card_split;
+    use negpy_backend::services::assets::rolls::set_frame_override;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(
+        &mut repo,
+        "Roll",
+        &["/r/a.tif", "/r/b.tif"].map(str::to_string),
+    );
+    set_frame_override(&mut repo, &roll, "a", "process", true, None);
+    set_frame_override(&mut repo, &roll, "b", "lens", true, None);
+
+    migrate_baseline_card_split(&mut repo);
+    migrate_baseline_card_split(&mut repo);
+
+    assert_eq!(cards(&repo, &roll, "a"), ["baseline", "process"]);
+    assert_eq!(cards(&repo, &roll, "b"), ["lens"]);
+}

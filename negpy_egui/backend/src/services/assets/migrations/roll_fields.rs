@@ -111,3 +111,34 @@ pub fn migrate_new_roll_field_locks(repo: &mut StorageRepository) {
         log::error!("Could not record the roll-field lock migration: {error}");
     }
 }
+
+const BASELINE_SPLIT_FLAG: &str = "baseline_card_split_v1";
+
+/// Give every frame locked on the old Normalization card the new baseline half.
+///
+/// The old `process` lock covered Use Luma/Color Average before they moved to the
+/// `baseline` card. Keeping both halves means the frame renders as it did.
+pub fn migrate_baseline_card_split(repo: &mut StorageRepository) {
+    if setting_truthy(repo, BASELINE_SPLIT_FLAG) {
+        return;
+    }
+    let saved = crate::services::assets::rolls::saved_rolls(repo);
+    for (roll_id, entry) in saved {
+        let overrides = entry
+            .get("frame_overrides")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        for (file_hash, cards) in overrides {
+            let process_locked = cards
+                .as_array()
+                .is_some_and(|cards| cards.iter().any(|card| card.as_str() == Some("process")));
+            if process_locked {
+                set_frame_override(repo, &roll_id, &file_hash, "baseline", true, None);
+            }
+        }
+    }
+    if let Err(error) = save_setting(repo, BASELINE_SPLIT_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the baseline card split: {error}");
+    }
+}
