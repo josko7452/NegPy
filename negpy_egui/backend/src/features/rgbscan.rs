@@ -585,17 +585,25 @@ fn remap_plane(
     start: usize,
     out: &mut [f32],
 ) {
-    let at = |x: f32, y: f32| -> f32 {
-        let xi = x.round_ties_even().clamp(0.0, (width - 1) as f32) as usize;
-        let yi = y.round_ties_even().clamp(0.0, (height - 1) as f32) as usize;
-        plane[yi * width + xi]
+    let source = negpy_core::warp::Image {
+        data: plane,
+        h: height,
+        w: width,
+        cn: 1,
     };
-    for row in 0..(out.len() / width) {
-        for col in 0..width {
-            out[row * width + col] = at(mx[row * width + col], my[row * width + col]);
-        }
-    }
-    let _ = start;
+    let mut full = vec![0.0; width * height];
+    negpy_core::warp::remap(
+        &source,
+        (
+            negpy_core::warp::Interp::Cubic,
+            negpy_core::warp::Border::Replicate,
+        ),
+        (mx, my),
+        width,
+        &mut full,
+    );
+    let rows = out.len() / width;
+    out.copy_from_slice(&full[start * width..(start + rows) * width]);
 }
 
 fn apply_exif_orientation(img: &ImageBuffer, orientation: u8) -> ImageBuffer {
@@ -682,67 +690,77 @@ impl crate::domain::models::LensMetadata {
         orientation: u8,
         corrections: crate::domain::models::LensCorrections,
     ) -> ImageBuffer {
-        if !corrections.any() || !self.available() || img.width.min(img.height) < 2 {
-            return img.clone();
-        }
-        let inverse = match orientation {
-            6 => 8,
-            8 => 6,
-            other => other,
+        apply_lens(img, self, orientation, corrections)
+    }
+}
+
+/// Apply the selected embedded warps, with bounded temporary map memory.
+#[must_use]
+pub fn apply_lens(
+    img: &ImageBuffer,
+    lens: &crate::domain::models::LensMetadata,
+    orientation: u8,
+    corrections: crate::domain::models::LensCorrections,
+) -> ImageBuffer {
+    if !corrections.any() || !lens.available() || img.width.min(img.height) < 2 {
+        return img.clone();
+    }
+    let inverse = match orientation {
+        6 => 8,
+        8 => 6,
+        other => other,
+    };
+    let mut source = apply_exif_orientation(img, inverse);
+    let applied: Vec<&crate::domain::models::LensWarp> = lens
+        .warps
+        .iter()
+        .filter(|warp| {
+            (corrections.distortion && warp.has_distortion()) || (corrections.ca && warp.has_ca())
+        })
+        .collect();
+    let scale = lens.fill_scale((source.height, source.width), corrections);
+    let mut filled = lens.clone();
+    filled.fill_scale = scale;
+    for (index, warp) in applied.iter().enumerate() {
+        let active = if index == applied.len() - 1 {
+            &filled
+        } else {
+            lens
         };
-        let mut source = apply_exif_orientation(img, inverse);
-        let applied: Vec<&crate::domain::models::LensWarp> = self
-            .warps
-            .iter()
-            .filter(|warp| {
-                (corrections.distortion && warp.has_distortion())
-                    || (corrections.ca && warp.has_ca())
-            })
-            .collect();
-        let scale = self.fill_scale((source.height, source.width), corrections);
-        let mut filled = self.clone();
-        filled.fill_scale = scale;
-        for (index, warp) in applied.iter().enumerate() {
-            let lens = if index == applied.len() - 1 {
-                &filled
-            } else {
-                self
-            };
-            let mut result = vec![0.0; source.pixels.len()];
-            for channel in 0..3 {
-                let mut plane = vec![0.0; source.width * source.height];
-                negpy_core::convert::extract_channel(&source.pixels, 3, channel, &mut plane);
-                for start in (0..source.height).step_by(256) {
-                    let stop = (start + 256).min(source.height);
-                    let Some((mx, my)) = warp.maps(
-                        lens,
-                        (source.height, source.width),
-                        (start, stop),
-                        channel,
-                        corrections,
-                    ) else {
-                        continue;
-                    };
-                    let mut out = vec![0.0; (stop - start) * source.width];
-                    remap_plane(
-                        &plane,
-                        &mx,
-                        &my,
-                        source.width,
-                        source.height,
-                        start,
-                        &mut out,
-                    );
-                    for row in 0..stop - start {
-                        for col in 0..source.width {
-                            result[((start + row) * source.width + col) * 3 + channel] =
-                                out[row * source.width + col].max(0.0);
-                        }
+        let mut result = vec![0.0; source.pixels.len()];
+        for channel in 0..3 {
+            let mut plane = vec![0.0; source.width * source.height];
+            negpy_core::convert::extract_channel(&source.pixels, 3, channel, &mut plane);
+            for start in (0..source.height).step_by(256) {
+                let stop = (start + 256).min(source.height);
+                let Some((mx, my)) = warp.maps(
+                    active,
+                    (source.height, source.width),
+                    (start, stop),
+                    channel,
+                    corrections,
+                ) else {
+                    continue;
+                };
+                let mut out = vec![0.0; (stop - start) * source.width];
+                remap_plane(
+                    &plane,
+                    &mx,
+                    &my,
+                    source.width,
+                    source.height,
+                    start,
+                    &mut out,
+                );
+                for row in 0..stop - start {
+                    for col in 0..source.width {
+                        result[((start + row) * source.width + col) * 3 + channel] =
+                            out[row * source.width + col].max(0.0);
                     }
                 }
             }
-            source = ImageBuffer::from_rgb(source.width, source.height, result);
         }
-        apply_exif_orientation(&source, orientation)
+        source = ImageBuffer::from_rgb(source.width, source.height, result);
     }
+    apply_exif_orientation(&source, orientation)
 }

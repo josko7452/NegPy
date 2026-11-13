@@ -1,6 +1,7 @@
 //! Ports the warp-capability and center-fixed cases of tests/test_metadata_lens.py.
 
 use negpy_backend::domain::models::{IDENTITY, LensCorrections, LensMetadata, LensWarp};
+use negpy_backend::features::rgbscan::apply_lens;
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 fn image() -> ImageBuffer {
@@ -122,4 +123,105 @@ fn a_fill_scale_never_exceeds_one() {
         },
     );
     assert!((0.5..=1.0).contains(&scale));
+}
+
+fn ramp(width: usize, height: usize) -> ImageBuffer {
+    ImageBuffer::from_rgb(
+        width,
+        height,
+        (0..width * height * 3)
+            .map(|i| 0.1 + (i % (width * 3)) as f32 / (width * 3) as f32 * 0.7)
+            .collect(),
+    )
+}
+
+#[test]
+fn the_lens_entry_point_is_the_python_name() {
+    let lens = LensMetadata {
+        warps: vec![LensWarp::Rectilinear {
+            coefficients: vec![[1.0, -0.1, 0.0, 0.0, 0.0, 0.0]],
+            center: (0.5, 0.5),
+        }],
+        ..LensMetadata::default()
+    };
+    let image = ramp(90, 60);
+    let selected = LensCorrections {
+        distortion: true,
+        ca: true,
+    };
+    assert_eq!(
+        apply_lens(&image, &lens, 1, selected),
+        lens.apply(&image, 1, selected)
+    );
+}
+
+#[test]
+fn no_correction_keeps_the_source() {
+    let image = ramp(30, 20);
+    assert_eq!(
+        apply_lens(
+            &image,
+            &LensMetadata::default(),
+            1,
+            LensCorrections::default()
+        ),
+        image
+    );
+}
+
+#[test]
+fn a_lens_remap_moves_a_smooth_ramp_continuously() {
+    let image = ramp(90, 60);
+    let lens = LensMetadata {
+        warps: vec![LensWarp::Rectilinear {
+            coefficients: vec![[1.0, 0.04, 0.01, 0.0, 0.001, -0.002]],
+            center: (0.5, 0.5),
+        }],
+        ..LensMetadata::default()
+    };
+    let out = apply_lens(
+        &image,
+        &lens,
+        1,
+        LensCorrections {
+            distortion: true,
+            ca: false,
+        },
+    );
+    let row = 30 * out.width;
+    let steps: Vec<f32> = (1..out.width)
+        .map(|col| (out.pixels[(row + col) * 3] - out.pixels[(row + col - 1) * 3]).abs())
+        .collect();
+    assert!(steps.iter().all(|step| *step < 0.05));
+}
+
+#[test]
+fn orientation_wraps_the_same_correction() {
+    let base = ramp(90, 60);
+    let lens = LensMetadata {
+        warps: vec![LensWarp::Rectilinear {
+            coefficients: vec![[1.0, -0.05, 0.0, 0.0, 0.0, 0.0]],
+            center: (0.5, 0.5),
+        }],
+        ..LensMetadata::default()
+    };
+    let selected = LensCorrections {
+        distortion: true,
+        ca: false,
+    };
+    let oriented = orient(&base, 6);
+    let expected = orient(&apply_lens(&base, &lens, 1, selected), 6);
+    assert_eq!(apply_lens(&oriented, &lens, 6, selected), expected);
+}
+
+fn orient(img: &ImageBuffer, orientation: u8) -> ImageBuffer {
+    let bytes: Vec<u8> = img.pixels.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    let (height, width) = negpy_core::orient::oriented_dims(img.height, img.width, orientation);
+    let mut dst = vec![0u8; height * width * 12];
+    negpy_core::orient::orient(&bytes, img.height, img.width, 12, orientation, &mut dst);
+    let pixels = dst
+        .chunks_exact(4)
+        .map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    ImageBuffer::from_rgb(width, height, pixels)
 }
