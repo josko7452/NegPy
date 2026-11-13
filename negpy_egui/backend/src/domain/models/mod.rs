@@ -38,7 +38,7 @@ pub use flatfield::FlatFieldConfig;
 pub use geometry::{AspectRatio, AutocropMode, GeometryConfig};
 pub use hdr::{HdrConfig, hdr_active, hdr_merge_token, hdr_name, hdr_stem, hdr_token};
 pub use lab::{LabConfig, SharpenMethod};
-pub use lens::{LensCorrections, LensMetadata, LensWarp};
+pub use lens::{IDENTITY, LensCorrections, LensMetadata, LensWarp};
 pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
 pub use metadata::{MetadataConfig, normalize_description_fields};
 pub use process::{

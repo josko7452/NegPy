@@ -401,3 +401,292 @@ pub fn assemble_rgb(
 pub fn rgbscan_token(config: &crate::domain::models::RgbScanConfig) -> String {
     crate::domain::models::rgbscan_token(config)
 }
+
+impl crate::domain::models::LensWarp {
+    /// The inverse map of one channel's rows, or `None` when this warp has no selected work.
+    fn maps(
+        &self,
+        lens: &crate::domain::models::LensMetadata,
+        (height, width): (usize, usize),
+        rows: (usize, usize),
+        channel: usize,
+        corrections: crate::domain::models::LensCorrections,
+    ) -> Option<(Vec<f32>, Vec<f32>)> {
+        let (start, stop) = rows;
+        let count = (stop.saturating_sub(start)) * width;
+        match self {
+            crate::domain::models::LensWarp::Rectilinear { coefficients, center } => {
+                use crate::domain::models::lens::IDENTITY;
+                let common = coefficients[if coefficients.len() == 1 { 0 } else { 1 }];
+                let selected = if corrections.ca && coefficients.len() == 3 {
+                    coefficients[channel]
+                } else {
+                    common
+                };
+                let frame = lens_frame(lens, (height, width), *center);
+                let mut mx = vec![0.0; count];
+                let mut my = vec![0.0; count];
+                if corrections.distortion {
+                    negpy_core::lens::rectilinear_map(
+                        width,
+                        start..stop,
+                        selected,
+                        frame,
+                        &mut mx,
+                        &mut my,
+                    );
+                } else if selected == common {
+                    for row in 0..stop - start {
+                        for col in 0..width {
+                            mx[row * width + col] = col as f32;
+                            my[row * width + col] = (start + row) as f32;
+                        }
+                    }
+                } else {
+                    negpy_core::lens::rectilinear_ca_map(
+                        width,
+                        start..stop,
+                        (selected, common),
+                        frame,
+                        &mut mx,
+                        &mut my,
+                    );
+                }
+                let _ = IDENTITY;
+                Some((mx, my))
+            }
+            crate::domain::models::LensWarp::Panasonic { scale, a, b, c } => {
+                if !corrections.distortion {
+                    return None;
+                }
+                let mut mx = vec![0.0; count];
+                let mut my = vec![0.0; count];
+                negpy_core::lens::panasonic_map(
+                    (height, width),
+                    start..stop,
+                    (*scale, *a, *b, *c),
+                    lens.fill_scale,
+                    &mut mx,
+                    &mut my,
+                );
+                Some((mx, my))
+            }
+            crate::domain::models::LensWarp::Sony {
+                distortion,
+                ca_red,
+                ca_blue,
+            } => {
+                let knot_count = if distortion.is_empty() {
+                    ca_red.len().max(ca_blue.len())
+                } else {
+                    distortion.len()
+                };
+                if knot_count < 2 {
+                    return None;
+                }
+                let mut factors = vec![1.0; knot_count];
+                if corrections.distortion && !distortion.is_empty() {
+                    for (factor, value) in factors.iter_mut().zip(distortion) {
+                        *factor += value / 16384.0;
+                    }
+                }
+                let ca = if channel == 0 { ca_red } else if channel == 2 { ca_blue } else { &Vec::new() };
+                if corrections.ca && !ca.is_empty() {
+                    for (factor, value) in factors.iter_mut().zip(ca) {
+                        *factor *= 1.0 + value / 2_097_152.0;
+                    }
+                }
+                let mut mx = vec![0.0; count];
+                let mut my = vec![0.0; count];
+                negpy_core::lens::sony_map(
+                    (height, width),
+                    start..stop,
+                    &factors,
+                    lens.fill_scale,
+                    &mut mx,
+                    &mut my,
+                );
+                Some((mx, my))
+            }
+        }
+    }
+}
+
+fn lens_frame(
+    lens: &crate::domain::models::LensMetadata,
+    (height, width): (usize, usize),
+    center: (f64, f64),
+) -> negpy_core::lens::Frame {
+    let active = lens
+        .active_area
+        .unwrap_or([0, 0, height as i64, width as i64]);
+    let buffer = lens.buffer_area.unwrap_or(active);
+    let (top, left, bottom, right) = (active[0], active[1], active[2], active[3]);
+    let (buffer_top, buffer_left, buffer_bottom, buffer_right) =
+        (buffer[0], buffer[1], buffer[2], buffer[3]);
+    let sx = (buffer_right - buffer_left) as f64 / width as f64;
+    let sy = (buffer_bottom - buffer_top) as f64 / height as f64;
+    let cx = left as f64 + center.0 * (right - left - 1) as f64;
+    let cy = top as f64 + center.1 * (bottom - top - 1) as f64;
+    let radius = (cx - left as f64)
+        .max(right as f64 - 1.0 - cx)
+        .hypot((cy - top as f64).max(bottom as f64 - 1.0 - cy));
+    negpy_core::lens::Frame {
+        origin: (buffer_left as f64, buffer_top as f64),
+        scale: (sx, sy),
+        center: (cx, cy),
+        radius,
+        fill: lens.fill_scale,
+    }
+}
+
+fn remap_plane(
+    plane: &[f32],
+    mx: &[f32],
+    my: &[f32],
+    width: usize,
+    height: usize,
+    start: usize,
+    out: &mut [f32],
+) {
+    let at = |x: f32, y: f32| -> f32 {
+        let xi = x.round_ties_even().clamp(0.0, (width - 1) as f32) as usize;
+        let yi = y.round_ties_even().clamp(0.0, (height - 1) as f32) as usize;
+        plane[yi * width + xi]
+    };
+    for row in 0..(out.len() / width) {
+        for col in 0..width {
+            out[row * width + col] = at(mx[row * width + col], my[row * width + col]);
+        }
+    }
+    let _ = start;
+}
+
+fn apply_exif_orientation(img: &ImageBuffer, orientation: u8) -> ImageBuffer {
+    if orientation < 2 {
+        return img.clone();
+    }
+    let bytes: Vec<u8> = img.pixels.iter().flat_map(|v| v.to_ne_bytes()).collect();
+    let (oh, ow) = negpy_core::orient::oriented_dims(img.height, img.width, orientation);
+    let mut dst = vec![0u8; oh * ow * 12];
+    negpy_core::orient::orient(&bytes, img.height, img.width, 12, orientation, &mut dst);
+    let pixels = dst
+        .chunks_exact(4)
+        .map(|b| f32::from_ne_bytes([b[0], b[1], b[2], b[3]]))
+        .collect();
+    ImageBuffer::from_rgb(ow, oh, pixels)
+}
+
+impl crate::domain::models::LensMetadata {
+    /// The largest scale up to 1 at which every output edge reads inside the source.
+    #[must_use]
+    pub fn fill_scale(&self, (height, width): (usize, usize), corrections: crate::domain::models::LensCorrections) -> f64 {
+        let applied: Vec<&crate::domain::models::LensWarp> = self
+            .warps
+            .iter()
+            .filter(|warp| {
+                (corrections.distortion && warp.has_distortion())
+                    || (corrections.ca && warp.has_ca())
+            })
+            .collect();
+        let Some(last) = applied.last() else {
+            return 1.0;
+        };
+        if !corrections.distortion || !applied.iter().any(|warp| warp.has_distortion()) {
+            return 1.0;
+        }
+        let edge_reads = |scale: f64| {
+            let mut lens = self.clone();
+            lens.fill_scale = scale;
+            let rows = [0, height.saturating_sub(1)];
+            for channel in if corrections.ca { [0, 1, 2] } else { [0, 0, 0] } {
+                for row in rows {
+                    let Some((mx, my)) = last.maps(&lens, (height, width), (row, row + 1), channel, corrections) else {
+                        continue;
+                    };
+                    for col in [0, width.saturating_sub(1)] {
+                        let (x, y) = (mx[col], my[col]);
+                        if x < 0.0 || x > (width - 1) as f32 || y < 0.0 || y > (height - 1) as f32 {
+                            return false;
+                        }
+                    }
+                }
+            }
+            true
+        };
+        if edge_reads(1.0) {
+            return 1.0;
+        }
+        if !edge_reads(0.5) {
+            return 1.0;
+        }
+        let (mut lo, mut hi) = (0.5, 1.0);
+        for _ in 0..24 {
+            let mid = 0.5 * (lo + hi);
+            if edge_reads(mid) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        lo
+    }
+
+    /// Apply the selected warps, with bounded map memory.
+    #[must_use]
+    pub fn apply(
+        &self,
+        img: &ImageBuffer,
+        orientation: u8,
+        corrections: crate::domain::models::LensCorrections,
+    ) -> ImageBuffer {
+        if !corrections.any() || !self.available() || img.width.min(img.height) < 2 {
+            return img.clone();
+        }
+        let inverse = match orientation {
+            6 => 8,
+            8 => 6,
+            other => other,
+        };
+        let mut source = apply_exif_orientation(img, inverse);
+        let applied: Vec<&crate::domain::models::LensWarp> = self
+            .warps
+            .iter()
+            .filter(|warp| {
+                (corrections.distortion && warp.has_distortion())
+                    || (corrections.ca && warp.has_ca())
+            })
+            .collect();
+        let scale = self.fill_scale((source.height, source.width), corrections);
+        let mut filled = self.clone();
+        filled.fill_scale = scale;
+        for (index, warp) in applied.iter().enumerate() {
+            let lens = if index == applied.len() - 1 {
+                &filled
+            } else {
+                self
+            };
+            let mut result = vec![0.0; source.pixels.len()];
+            for channel in 0..3 {
+                let mut plane = vec![0.0; source.width * source.height];
+                negpy_core::convert::extract_channel(&source.pixels, 3, channel, &mut plane);
+                for start in (0..source.height).step_by(256) {
+                    let stop = (start + 256).min(source.height);
+                    let Some((mx, my)) = warp.maps(lens, (source.height, source.width), (start, stop), channel, corrections) else {
+                        continue;
+                    };
+                    let mut out = vec![0.0; (stop - start) * source.width];
+                    remap_plane(&plane, &mx, &my, source.width, source.height, start, &mut out);
+                    for row in 0..stop - start {
+                        for col in 0..source.width {
+                            result[((start + row) * source.width + col) * 3 + channel] =
+                                out[row * source.width + col].max(0.0);
+                        }
+                    }
+                }
+            }
+            source = ImageBuffer::from_rgb(source.width, source.height, result);
+        }
+        apply_exif_orientation(&source, orientation)
+    }
+}

@@ -18,11 +18,62 @@ impl LensCorrections {
     }
 }
 
+/// The six coefficients of a rectilinear warp, in DNG's order.
+pub const IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+
 /// One embedded lens-warp record.
 #[derive(Clone, Debug, PartialEq)]
-pub struct LensWarp {
-    pub has_distortion: bool,
-    pub has_ca: bool,
+pub enum LensWarp {
+    /// DNG `WarpRectilinear`: one coefficient set, or one per channel for lateral CA.
+    Rectilinear {
+        coefficients: Vec<[f64; 6]>,
+        center: (f64, f64),
+    },
+    /// Panasonic's Ru = Rd + scale*(a*Rd^3 + b*Rd^5 + c*Rd^7).
+    Panasonic {
+        scale: f64,
+        a: f64,
+        b: f64,
+        c: f64,
+    },
+    /// Sony's radial knot factors.
+    Sony {
+        distortion: Vec<f64>,
+        ca_red: Vec<f64>,
+        ca_blue: Vec<f64>,
+    },
+}
+
+impl LensWarp {
+    /// Whether this warp carries distortion correction.
+    #[must_use]
+    pub fn has_distortion(&self) -> bool {
+        match self {
+            Self::Rectilinear { coefficients, .. } => {
+                let common = coefficients[if coefficients.len() == 1 { 0 } else { 1 }];
+                common != IDENTITY
+            }
+            Self::Panasonic { scale, a, b, c } => {
+                *scale != 1.0 || *a != 0.0 || *b != 0.0 || *c != 0.0
+            }
+            Self::Sony { distortion, .. } => distortion.iter().any(|value| *value != 0.0),
+        }
+    }
+
+    /// Whether this warp carries lateral chromatic-aberration correction.
+    #[must_use]
+    pub fn has_ca(&self) -> bool {
+        match self {
+            Self::Rectilinear { coefficients, .. } => {
+                coefficients.len() == 3
+                    && (coefficients[0] != coefficients[1] || coefficients[2] != coefficients[1])
+            }
+            Self::Panasonic { .. } => false,
+            Self::Sony {
+                ca_red, ca_blue, ..
+            } => ca_red.iter().any(|value| *value != 0.0) || ca_blue.iter().any(|value| *value != 0.0),
+        }
+    }
 }
 
 /// The correction data read from a source file.
@@ -53,13 +104,13 @@ impl LensMetadata {
     /// Whether any warp carries distortion correction.
     #[must_use]
     pub fn distortion(&self) -> bool {
-        self.warps.iter().any(|warp| warp.has_distortion)
+        self.warps.iter().any(LensWarp::has_distortion)
     }
 
     /// Whether any warp carries lateral chromatic-aberration correction.
     #[must_use]
     pub fn ca(&self) -> bool {
-        self.warps.iter().any(|warp| warp.has_ca)
+        self.warps.iter().any(LensWarp::has_ca)
     }
 
     /// Whether any correction is available.

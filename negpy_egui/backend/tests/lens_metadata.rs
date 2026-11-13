@@ -16,13 +16,14 @@ fn an_available_lens_names_its_corrections() {
     let lens = LensMetadata {
         source: "Sony ARW".into(),
         warps: vec![
-            LensWarp {
-                has_distortion: true,
-                has_ca: false,
+            LensWarp::Rectilinear {
+                coefficients: vec![[1.0, -0.1, 0.0, 0.0, 0.0, 0.0]],
+                center: (0.5, 0.5),
             },
-            LensWarp {
-                has_distortion: false,
-                has_ca: true,
+            LensWarp::Sony {
+                distortion: vec![],
+                ca_red: vec![100.0],
+                ca_blue: vec![-100.0],
             },
         ],
         ..LensMetadata::default()
@@ -37,18 +38,19 @@ fn an_available_lens_names_its_corrections() {
 fn one_correction_alone_is_named_alone() {
     let distortion = LensMetadata {
         source: "DNG".into(),
-        warps: vec![LensWarp {
-            has_distortion: true,
-            has_ca: false,
+        warps: vec![LensWarp::Rectilinear {
+            coefficients: vec![[1.0, -0.1, 0.0, 0.0, 0.0, 0.0]],
+            center: (0.5, 0.5),
         }],
         ..LensMetadata::default()
     };
     assert_eq!(distortion.description(), "DNG: distortion");
     let ca = LensMetadata {
         source: "ARW".into(),
-        warps: vec![LensWarp {
-            has_distortion: false,
-            has_ca: true,
+        warps: vec![LensWarp::Sony {
+            distortion: vec![],
+            ca_red: vec![100.0],
+            ca_blue: vec![-100.0],
         }],
         ..LensMetadata::default()
     };
