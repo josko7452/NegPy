@@ -15,6 +15,7 @@ const FALLBACK_CONFIDENCE: f64 = 0.30;
 const MIN_FALLBACK_COVERAGE: f64 = 0.9;
 const MIN_TRUSTED_FRAMES: usize = 2;
 const CONFIRMED_ANGLE_TOL: f64 = 2.5;
+const MAX_EDGE_FIT_DELTA: f64 = 0.5;
 
 /// Single-frame evidence in the final, deskewed display coordinate space.
 #[derive(Clone, Debug, PartialEq)]
@@ -710,4 +711,234 @@ pub fn resolve_roll_crops(evidence: &[CropEvidence], safety_border: f64) -> Vec<
         });
     }
     results
+}
+
+fn edge_fit(image: &crate::infrastructure::loaders::image_buffer::ImageBuffer) -> Option<f64> {
+    let skew = crate::features::geometry::skew::trusted_frame_skew(image, false)?;
+    (skew.fine_rotation.is_finite() && skew.fine_rotation.abs() <= MAX_AUTOMATIC_DESKEW)
+        .then_some(skew.fine_rotation)
+}
+
+fn side_border(lum: &[f32], roi: Roi, (height, width): (usize, usize)) -> Vec<f64> {
+    let walked = crate::features::geometry::processor::measure_film_edges(lum, roi, height, width);
+    let measured =
+        crate::features::geometry::processor::measure_film_border(lum, roi, height, width);
+    (0..4)
+        .map(|index| {
+            if walked[index] > 0.0 {
+                walked[index]
+            } else {
+                measured[index]
+            }
+        })
+        .collect()
+}
+
+fn bright_side_border(lum: &[f32], roi: Roi, (height, width): (usize, usize)) -> Vec<f64> {
+    crate::features::geometry::processor::measure_film_border(lum, roi, height, width).to_vec()
+}
+
+fn no_box_evidence(
+    key: &str,
+    image: &crate::infrastructure::loaders::image_buffer::ImageBuffer,
+    detection: &crate::features::geometry::processor::AutocropDetection,
+    correction: f64,
+    angle_confident: bool,
+    target_ratio: &str,
+    rebate_trim: f64,
+) -> CropEvidence {
+    let lum = crate::features::geometry::processor::detection_luma(image);
+    let box_roi = crate::features::geometry::processor::threshold_autocrop_coords(image, None);
+    let box_roi = crate::features::geometry::processor::trim_opaque_border(
+        &lum,
+        box_roi,
+        image.height,
+        image.width,
+        0.02,
+        0.7,
+        0.2,
+    );
+    let border = side_border(&lum, box_roi, (image.height, image.width));
+    let bright = bright_side_border(&lum, box_roi, (image.height, image.width));
+    CropEvidence {
+        key: key.to_string(),
+        canvas_shape: (image.height, image.width),
+        roi: None,
+        correction_angle: correction,
+        confidence: 0.0,
+        target_ratio: target_ratio.to_string(),
+        rebate_trim,
+        angle_confident,
+        vertical_edge_contrast: detection.vertical_edge_contrast,
+        vertical_edge_profile: detection.vertical_edge_profile.clone(),
+        border,
+        bright_border: bright,
+        fallback_roi: Some(box_roi),
+        reason: "no_consensus".to_string(),
+        ..CropEvidence::default()
+    }
+}
+
+/// Collect crop, deskew and edge evidence for one transformed preview.
+#[must_use]
+pub fn detect_crop_candidate(
+    key: &str,
+    image: &crate::infrastructure::loaders::image_buffer::ImageBuffer,
+    target_ratio: &str,
+    rebate_trim: f64,
+) -> CropEvidence {
+    use crate::features::geometry::logic::apply_fine_rotation;
+    use crate::features::geometry::processor::{
+        detect_film_bounds_with_confidence, detection_luma, get_autocrop_coords, trim_opaque_border,
+    };
+    let (profile, profile_contrast) =
+        negpy_core::analysis::batch_edge_profile(&image.pixels, image.height, image.width, 3);
+    if image.width <= image.height {
+        let skew = edge_fit(image);
+        let own_angle = skew.unwrap_or(0.0);
+        let own_image = if own_angle.abs() > 1e-4 {
+            apply_fine_rotation(image, own_angle)
+        } else {
+            image.clone()
+        };
+        let ratio = crate::domain::models::AspectRatio::coerce(target_ratio);
+        let own_roi = get_autocrop_coords(
+            &own_image,
+            0,
+            1.0,
+            ratio,
+            1800,
+            None,
+            crate::domain::models::AutocropMode::Image,
+            rebate_trim,
+        );
+        return CropEvidence {
+            key: key.to_string(),
+            canvas_shape: (image.height, image.width),
+            roi: None,
+            correction_angle: own_angle,
+            confidence: 0.0,
+            target_ratio: target_ratio.to_string(),
+            rebate_trim,
+            angle_confident: skew.is_some(),
+            vertical_edge_contrast: profile_contrast,
+            vertical_edge_profile: profile,
+            fallback_roi: Some(own_roi),
+            reason: "unsupported_orientation".to_string(),
+            ..CropEvidence::default()
+        };
+    }
+    let initial = detect_film_bounds_with_confidence(image);
+    let mut correction = if initial.roi.is_some() {
+        initial.correction_angle
+    } else {
+        0.0
+    };
+    if !correction.is_finite() || correction.abs() > MAX_AUTOMATIC_DESKEW {
+        correction = 0.0;
+    }
+    let fitted = initial.roi.and_then(|roi| {
+        negpy_core::autocrop::top_edge_slope(
+            &detection_luma(image),
+            (image.height, image.width),
+            (roi.0, roi.2, roi.3),
+        )
+    });
+    let mut angle_confident =
+        fitted.is_some_and(|value| (value - correction).abs() <= MAX_EDGE_FIT_DELTA);
+    if angle_confident {
+        correction = fitted
+            .unwrap()
+            .clamp(-MAX_AUTOMATIC_DESKEW, MAX_AUTOMATIC_DESKEW);
+    } else if let Some(skew) = edge_fit(image) {
+        correction = skew;
+        angle_confident = true;
+    } else if initial.roi.is_none() {
+        return no_box_evidence(key, image, &initial, 0.0, false, target_ratio, rebate_trim);
+    }
+    let corrected = if correction.abs() > 1e-4 {
+        apply_fine_rotation(image, correction)
+    } else {
+        image.clone()
+    };
+    let final_detection = if correction.abs() > 1e-4 {
+        detect_film_bounds_with_confidence(&corrected)
+    } else {
+        initial.clone()
+    };
+    if final_detection.roi.is_none() {
+        if initial.roi.is_none() {
+            return no_box_evidence(
+                key,
+                &corrected,
+                &final_detection,
+                correction,
+                angle_confident,
+                target_ratio,
+                rebate_trim,
+            );
+        }
+        return CropEvidence {
+            key: key.to_string(),
+            canvas_shape: (corrected.height, corrected.width),
+            roi: None,
+            correction_angle: correction,
+            confidence: 0.0,
+            target_ratio: target_ratio.to_string(),
+            rebate_trim,
+            angle_confident,
+            vertical_edge_contrast: final_detection.vertical_edge_contrast,
+            vertical_edge_profile: final_detection.vertical_edge_profile,
+            reason: "deskew_no_consensus".to_string(),
+            ..CropEvidence::default()
+        };
+    }
+    let lum = detection_luma(&corrected);
+    let roi = trim_opaque_border(
+        &lum,
+        final_detection.roi.unwrap(),
+        corrected.height,
+        corrected.width,
+        0.02,
+        0.7,
+        0.2,
+    );
+    let border = side_border(&lum, roi, (corrected.height, corrected.width));
+    let bright = bright_side_border(&lum, roi, (corrected.height, corrected.width));
+    if roi.1 <= roi.0 || roi.3 <= roi.2 {
+        return CropEvidence {
+            key: key.to_string(),
+            canvas_shape: (corrected.height, corrected.width),
+            roi: None,
+            correction_angle: correction,
+            confidence: 0.0,
+            target_ratio: target_ratio.to_string(),
+            rebate_trim,
+            angle_confident,
+            vertical_edge_contrast: final_detection.vertical_edge_contrast,
+            vertical_edge_profile: final_detection.vertical_edge_profile,
+            reason: "invalid_geometry".to_string(),
+            ..CropEvidence::default()
+        };
+    }
+    CropEvidence {
+        key: key.to_string(),
+        canvas_shape: (corrected.height, corrected.width),
+        roi: Some(roi),
+        correction_angle: correction,
+        confidence: final_detection.confidence.clamp(0.0, 1.0),
+        target_ratio: target_ratio.to_string(),
+        rebate_trim,
+        angle_confident,
+        supported_sides: final_detection.supported_sides,
+        supported_corners: final_detection.supported_corners,
+        evidence_sources: final_detection.evidence_sources,
+        geometry_score: final_detection.geometry_score.clamp(0.0, 1.0),
+        vertical_edge_contrast: final_detection.vertical_edge_contrast,
+        vertical_edge_profile: final_detection.vertical_edge_profile,
+        border,
+        bright_border: bright,
+        fallback_roi: None,
+        reason: String::new(),
+    }
 }

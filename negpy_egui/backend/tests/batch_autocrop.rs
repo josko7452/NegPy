@@ -1,8 +1,9 @@
 //! Ports the template cases of tests/test_batch_autocrop.py.
 
 use negpy_backend::features::geometry::batch_autocrop::{
-    CropEvidence, build_roll_template, resolve_roll_crops,
+    CropEvidence, build_roll_template, detect_crop_candidate, resolve_roll_crops,
 };
+use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 fn evidence(key: &str, roi: Option<(i64, i64, i64, i64)>) -> CropEvidence {
     CropEvidence {
@@ -252,4 +253,28 @@ fn the_safety_border_pads_or_stops_at_a_common_edge() {
         0.01,
     );
     assert!(padded.is_empty());
+}
+
+#[test]
+fn a_portrait_candidate_abstains_from_the_roll() {
+    let image = ImageBuffer::from_rgb(80, 120, vec![0.4; 80 * 120 * 3]);
+    let candidate = detect_crop_candidate("portrait", &image, "3:2", 1.0);
+    assert_eq!(candidate.reason, "unsupported_orientation");
+    assert!(candidate.roi.is_none());
+    assert!(candidate.fallback_roi.is_some());
+}
+
+#[test]
+fn a_landscape_candidate_keeps_a_bounded_canvas() {
+    let mut pixels = vec![1.0f32; 120 * 200 * 3];
+    for y in 20..100 {
+        for x in 30..170 {
+            let at = (y * 200 + x) * 3;
+            pixels[at..at + 3].fill(0.1);
+        }
+    }
+    let image = ImageBuffer::from_rgb(200, 120, pixels);
+    let candidate = detect_crop_candidate("landscape", &image, "3:2", 1.0);
+    assert_eq!(candidate.canvas_shape, (120, 200));
+    assert!(candidate.border.len() == 4 || candidate.border.is_empty());
 }
