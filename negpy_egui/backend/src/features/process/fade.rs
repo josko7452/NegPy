@@ -16,6 +16,10 @@ pub const CROSSOVER_BAND_SIZE: usize = 5;
 pub const CROSSOVER_FLOOR: f64 = 0.04;
 /// The three channel weights a lean sums to zero under.
 pub const CROSSOVER_WEIGHTS: [f64; 3] = [1.0 / 3.0; 3];
+/// Bins of the per-pixel offset table between the outer band anchors.
+pub const CROSSOVER_BINS: usize = 64;
+/// The largest per-channel log offset the table applies.
+pub const CROSSOVER_LIMIT: f64 = 0.3;
 
 /// A white a render measured for itself: red, green, blue and the space it was read in.
 pub type MeasuredWhite = (f64, f64, f64, String);
@@ -336,4 +340,77 @@ pub fn cast_name(lean: Option<[f64; 3]>) -> Option<&'static str> {
     };
     let index = ((hue + 0.5).floor() as i64).rem_euclid(6) as usize;
     Some(HUE_NAMES[index])
+}
+
+/// The per-pixel offset table: `bins` rows of log offsets between mean logs `lo` and `hi`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CrossoverOffsets {
+    pub bins: Vec<[f32; 3]>,
+    pub lo: f64,
+    pub hi: f64,
+}
+
+/// The offsets a render adds in log, `-(lean - reference) * crossover`.
+///
+/// Each row sums to zero under `CROSSOVER_WEIGHTS` and is scaled down as a whole to
+/// `CROSSOVER_LIMIT`, so the correction keeps the mean density and its hue.
+#[must_use]
+pub fn crossover_offsets(table: Option<&[f64]>, crossover: f64) -> Option<CrossoverOffsets> {
+    let table = table.filter(|table| !table.is_empty())?;
+    if crossover == 0.0 || crossover_amount(Some(table)) < CROSSOVER_FLOOR {
+        return None;
+    }
+    let rows = crossover_bands(table);
+    let reference = crossover_reference(table);
+    let xs: Vec<f64> = rows.iter().map(|row| row[0]).collect();
+    let lo = *xs.first()?;
+    let hi = *xs.last()?;
+    let x: Vec<f64> = if hi > lo {
+        (0..CROSSOVER_BINS)
+            .map(|index| lo + (hi - lo) * index as f64 / (CROSSOVER_BINS - 1) as f64)
+            .collect()
+    } else {
+        vec![lo; CROSSOVER_BINS]
+    };
+    let mut bins: Vec<[f64; 3]> = x
+        .iter()
+        .map(|&value| {
+            std::array::from_fn(|channel| {
+                let ys: Vec<f64> = rows.iter().map(|row| row[2 + channel]).collect();
+                -(shape_cubic(&xs, &ys, value) - reference[channel]) * crossover
+            })
+        })
+        .collect();
+    for row in &mut bins {
+        let mean = row
+            .iter()
+            .zip(CROSSOVER_WEIGHTS)
+            .map(|(value, weight)| value * weight)
+            .sum::<f64>();
+        for value in row.iter_mut() {
+            *value -= mean;
+        }
+        let peak = row.iter().map(|value| value.abs()).fold(0.0, f64::max);
+        let scale = (CROSSOVER_LIMIT / peak.max(1e-12)).min(1.0);
+        for value in row.iter_mut() {
+            *value *= scale;
+        }
+    }
+    if bins
+        .iter()
+        .flat_map(|row| row.iter())
+        .map(|value| value.abs())
+        .fold(0.0, f64::max)
+        <= 1e-4
+    {
+        return None;
+    }
+    Some(CrossoverOffsets {
+        bins: bins
+            .into_iter()
+            .map(|row| row.map(|value| value as f32))
+            .collect(),
+        lo,
+        hi,
+    })
 }

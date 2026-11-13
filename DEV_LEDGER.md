@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 05:20 | **Last Commit:** `pending backend: add fade crossover table helpers`
+**Last Updated:** 2026-11-13 05:45 | **Last Commit:** `pending backend: build fade crossover offsets`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -19,7 +19,8 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D6: missing `read_exif_from_file`, bounded previews, `NonStandardFileWrapper`, supported demosaic list; lens readers/opcodes/bind.
 
 ## Completed (This Session)
-- `pending` D7: adds the fade crossover table helpers.
+- `pending` D7: builds the fade crossover offset table.
+- `f8b811b2` D7: adds the fade crossover table helpers.
 - `e1e0018f` D12: moves Flat Field profiles into sensor layout.
 - `0020afa8` D12: migrates the legacy Flat Field profile table.
 - `fb0b963d` D12: adds the Flat Field profile store.
@@ -37,7 +38,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - `HEAD` D9: ports HDR merge path.
 
 ## Next Steps (Ordered)
-1. [ ] D7: add fade crossover offsets and application.
+1. [ ] D7: add fade crossover application and uniform bytes.
 2. [ ] D7: add fade range and auto-red helpers after transparency.
 3. [ ] D12: port the gear-preset migration.
 4. [ ] D7: port exposure `placement` and the remaining fade/estimate helpers.

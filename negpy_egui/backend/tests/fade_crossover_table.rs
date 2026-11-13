@@ -1,8 +1,9 @@
 //! Ports the table-level rules of `tests/test_fade_crossover.py` and `test_fade_neutrals.py`.
 
 use negpy_backend::features::process::fade::{
-    CROSSOVER_WEIGHTS, cast_name, crossover_amount, crossover_bands, crossover_casts,
-    crossover_reference, crossover_zero, neutral_spread, shape_cubic,
+    CROSSOVER_LIMIT, CROSSOVER_WEIGHTS, cast_name, crossover_amount, crossover_bands,
+    crossover_casts, crossover_offsets, crossover_reference, crossover_zero, neutral_spread,
+    shape_cubic,
 };
 
 fn table() -> Vec<f64> {
@@ -70,4 +71,41 @@ fn a_monotone_cubic_is_flat_beyond_its_ends() {
 fn a_flat_table_has_a_zero_spread() {
     let flat = vec![0.0, 0.1, 0.0, 0.01, 0.01, 0.01, 1.0, 0.0, 0.01, 0.01, 0.01];
     assert_eq!(neutral_spread(&flat), 0.0);
+}
+
+#[test]
+fn the_offsets_cancel_under_the_weights_and_stay_under_the_limit() {
+    for strength in [1.0, 0.5] {
+        let offsets = crossover_offsets(Some(&table()), strength).unwrap();
+        assert_eq!(offsets.bins.len(), 64);
+        for row in &offsets.bins {
+            let sum: f64 = row
+                .iter()
+                .zip(CROSSOVER_WEIGHTS)
+                .map(|(value, weight)| f64::from(*value) * weight)
+                .sum();
+            assert!(sum.abs() < 1e-6);
+            assert!(
+                row.iter()
+                    .all(|value| f64::from(value.abs()) <= CROSSOVER_LIMIT + 1e-6)
+            );
+        }
+    }
+}
+
+#[test]
+fn an_identity_or_zero_strength_table_has_no_offsets() {
+    let flat = vec![
+        0.5, 0.1, 0.1, 0.01, 0.01, 0.01, 0.4, 0.3, 0.0, 0.0, 0.0, 1.0, 0.5, 0.0, 0.0, 0.0,
+    ];
+    assert!(crossover_offsets(Some(&flat), 1.0).is_none());
+    assert!(crossover_offsets(Some(&table()), 0.0).is_none());
+    assert!(crossover_offsets(None, 1.0).is_none());
+}
+
+#[test]
+fn a_single_value_table_has_a_reference_at_its_only_band() {
+    let single = vec![0.5, 0.2, 0.1, 0.02, 0.0, -0.02];
+    assert_eq!(crossover_reference(&single), [0.02, 0.0, -0.02]);
+    assert!(crossover_offsets(Some(&single), 1.0).is_none());
 }
