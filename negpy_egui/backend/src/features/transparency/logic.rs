@@ -523,3 +523,176 @@ pub fn transfer_stored_value(
         _ => shown - highlight,
     }
 }
+
+/// Where the source-to-working matrix applies around the log-density matrix of a render.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DensityStage {
+    /// Linear 3x3 before the log.
+    pub pre: Option<[[f64; 3]; 3]>,
+    /// Log-density affine `(linear, offset)`.
+    pub unmix: Option<[[f64; 4]; 3]>,
+    /// Linear 3x3 after the log-density matrix.
+    pub post: Option<[[f64; 3]; 3]>,
+    /// The fade's anchor in the stage's input log.
+    pub anchor: Option<[f64; 3]>,
+}
+
+fn is_identity(matrix: [[f64; 3]; 3]) -> bool {
+    matrix.iter().enumerate().all(|(row, values)| {
+        values
+            .iter()
+            .enumerate()
+            .all(|(col, value)| (*value - f64::from(u8::from(row == col))).abs() < 1e-6)
+    })
+}
+
+fn with_log_offset(
+    unmix: Option<[[f64; 3]; 3]>,
+    offset: Option<[f64; 3]>,
+) -> Option<[[f64; 4]; 3]> {
+    match (unmix, offset) {
+        (None, None) => None,
+        (None, Some(offset)) => Some(std::array::from_fn(|row| {
+            [
+                f64::from(u8::from(row == 0)),
+                f64::from(u8::from(row == 1)),
+                f64::from(u8::from(row == 2)),
+                offset[row],
+            ]
+        })),
+        (Some(matrix), offset) => Some(std::array::from_fn(|row| {
+            let offset = offset.unwrap_or([0.0; 3]);
+            let t = (0..3)
+                .map(|col| matrix[row][col] * offset[col])
+                .sum::<f64>();
+            [matrix[row][0], matrix[row][1], matrix[row][2], t]
+        })),
+    }
+}
+
+fn whole_matrix(
+    process: &ProcessConfig,
+    cam_xyz: Option<[[f64; 3]; 3]>,
+    camera_wb: Option<&[f64]>,
+) -> Option<[[f64; 3]; 3]> {
+    let wb = if crate::features::process::logic::should_fold_camera_wb(process) {
+        camera_wb
+    } else {
+        None
+    };
+    crate::features::process::capture_color::camera_to_working_matrix(cam_xyz, wb)
+}
+
+/// The stage that puts a source in the channels the crosstalk unmix, fade and stain offset act on.
+#[must_use]
+pub fn density_channels(
+    process: &ProcessConfig,
+    cam_xyz: Option<[[f64; 3]; 3]>,
+    camera_wb: Option<&[f64]>,
+) -> DensityStage {
+    let wb = if crate::features::process::logic::should_fold_camera_wb(process) {
+        camera_wb
+    } else {
+        None
+    };
+    let (gains, primaries) =
+        crate::features::process::capture_color::camera_matrix_parts(cam_xyz, wb);
+    let offset = gains.map(|gains| gains.map(f64::log10));
+    let post = primaries.filter(|matrix| !is_identity(*matrix));
+    DensityStage {
+        pre: None,
+        unmix: with_log_offset(None, offset),
+        post,
+        anchor: None,
+    }
+}
+
+/// The stage a render applies, with the fade anchor moved into its input log.
+#[must_use]
+pub fn density_stage(
+    process: &ProcessConfig,
+    cam_xyz: Option<[[f64; 3]; 3]>,
+    camera_wb: Option<&[f64]>,
+    unmix: Option<[[f64; 3]; 3]>,
+    anchor: Option<[f64; 3]>,
+) -> DensityStage {
+    if unmix.is_none()
+        || crate::features::process::path::render_path(process)
+            == crate::features::process::path::RenderPath::Print
+    {
+        return DensityStage {
+            pre: whole_matrix(process, cam_xyz, camera_wb),
+            unmix: with_log_offset(unmix, None),
+            post: None,
+            anchor,
+        };
+    }
+    let channels = density_channels(process, cam_xyz, camera_wb);
+    let offset = channels
+        .unmix
+        .map(|matrix| std::array::from_fn(|row| matrix[row][3]));
+    let anchor = match (anchor, offset) {
+        (Some(anchor), Some(offset)) => Some(std::array::from_fn(|ch| anchor[ch] - offset[ch])),
+        _ => anchor,
+    };
+    DensityStage {
+        pre: channels.pre,
+        unmix: with_log_offset(unmix, offset),
+        post: channels.post,
+        anchor,
+    }
+}
+
+/// The slide Temperature of a `(cyan, yellow)` pair, in the mired domain.
+#[must_use]
+pub fn slide_wb_to_kelvin(cyan: f64, yellow: f64) -> f64 {
+    const REF_KELVIN: f64 = 5500.0;
+    const K_CYAN: f64 = 0.0031;
+    const K_YELLOW: f64 = 0.0065;
+    let dmu = (-K_CYAN * cyan + K_YELLOW * yellow) / (K_CYAN * K_CYAN + K_YELLOW * K_YELLOW);
+    let mu = (1e6 / REF_KELVIN + dmu).clamp(1e6 / 12_000.0, 1e6 / 3_000.0);
+    1e6 / mu
+}
+
+/// Move `(cyan, yellow)` along the Planckian direction to `kelvin`.
+#[must_use]
+pub fn slide_kelvin_to_wb(kelvin: f64, cyan: f64, yellow: f64) -> (f64, f64) {
+    const REF_KELVIN: f64 = 5500.0;
+    const K_CYAN: f64 = 0.0031;
+    const K_YELLOW: f64 = 0.0065;
+    let kelvin = kelvin.clamp(3_000.0, 12_000.0);
+    let dmu_cur = (-K_CYAN * cyan + K_YELLOW * yellow) / (K_CYAN * K_CYAN + K_YELLOW * K_YELLOW);
+    let d = (1e6 / kelvin - 1e6 / REF_KELVIN) - dmu_cur;
+    (
+        (cyan - K_CYAN * d).clamp(-1.0, 1.0),
+        (yellow + K_YELLOW * d).clamp(-1.0, 1.0),
+    )
+}
+
+/// The contrast the slide curve prints with, including a metered auto term.
+#[must_use]
+pub fn transfer_total_contrast(
+    exposure: &ExposureConfig,
+    metrics: &crate::features::exposure::auto_metrics::AutoSliderMetrics,
+) -> f64 {
+    transfer_totals(exposure, metrics).2
+}
+
+/// `(cyan, magenta, yellow)` that print a picked patch gray.
+#[must_use]
+pub fn slide_pick_wb(
+    sampled_norm_rgb: [f64; 3],
+    channel_ranges: [f64; 3],
+    contrast: f64,
+) -> (f64, f64, f64) {
+    const K_CYAN: f64 = 0.0031;
+    const K_YELLOW: f64 = 0.0065;
+    let cmy_max = c::CMY_MAX_DENSITY;
+    let k = contrast.max(1e-6);
+    let offsets = std::array::from_fn::<f64, 3, _>(|ch| {
+        -k * sampled_norm_rgb[ch] * channel_ranges[ch] / cmy_max
+    });
+    let a = (offsets[2] - offsets[0]) / (K_CYAN + K_YELLOW);
+    let tint = offsets[1] - offsets[0] - K_CYAN * a;
+    (-K_CYAN * a, tint, K_YELLOW * a)
+}
