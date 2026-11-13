@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 10:20 | **Last Commit:** `f7beab1b backend: lock new roll-default fields on frames`
+**Last Updated:** 2026-11-13 10:30 | **Last Commit:** `ac3e738c backend: split roll baseline card locks`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -22,6 +22,7 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D12: Positive-frame auto-meter migration (tests green).
 - D12: New roll-field card locks (tests green).
 - D12: Baseline card split migration (tests green).
+- D12: Cast Removal moved from roll cards to frames (tests green).
 - `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
 - `d9c0ce50` D12: hash rehome and ambiguity.
 - `cf05350b` D12: normalization-roll baselines.

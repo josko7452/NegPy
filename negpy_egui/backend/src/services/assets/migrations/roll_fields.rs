@@ -142,3 +142,107 @@ pub fn migrate_baseline_card_split(repo: &mut StorageRepository) {
         log::error!("Could not record the baseline card split: {error}");
     }
 }
+
+const CAST_REMOVAL_FLAG: &str = "cast_removal_to_frames_v1";
+
+/// Move each roll's Cast Removal onto the frames that followed it.
+///
+/// A saved frame keeps its resolved value, a frame with no saved edit takes the value from
+/// the roll's frame seed, and the retired card locks are dropped.
+pub fn migrate_cast_removal_to_frames(repo: &mut StorageRepository) {
+    if setting_truthy(repo, CAST_REMOVAL_FLAG) {
+        return;
+    }
+    let saved = crate::services::assets::rolls::saved_rolls(repo);
+    let roll_values: Map<String, Value> = saved
+        .iter()
+        .filter_map(|(roll_id, entry)| {
+            entry
+                .get("defaults")
+                .and_then(Value::as_object)
+                .and_then(|defaults| defaults.get("cast_removal_strength"))
+                .map(|value| (roll_id.clone(), value.clone()))
+        })
+        .collect();
+    let result = (|| -> rusqlite::Result<()> {
+        let connection = rusqlite::Connection::open(&repo.edits_db_path)?;
+        let transaction = connection.unchecked_transaction()?;
+        let mut statement =
+            transaction.prepare("SELECT file_hash, settings_json, file_path FROM file_settings")?;
+        let rows = statement.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })?;
+        let rows = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        drop(statement);
+        for (file_hash, settings, file_path) in rows {
+            let base = unforked_hash(&file_hash);
+            let roll_id = rolls_for_row(repo, &file_hash, file_path.as_deref())
+                .into_iter()
+                .find(|roll_id| {
+                    roll_values.contains_key(roll_id)
+                        && !crate::services::assets::rolls::frame_override_cards(
+                            repo, roll_id, &base,
+                        )
+                        .iter()
+                        .any(|card| card == "cast_removal")
+                });
+            let Some(roll_id) = roll_id else {
+                continue;
+            };
+            let mut data = match settings.filter(|settings| !settings.is_empty()) {
+                Some(settings) => match serde_json::from_str::<Value>(&settings) {
+                    Ok(Value::Object(data)) => data,
+                    _ => continue,
+                },
+                None => Map::new(),
+            };
+            data.insert(
+                "cast_removal_strength".to_string(),
+                roll_values[&roll_id].clone(),
+            );
+            transaction.execute(
+                "UPDATE file_settings SET settings_json = ? WHERE file_hash = ?",
+                rusqlite::params![Value::Object(data).to_string(), file_hash],
+            )?;
+        }
+        transaction.commit()
+    })();
+    if let Err(error) = result {
+        log::error!("Cast Removal move to Filtration failed; continuing without it: {error}");
+    }
+    for (roll_id, entry) in &saved {
+        let overrides = entry
+            .get("frame_overrides")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        for (file_hash, cards) in overrides {
+            let locked = cards.as_array().is_some_and(|cards| {
+                cards
+                    .iter()
+                    .any(|card| card.as_str() == Some("cast_removal"))
+            });
+            if locked {
+                set_frame_override(repo, roll_id, &file_hash, "cast_removal", false, None);
+            }
+        }
+        if let Some(value) = roll_values.get(roll_id) {
+            let mut seed = Map::new();
+            seed.insert("cast_removal_strength".to_string(), value.clone());
+            crate::services::assets::rolls::add_frame_seed(repo, roll_id, seed);
+            crate::services::assets::rolls::restore_roll_fields(
+                repo,
+                roll_id,
+                Map::new(),
+                &["cast_removal_strength".to_string()],
+            );
+        }
+    }
+    if let Err(error) = save_setting(repo, CAST_REMOVAL_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the Cast Removal migration: {error}");
+    }
+}

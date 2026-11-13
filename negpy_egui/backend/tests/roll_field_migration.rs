@@ -118,3 +118,64 @@ fn a_normalization_lock_becomes_both_halves_of_the_split() {
     assert_eq!(cards(&repo, &roll, "a"), ["baseline", "process"]);
     assert_eq!(cards(&repo, &roll, "b"), ["lens"]);
 }
+
+#[test]
+fn a_frame_that_followed_its_roll_keeps_the_rolls_cast_removal() {
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_cast_removal_to_frames;
+    use negpy_backend::services::assets::rolls::{
+        frame_seed, roll_defaults, set_frame_override, set_roll_defaults,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(
+        &mut repo,
+        "Roll",
+        &["/r/a.tif", "/r/b.tif", "/r/c.tif"].map(str::to_string),
+    );
+    for name in ["a", "b"] {
+        save(
+            &repo,
+            name,
+            &WorkspaceConfig::default(),
+            &format!("/r/{name}.tif"),
+        );
+    }
+    let mut defaults = serde_json::Map::new();
+    defaults.insert("cast_removal_strength".to_string(), serde_json::json!(0.4));
+    set_roll_defaults(&mut repo, &roll, defaults);
+    set_frame_override(&mut repo, &roll, "b", "cast_removal", true, None);
+    set_frame_override(&mut repo, &roll, "b", "sensor", true, None);
+
+    migrate_cast_removal_to_frames(&mut repo);
+    let mut later = serde_json::Map::new();
+    later.insert("cast_removal_strength".to_string(), serde_json::json!(0.7));
+    set_roll_defaults(&mut repo, &roll, later);
+    migrate_cast_removal_to_frames(&mut repo);
+
+    assert_eq!(
+        repo.load_file_settings("a")
+            .unwrap()
+            .unwrap()
+            .exposure
+            .cast_removal_strength,
+        0.4
+    );
+    assert_eq!(
+        repo.load_file_settings("b")
+            .unwrap()
+            .unwrap()
+            .exposure
+            .cast_removal_strength,
+        WorkspaceConfig::default().exposure.cast_removal_strength
+    );
+    assert_eq!(cards(&repo, &roll, "b"), ["sensor"]);
+    assert_eq!(
+        roll_defaults(&repo, &roll).get("cast_removal_strength"),
+        Some(&serde_json::json!(0.7))
+    );
+    assert_eq!(
+        frame_seed(&repo, &roll).get("cast_removal_strength"),
+        Some(&serde_json::json!(0.4))
+    );
+}
