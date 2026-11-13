@@ -42,9 +42,10 @@ pub struct Baked {
 }
 
 /// NPZ files under one flat-field directory.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct FlatFieldProfiles {
     pub directory: PathBuf,
+    pub bake: fn(&str) -> Option<Baked>,
 }
 
 impl FlatFieldProfiles {
@@ -52,6 +53,7 @@ impl FlatFieldProfiles {
     pub fn new(directory: impl Into<PathBuf>) -> Self {
         Self {
             directory: directory.into(),
+            bake: bake_gain,
         }
     }
 
@@ -162,7 +164,7 @@ impl FlatFieldProfiles {
         reference_path: &str,
         k1: f64,
     ) -> Option<(String, Evenness)> {
-        let baked = bake_gain(reference_path)?;
+        let baked = (self.bake)(reference_path)?;
         let profile_id = uuid::Uuid::new_v4().simple().to_string();
         self.write(
             &profile_id,
