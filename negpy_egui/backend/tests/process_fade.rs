@@ -143,3 +143,19 @@ fn the_bright_gain_offsets_libraw_scaling() {
         1.0
     );
 }
+
+#[test]
+fn the_capture_matrix_folds_white_balance_only_when_the_decode_left_it_out() {
+    use negpy_backend::features::process::logic::should_fold_camera_wb;
+
+    let mut transfer = slide();
+    assert!(should_fold_camera_wb(&transfer));
+
+    let mut linear = ProcessConfig::default();
+    linear.linear_raw = true;
+    assert!(should_fold_camera_wb(&linear));
+    assert!(!should_fold_camera_wb(&ProcessConfig::default()));
+
+    transfer.highlight_reconstruction = 5;
+    assert!(!should_fold_camera_wb(&transfer));
+}

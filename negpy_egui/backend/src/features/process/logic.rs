@@ -62,3 +62,15 @@ pub fn highlight_reconstruction_bright_gain(wb: Option<&[f64]>, highlight_mode: 
     values.iter().copied().fold(f64::NEG_INFINITY, f64::max)
         / values.iter().copied().fold(f64::INFINITY, f64::min)
 }
+
+/// Whether the capture matrix folds the as-shot multipliers back in.
+///
+/// An active reconstruction already bakes the real white balance into the decode, so
+/// folding it again would apply it twice.
+#[must_use]
+pub fn should_fold_camera_wb(process: &ProcessConfig) -> bool {
+    if highlight_reconstruction_bakes_wb(process) {
+        return false;
+    }
+    crate::features::process::path::effective_linear_raw(process)
+}
