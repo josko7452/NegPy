@@ -1,10 +1,13 @@
 //! Ports the table-level rules of `tests/test_fade_crossover.py` and `test_fade_neutrals.py`.
 
+use negpy_backend::domain::models::{ProcessConfig, ProcessMode};
 use negpy_backend::features::process::fade::{
-    CROSSOVER_LIMIT, CROSSOVER_WEIGHTS, cast_name, crossover_amount, crossover_bands,
-    crossover_casts, crossover_offsets, crossover_reference, crossover_zero, neutral_spread,
+    CROSSOVER_LIMIT, CROSSOVER_WEIGHTS, apply_crossover, cast_name, crossover_amount,
+    crossover_bands, crossover_casts, crossover_offsets, crossover_reference, crossover_strength,
+    crossover_uniform, crossover_zero, measure_crossover, neutral_spread, resolve_crossover,
     shape_cubic,
 };
+use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
 fn table() -> Vec<f64> {
     vec![
@@ -108,4 +111,81 @@ fn a_single_value_table_has_a_reference_at_its_only_band() {
     let single = vec![0.5, 0.2, 0.1, 0.02, 0.0, -0.02];
     assert_eq!(crossover_reference(&single), [0.02, 0.0, -0.02]);
     assert!(crossover_offsets(Some(&single), 1.0).is_none());
+}
+
+#[test]
+fn the_offsets_apply_without_moving_the_mean_density() {
+    let offsets = crossover_offsets(Some(&table()), 1.0).unwrap();
+    let mut pixels = Vec::new();
+    for index in 0..32 * 32 {
+        let value = -3.0 + 3.0 * index as f32 / (32.0 * 32.0);
+        pixels.extend([value, value + 0.02, value - 0.01]);
+    }
+    let image = ImageBuffer::from_rgb(32, 32, pixels);
+    let out = apply_crossover(&image, Some(&offsets));
+    let mean = |pixels: &[f32]| {
+        pixels
+            .chunks_exact(3)
+            .map(|p| (p[0] + p[1] + p[2]) / 3.0)
+            .sum::<f32>()
+            / (pixels.len() / 3) as f32
+    };
+    assert!((mean(&out.pixels) - mean(&image.pixels)).abs() < 1e-4);
+    assert!(
+        out.pixels
+            .iter()
+            .zip(&image.pixels)
+            .any(|(a, b)| (a - b).abs() > 0.01)
+    );
+    assert_eq!(apply_crossover(&image, None).pixels, image.pixels);
+}
+
+#[test]
+fn the_uniform_is_the_python_layout() {
+    assert_eq!(crossover_uniform(None).len(), 16 * 65);
+    let offsets = crossover_offsets(Some(&table()), 1.0).unwrap();
+    let bytes = crossover_uniform(Some(&offsets));
+    assert_eq!(bytes.len(), 16 * 65);
+    let value = f32::from_ne_bytes(bytes[0..4].try_into().unwrap());
+    assert_eq!(value, offsets.lo as f32);
+    let on = f32::from_ne_bytes(bytes[8..12].try_into().unwrap());
+    assert_eq!(on, 1.0);
+}
+
+#[test]
+fn strength_needs_a_slide_with_fade() {
+    let mut process = ProcessConfig::default();
+    process.fade_ratio_r = 0.8;
+    assert_eq!(crossover_strength(&process), 0.0);
+    process.process_mode = ProcessMode::E6;
+    assert_eq!(crossover_strength(&process), 0.0);
+    process.fade_crossover = 0.5;
+    assert_eq!(crossover_strength(&process), 0.5);
+}
+
+#[test]
+fn a_stored_table_resolves_under_any_tag_and_zero_is_no_table() {
+    let mut process = ProcessConfig::default();
+    process.process_mode = ProcessMode::E6;
+    process.fade_ratio_r = 0.8;
+    process.fade_crossover = 1.0;
+    process.fade_crossover_table = Some(table());
+    let (resolved, measured) = resolve_crossover(&process, "tag", None, true);
+    assert_eq!(resolved, Some(table()));
+    assert!(measured.is_none());
+    process.fade_crossover = 0.0;
+    assert_eq!(resolve_crossover(&process, "tag", None, true), (None, None));
+}
+
+#[test]
+fn a_measurable_grid_yields_a_rounded_table() {
+    let mut pixels = Vec::new();
+    for index in 0..64 * 64 {
+        let level = -2.5 + 2.2 * index as f32 / (64.0 * 64.0);
+        pixels.extend([level, level, level]);
+    }
+    let grid = ImageBuffer::from_rgb(64, 64, pixels);
+    let table = measure_crossover(&grid).unwrap();
+    assert_eq!((table.len() - 1) % 5, 0);
+    assert!(table.len() >= 6);
 }

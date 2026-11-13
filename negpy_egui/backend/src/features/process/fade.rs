@@ -6,6 +6,7 @@ use crate::domain::models::ProcessConfig;
 use crate::features::exposure::metering::effective_crosstalk_matrix;
 use crate::features::process::capture_color::camera_matrix_parts;
 use crate::features::process::path::{RenderPath, render_path};
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
 /// The neutral log level Remove Stain maps the cleanest white to.
 pub const FADE_WHITE_HEADROOM: f64 = 0.1;
@@ -20,6 +21,16 @@ pub const CROSSOVER_WEIGHTS: [f64; 3] = [1.0 / 3.0; 3];
 pub const CROSSOVER_BINS: usize = 64;
 /// The largest per-channel log offset the table applies.
 pub const CROSSOVER_LIMIT: f64 = 0.3;
+pub const CROSSOVER_MIN_SHARE: f64 = 0.004;
+pub const CROSSOVER_MIN_WEIGHT: f64 = 8.0;
+pub const CROSSOVER_MIN_SPAN: f64 = 0.05;
+pub const CROSSOVER_MEAN_SHIFT_STEPS: usize = 3;
+pub const CROSSOVER_MIN_CELLS: usize = 64;
+const CROSSOVER_BAND_EDGES: [f64; 7] = [0.06, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9];
+const CROSSOVER_RANGE_PCT: (f64, f64) = (0.5, 99.5);
+const CROSSOVER_NEUTRAL_SPREAD: f64 = 0.25;
+const CROSSOVER_CLUSTER_RADIUS: f64 = 0.12;
+const CLIPPED_LOG: f64 = -5.0;
 
 /// A white a render measured for itself: red, green, blue and the space it was read in.
 pub type MeasuredWhite = (f64, f64, f64, String);
@@ -413,4 +424,168 @@ pub fn crossover_offsets(table: Option<&[f64]>, crossover: f64) -> Option<Crosso
         lo,
         hi,
     })
+}
+
+/// `apply_crossover`: the image plus the offset row its own mean log selects.
+#[must_use]
+pub fn apply_crossover(image: &ImageBuffer, offsets: Option<&CrossoverOffsets>) -> ImageBuffer {
+    let Some(offsets) = offsets else {
+        return image.clone();
+    };
+    let mut out = vec![0.0; image.pixels.len()];
+    negpy_core::analysis::apply_crossover(
+        &image.pixels,
+        &offsets.bins,
+        offsets.lo as f32,
+        (offsets.hi - offsets.lo) as f32,
+        &mut out,
+    );
+    ImageBuffer::from_rgb(image.width, image.height, out)
+}
+
+/// The shader's table: `(lo, hi, on, 0)` then one vec4 per bin, zeros when off.
+#[must_use]
+pub fn crossover_uniform(offsets: Option<&CrossoverOffsets>) -> Vec<u8> {
+    let Some(offsets) = offsets else {
+        return vec![0; 16 * (CROSSOVER_BINS + 1)];
+    };
+    let mut bytes = Vec::with_capacity(16 * (CROSSOVER_BINS + 1));
+    for value in [offsets.lo as f32, offsets.hi as f32, 1.0, 0.0] {
+        bytes.extend_from_slice(&value.to_ne_bytes());
+    }
+    for row in &offsets.bins {
+        for value in [row[0], row[1], row[2], 0.0] {
+            bytes.extend_from_slice(&value.to_ne_bytes());
+        }
+    }
+    bytes
+}
+
+/// The table's strength in a render: Crossover on a slide whose survivals act, else 0.
+#[must_use]
+pub fn crossover_strength(process: &ProcessConfig) -> f64 {
+    if fade_matrix(process).is_none() {
+        return 0.0;
+    }
+    process.fade_crossover
+}
+
+/// A table a render measured for itself: `(table, fade_crossover_space)`.
+pub type MeasuredCrossover = (Option<Vec<f64>>, String);
+
+/// The table a render applies, and the one it measured from `grid` when the frame has none.
+#[must_use]
+pub fn resolve_crossover(
+    process: &ProcessConfig,
+    space: &str,
+    grid: Option<&ImageBuffer>,
+    measure: bool,
+) -> (Option<Vec<f64>>, Option<MeasuredCrossover>) {
+    if crossover_strength(process) == 0.0 {
+        return (None, None);
+    }
+    if let Some(table) = process.fade_crossover_table.clone() {
+        return (Some(table), None);
+    }
+    if !measure {
+        return (None, None);
+    }
+    let Some(grid) = grid else {
+        return (None, None);
+    };
+    let table = measure_crossover(grid);
+    (
+        table.clone(),
+        table.map(|table| (Some(table), space.to_string())),
+    )
+}
+
+/// Each band's neutral centre, its mean log and its share, dense end first.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NeutralBands {
+    pub centre: Vec<[f64; 3]>,
+    pub level: Vec<f64>,
+    pub share: Vec<f64>,
+}
+
+fn mean_log(cell: [f64; 3]) -> f64 {
+    cell[0] * CROSSOVER_WEIGHTS[0] + cell[1] * CROSSOVER_WEIGHTS[1] + cell[2] * CROSSOVER_WEIGHTS[2]
+}
+
+/// The neutral centre of each density band of a log grid.
+#[must_use]
+pub fn neutral_bands(grid: &ImageBuffer) -> Option<NeutralBands> {
+    let cells: Vec<[f32; 3]> = grid
+        .pixels
+        .chunks_exact(3)
+        .map(|p| [p[0], p[1], p[2]])
+        .collect();
+    let params = negpy_core::fade::BandParams {
+        inner_edges: CROSSOVER_BAND_EDGES.to_vec(),
+        weights: CROSSOVER_WEIGHTS,
+        range_pct: CROSSOVER_RANGE_PCT,
+        min_span: CROSSOVER_MIN_SPAN,
+        neutral_spread: CROSSOVER_NEUTRAL_SPREAD,
+        cluster_radius: CROSSOVER_CLUSTER_RADIUS,
+        steps: CROSSOVER_MEAN_SHIFT_STEPS,
+        min_weight: CROSSOVER_MIN_WEIGHT,
+        clipped_log: CLIPPED_LOG,
+        min_cells: CROSSOVER_MIN_CELLS,
+    };
+    let found = negpy_core::fade::neutral_bands(&cells, &params)?;
+    let mut centre = Vec::new();
+    let mut level = Vec::new();
+    let mut share = Vec::new();
+    for (band, weight) in found.centre.iter().zip(&found.weight) {
+        if band[0].is_nan() {
+            continue;
+        }
+        let share_value = weight / found.total;
+        if share_value < CROSSOVER_MIN_SHARE || *weight < CROSSOVER_MIN_WEIGHT {
+            continue;
+        }
+        centre.push(*band);
+        level.push(mean_log(*band));
+        share.push(share_value);
+    }
+    (!centre.is_empty()).then_some(NeutralBands {
+        centre,
+        level,
+        share,
+    })
+}
+
+/// The crossover table of a log grid, as a flat tuple.
+#[must_use]
+pub fn measure_crossover(grid: &ImageBuffer) -> Option<Vec<f64>> {
+    measure_crossover_at(grid, None)
+}
+
+/// `measure_crossover` with a known table zero, such as the Estimate's midtone.
+#[must_use]
+pub fn measure_crossover_at(grid: &ImageBuffer, zero: Option<f64>) -> Option<Vec<f64>> {
+    let bands = neutral_bands(grid)?;
+    let zero = zero.unwrap_or_else(|| {
+        let total: f64 = bands.share.iter().sum();
+        if total == 0.0 {
+            0.0
+        } else {
+            bands
+                .share
+                .iter()
+                .zip(&bands.level)
+                .map(|(share, level)| share * level)
+                .sum::<f64>()
+                / total
+        }
+    });
+    let mut out = vec![(zero * 100_000.0).round() / 100_000.0];
+    for ((centre, level), share) in bands.centre.iter().zip(&bands.level).zip(&bands.share) {
+        out.push((level * 100_000.0).round() / 100_000.0);
+        out.push((share * 100_000.0).round() / 100_000.0);
+        for channel in 0..3 {
+            out.push(((centre[channel] - level) * 100_000.0).round() / 100_000.0);
+        }
+    }
+    Some(out)
 }
