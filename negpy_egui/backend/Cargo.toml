@@ -29,6 +29,7 @@ rawler = "0.8.0"
 jxl-oxide = "0.12.6"
 zip = { version = "4", default-features = false, features = ["deflate"] }
 npyz = "0.8"
+blake2 = "0.11.0"
 
 [dev-dependencies]
 tempfile = "3"

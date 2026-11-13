@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 03:10 | **Last Commit:** `pending backend: move Crop onto frames`
+**Last Updated:** 2026-11-13 03:35 | **Last Commit:** `pending backend: port flat-field logic`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -19,7 +19,8 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - D6: missing `read_exif_from_file`, bounded previews, `NonStandardFileWrapper`, supported demosaic list; lens readers/opcodes/bind.
 
 ## Completed (This Session)
-- `pending` D12: moves Crop onto frames.
+- `pending` D9: ports flat-field gain, evenness and application.
+- `69b0a136` D12: moves Crop onto frames.
 - `c3ca9cf3` D12: migrates Positive-frame auto metering.
 - `f7beab1b` D12: locks new roll-default fields.
 - `ac3e738c` D12: splits baseline card locks.
@@ -32,9 +33,9 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - `HEAD` D9: ports HDR merge path.
 
 ## Next Steps (Ordered)
-1. [ ] D12: port the Flat Field profile migration.
-2. [ ] D12: port the Flat Field sensor-layout migration.
-3. [ ] D12: port the gear-preset migration.
+1. [ ] D12: port the Flat Field profile store.
+2. [ ] D12: port the Flat Field profile migration.
+3. [ ] D12: port the Flat Field sensor-layout migration.
 4. [ ] D7: port exposure `placement` and the remaining fade/estimate helpers.
 5. [ ] D8: port skew detection, batch Auto Crop and film-border helpers.
 6. [ ] D9: port flatfield, lens, RGB scan and stitch.

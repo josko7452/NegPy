@@ -2,6 +2,7 @@
 
 pub mod exposure;
 pub mod finish;
+pub mod flatfield;
 pub mod geometry;
 pub mod hdr;
 pub mod lab;
