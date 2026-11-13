@@ -483,18 +483,20 @@ pub fn highlight_hold_offset(
     highlight_point: f64,
     d_min: f64,
     paper: Option<&PaperProfile>,
+    preflash: f64,
+    grade: f64,
     midtone_gamma: Option<f64>,
 ) -> f64 {
     let target = c::HIGHLIGHT_HOLD_DENSITY;
     if target <= 0.0 {
         return 0.0;
     }
-    let v = through_midtone(
-        slope * (highlight_point - pivot),
-        d_min,
-        paper,
-        midtone_gamma,
-    );
+    let mut v = slope * (highlight_point - pivot);
+    if preflash > 0.0 {
+        let (v_th, gamma) = preflash_params(grade, d_min, paper, midtone_gamma);
+        v = preflash_value(v, v_th, preflash, gamma);
+    }
+    let v = through_midtone(v, d_min, paper, midtone_gamma);
     let v_hold = reference_linear_value(d_min, paper, Some(target));
     if v >= v_hold {
         return 0.0;

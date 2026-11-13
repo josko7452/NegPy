@@ -11,6 +11,7 @@ pub mod lut;
 pub mod metering;
 pub mod normalization;
 pub mod papers;
+pub mod placement;
 pub mod print;
 pub mod processor;
 pub mod stats;

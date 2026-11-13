@@ -85,6 +85,8 @@ fn highlight_auto(
         point,
         d_min,
         Some(profile),
+        exposure.preflash,
+        exposure.grade,
         Some(mg),
     ))
 }

@@ -352,6 +352,8 @@ pub fn solve_print(settings: &PrintRenderSettings<'_>) -> SolvedPrint {
             point,
             d_min,
             Some(paper),
+            exposure.preflash,
+            exposure.grade,
             Some(midtone_gamma),
         )
     });

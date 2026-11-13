@@ -144,13 +144,13 @@ fn shadow_reach_never_lowers_the_slope() {
 fn highlight_hold_burns_only_a_bright_tail() {
     let slope = 3.0;
     let pivot = compute_pivot(slope, 1.0, 0.0, Some(0.46), None, None);
-    assert!(highlight_hold_offset(slope, pivot, 0.05, 0.0, None, None) > 0.0);
+    assert!(highlight_hold_offset(slope, pivot, 0.05, 0.0, None, 0.0, 115.0, None) > 0.0);
     assert_eq!(
-        highlight_hold_offset(slope, pivot, 0.40, 0.0, None, None),
+        highlight_hold_offset(slope, pivot, 0.40, 0.0, None, 0.0, 115.0, None),
         0.0
     );
     assert_eq!(
-        highlight_hold_offset(slope, pivot, -1.0, 0.0, None, None),
+        highlight_hold_offset(slope, pivot, -1.0, 0.0, None, 0.0, 115.0, None),
         c::HIGHLIGHT_HOLD_MAX
     );
 }
