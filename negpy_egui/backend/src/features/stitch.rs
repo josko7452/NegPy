@@ -236,6 +236,64 @@ pub fn warp_into_canvas(
     )
 }
 
+/// Warp an IR plane into the canvas with linear interpolation; the blend reads a continuous
+/// mask, unlike the RGB warp's cubic resample.
+#[must_use]
+pub fn warp_ir_into_canvas(
+    ir: &[f32],
+    (height, width): (usize, usize),
+    transform: Affine,
+    canvas: (usize, usize),
+) -> Vec<f32> {
+    let source = negpy_core::warp::Image {
+        data: ir,
+        h: height,
+        w: width,
+        cn: 1,
+    };
+    let mut warped = vec![0.0; canvas.0 * canvas.1];
+    negpy_core::warp::warp_affine(
+        &source,
+        (
+            negpy_core::warp::Interp::Linear,
+            negpy_core::warp::Border::Constant,
+        ),
+        transform,
+        false,
+        canvas.0,
+        &mut warped,
+    );
+    warped
+}
+
+/// `blend_ir`: the defect mask of the assembled canvas.
+#[must_use]
+pub fn blend_ir(
+    irs: &[Vec<f32>],
+    sizes: &[(usize, usize)],
+    transforms: &[Affine],
+    canvas: (usize, usize),
+    seams: Option<&[Vec<bool>]>,
+    coverage: Option<&[Vec<bool>]>,
+) -> Vec<f32> {
+    let mut acc = vec![-1.0; canvas.0 * canvas.1];
+    for (i, ir) in irs.iter().enumerate() {
+        let warped = warp_ir_into_canvas(ir, sizes[i], transforms[i], canvas);
+        let selected = seams.map_or_else(
+            || {
+                coverage.map_or_else(
+                    || warped.iter().map(|value| *value > 0.0).collect::<Vec<_>>(),
+                    |coverage| coverage[i].clone(),
+                )
+            },
+            |seams| seams[i].clone(),
+        );
+        negpy_core::stitch::ir_blend_into(&mut acc, &warped, &selected, seams.is_none());
+    }
+    negpy_core::stitch::ir_finish(&mut acc);
+    acc
+}
+
 const MIN_OVERLAP_PX: usize = 1000;
 const SEAM_MAX_EDGE: usize = 1024;
 const SEAM_FEATHER_PX: f64 = 48.0;
@@ -614,7 +672,7 @@ pub fn stitch_composite(
         .zip(&transforms)
         .map(|(part, &transform)| warp_into_canvas(part, transform, canvas).1)
         .collect();
-    let mut coverage = lit_coverage(&warped, &masks, canvas, decoded_scale);
+    let coverage = lit_coverage(&warped, &masks, canvas, decoded_scale);
     let mut warped = warped;
     for i in 1..warped.len() {
         for j in 0..i {
@@ -639,29 +697,16 @@ pub fn stitch_composite(
         |seams| seam_blend(&warped, &coverage, seams, feather_px),
     );
     negpy_core::stitch::clip_unit(&mut blended.pixels);
-    let _ = &mut coverage;
-    let ir = if !irs.is_empty() && irs.iter().all(Option::is_some) {
-        let mut acc = vec![-1.0; canvas.0 * canvas.1];
-        for (i, plane) in irs.iter().enumerate() {
-            let Some(plane) = plane else {
-                continue;
-            };
-            let ir_img = ImageBuffer::from_rgb(canvas.0, canvas.1, plane.clone());
-            let _ = ir_img;
-            let source = ImageBuffer::from_rgb(parts[i].width, parts[i].height, plane.clone());
-            let (warped_ir, mask) = warp_into_canvas(&source, transforms[i], canvas);
-            let selected = seams.as_ref().map_or(&mask, |seams| &seams[i]);
-            let gray: Vec<f32> = warped_ir
-                .pixels
-                .chunks_exact(3)
-                .map(|pixel| pixel[0])
-                .collect();
-            negpy_core::stitch::ir_blend_into(&mut acc, &gray, selected, seams.is_none());
-        }
-        negpy_core::stitch::ir_finish(&mut acc);
-        Some(acc)
-    } else {
-        None
-    };
+    let ir = (!irs.is_empty() && irs.iter().all(Option::is_some)).then(|| {
+        let planes: Vec<Vec<f32>> = irs.iter().flatten().cloned().collect();
+        blend_ir(
+            &planes,
+            &decoded_sizes,
+            &transforms,
+            canvas,
+            seams.as_deref(),
+            Some(&coverage),
+        )
+    });
     (blended, ir)
 }
