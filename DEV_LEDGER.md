@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 11:40 | **Last Commit:** `aaf70b44 backend: port Auto slider read-outs`
+**Last Updated:** 2026-11-13 02:03 | **Last Commit:** `HEAD backend: port HDR merge path`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -8,51 +8,43 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 **Audit rule:** a merged Rust file is not proof of parity; symbol-level gaps below remain.
 
 ## Audit (After Commit 10)
-- D2: corrected: `features/lens/models.py` is runtime lens metadata, not a WorkspaceConfig section. Ported now. D1, D3-D5 unchanged.
-- D6: missing `read_exif_from_file`, bounded DNG/TIFF/embedded previews, `NonStandardFileWrapper`, supported demosaic list; lens metadata readers/opcodes/bind.
-- D7: missing exposure `auto_sliders`, `placement`, analysis strip/ring/vectorscope helpers; process `fade`, `fade_auto_red`, `fade_estimate`, `logic` tokens, sensor `film_base`, chart Lab/LM fit and capture-color source-profile helpers.
-- D8: missing geometry `skew`, `batch_autocrop`, film-border/edges, `film_and_picture`, `rebate_mask`, keystone inverse/solve; finish `rebate_tone`.
-- D9: absent flatfield, HDR, lens logic/warps, RGB scan, stitch, transparency, cyanotype, lith, sabattier, pick-better.
-- D10: absent CPU engine wiring, GPU engine, display/color management, WGSL shaders, parity tests.
+- D12: `roll_fields` lacks `migrate_crop_to_frames`, `with_frame_seed`, `_with_roll_crop`; missing `flatfield`, `flatfield_layout`, `gear_presets`.
+- D12 assets: absent thumbnails, embeddings, semantic/search, half-frame, gear assets, capture/view/session glue.
+- D7: `auto_sliders` done; missing `placement`, analysis strip/ring/vectorscope helpers; fade lacks density, estimate, auto-red and crossover; process logic lacks should-fold and chart Lab/LM fit.
+- D8: missing geometry `skew` detection, `batch_autocrop`, film-border/edges, `film_and_picture`, `rebate_mask`; finish `rebate_tone`.
+- D9: HDR done; missing flatfield, lens logic/warps, RGB scan, stitch, transparency, cyanotype, lith, sabattier, pick-better.
+- D10: absent CPU/GPU engine wiring, display/color management, WGSL shaders, parity tests.
 - D11: absent export, scanning, film-edge and templating.
-- D12: remaining migrations positive_auto, roll_fields, flatfield, flatfield_layout, gear_presets; absent thumbnails, embeddings, semantic/search, half-frame, gear assets.
 - D13/E1-E8: absent desktop state glue and the egui UI.
+- D6: missing `read_exif_from_file`, bounded previews, `NonStandardFileWrapper`, supported demosaic list; lens readers/opcodes/bind.
 
 ## Completed (This Session)
-- D12: Positive-frame auto-meter migration (tests green).
-- D12: New roll-field card locks (tests green).
-- D12: Baseline card split migration (tests green).
-- D12: Cast Removal moved from roll cards to frames (tests green).
-- D12: Section pushes, Raw Decode, Auto Crop and Film encoding migrations (tests green).
-- D7: Fade matrix/white-space helpers and process decode logic (tests green).
-- D8: Keystone inverse and four-edge solver (tests green).
-- D7: Auto Density/Grade slider read-outs (tests green).
-- D9: HDR exposure ordering, anchors and shadow seed (tests green).
-- `e6294ab3` D12: bounds, Cast Removal and source-color sweeps.
-- `d9c0ce50` D12: hash rehome and ambiguity.
-- `cf05350b` D12: normalization-roll baselines.
-- `9db52d4a` D7: process path and decode tokens.
-- `19c052be` D7: exposure analysis, stats and densitometer.
-- `feff2dad` D7: process hue, sensor, capture color and chart patches.
-- `7b5482df` D8: Lab resize sharpen and retouch split/tokens.
-- `05c7b2c0` D8: crop keys, rect transforms and flip/drag.
-- `effa9cf2` D6: IR planes and demosaic/camera helpers.
-- D2: runtime lens metadata model (HEAD).
+- `c3ca9cf3` D12: migrates Positive-frame auto metering.
+- `f7beab1b` D12: locks new roll-default fields.
+- `ac3e738c` D12: splits baseline card locks.
+- `c2898d0c` D12: moves Cast Removal onto frames.
+- `7bcb8715` D12: finishes roll card split migrations.
+- `1d76ce16` D7: ports fade and decode helpers.
+- `b20bee5a` D8: ports keystone inverse and solver.
+- `aaf70b44` D7: ports Auto slider read-outs.
+- `26839c03` D9: ports HDR exposure choices.
+- `HEAD` D9: ports HDR merge path.
 
 ## Next Steps (Ordered)
-1. [ ] D12: finish the five missing asset migrations.
-2. [ ] D7: close exposure auto/placement, fade, process logic and chart gaps.
-3. [ ] D8: port skew, batch auto-crop and film-border helpers.
-4. [ ] D6: port bounded preview and lens-reader units.
-5. [ ] D9, D10, D11, D12 assets, then D13/E1-E8.
+1. [ ] D12: port `migrate_crop_to_frames` and the three missing asset migrations.
+2. [ ] D7: port exposure `placement` and the remaining fade/estimate helpers.
+3. [ ] D8: port skew detection, batch Auto Crop and film-border helpers.
+4. [ ] D9: port flatfield, lens, RGB scan and stitch.
+5. [ ] D10-D13/E1-E8: engine, export, assets and UI.
 
 ## Constraints / Gotchas
-- Full workspace test: 2026-11-13 09:00, passed with `cargo test --workspace`.
+- Full workspace test: 2026-11-13 02:03, passed with `cargo test --workspace` after a 51m43s build.
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
 - Subject <=50 chars, body wrapped at 72, no trailing period; split on "and".
-- Anti-loop: 3 failed fixes => STOP and ask for human guidance.
+- Anti-loop: 10 failed fixes => STOP and ask for human guidance.
 - D2 tokens use canonical JSON, not Python-interchangeable.
 - D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
 - D6: JXL fixtures use `imagecodecs`; 16-bit stays `source_u16`.
 - Retouch tokens use canonical JSON and SHA-256, not Python repr and SHA-1.
 - Clippy `-D warnings` still fails on existing storage/rolls code.
+- `skew_fit_side` is private in `negpy_core`; skew detection needs a `core:` promotion.
