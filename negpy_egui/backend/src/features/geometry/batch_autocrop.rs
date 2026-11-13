@@ -3,6 +3,8 @@
 //! Mirrors `negpy/features/geometry/batch_autocrop.py` without Qt, storage or file I/O.
 
 use crate::features::geometry::logic::Roi;
+use crate::features::geometry::logic::ratio_aspect;
+use crate::features::geometry::processor::{closest_standard_ratio, enforce_roi_aspect_ratio};
 
 pub const BORDER_SIDES: [&str; 4] = ["top", "bottom", "left", "right"];
 pub const TRUSTED_CONFIDENCE: f64 = 0.58;
@@ -12,9 +14,10 @@ const MIN_BORDER_SAMPLES: usize = 5;
 const FALLBACK_CONFIDENCE: f64 = 0.30;
 const MIN_FALLBACK_COVERAGE: f64 = 0.9;
 const MIN_TRUSTED_FRAMES: usize = 2;
+const CONFIRMED_ANGLE_TOL: f64 = 2.5;
 
 /// Single-frame evidence in the final, deskewed display coordinate space.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CropEvidence {
     pub key: String,
     /// `(height, width)`.
@@ -36,6 +39,31 @@ pub struct CropEvidence {
     pub bright_border: Vec<f64>,
     pub fallback_roi: Option<Roi>,
     pub reason: String,
+}
+
+impl Default for CropEvidence {
+    fn default() -> Self {
+        Self {
+            key: String::new(),
+            canvas_shape: (0, 0),
+            roi: None,
+            correction_angle: 0.0,
+            confidence: 0.0,
+            target_ratio: String::new(),
+            rebate_trim: 1.0,
+            angle_confident: false,
+            supported_sides: Vec::new(),
+            supported_corners: Vec::new(),
+            evidence_sources: Vec::new(),
+            geometry_score: 0.0,
+            vertical_edge_contrast: 0.0,
+            vertical_edge_profile: Vec::new(),
+            border: Vec::new(),
+            bright_border: Vec::new(),
+            fallback_roi: None,
+            reason: String::new(),
+        }
+    }
 }
 
 /// Robust normalized geometry shared by trustworthy frames in a roll.
@@ -116,6 +144,32 @@ fn normalized_roi(roi: Roi, (height, width): (usize, usize)) -> [f64; 4] {
     ]
 }
 
+fn pixel_roi(rect: [f64; 4], (height, width): (usize, usize)) -> Roi {
+    let at = |value: f64, limit: usize| {
+        (value * limit as f64)
+            .round_ties_even()
+            .clamp(0.0, limit as f64) as i64
+    };
+    (
+        at(rect[1], height),
+        at(rect[3], height),
+        at(rect[0], width),
+        at(rect[2], width),
+    )
+}
+
+fn clamp_rect(rect: [f64; 4]) -> [f64; 4] {
+    let clamp = |value: f64| value.clamp(0.0, 1.0);
+    let [mut x1, mut y1, mut x2, mut y2] = rect.map(clamp);
+    if x1 > x2 {
+        std::mem::swap(&mut x1, &mut x2);
+    }
+    if y1 > y2 {
+        std::mem::swap(&mut y1, &mut y2);
+    }
+    [x1, y1, x2, y2]
+}
+
 fn roi_coverage(roi: Roi, (height, width): (usize, usize)) -> f64 {
     if height == 0 || width == 0 {
         return 0.0;
@@ -174,11 +228,14 @@ fn threshold_fallback_frames(evidence: &[CropEvidence]) -> Vec<CropEvidence> {
     }
     boxes
         .into_iter()
-        .map(|item| CropEvidence {
-            roi: item.fallback_roi,
-            confidence: FALLBACK_CONFIDENCE,
-            evidence_sources: vec!["threshold-fallback"],
-            ..item.clone()
+        .map(|item| {
+            let boxed = CropEvidence {
+                roi: item.fallback_roi,
+                confidence: FALLBACK_CONFIDENCE,
+                evidence_sources: vec!["threshold-fallback"],
+                ..item.clone()
+            };
+            boxed
         })
         .collect()
 }
@@ -293,4 +350,364 @@ pub fn build_roll_template(evidence: &[CropEvidence]) -> Option<RollCropTemplate
         border_sample_count,
         from_fallback,
     })
+}
+
+fn map_rect_between_rotations(
+    rect: [f64; 4],
+    (height, width): (usize, usize),
+    source_angle: f64,
+    target_angle: f64,
+) -> [f64; 4] {
+    let delta = target_angle - source_angle;
+    if delta.abs() <= 1e-7 {
+        return rect;
+    }
+    let (h, w) = (height as f64, width as f64);
+    let points = [
+        (rect[0] * w, rect[1] * h),
+        (rect[2] * w, rect[1] * h),
+        (rect[2] * w, rect[3] * h),
+        (rect[0] * w, rect[3] * h),
+    ];
+    let m = negpy_core::warp::rotation_matrix((w as f32 / 2.0, h as f32 / 2.0), delta, 1.0);
+    let mapped: Vec<(f64, f64)> = points
+        .iter()
+        .map(|(x, y)| (m[0] * x + m[1] * y + m[2], m[3] * x + m[4] * y + m[5]))
+        .collect();
+    let mut left = f64::INFINITY;
+    let mut top = f64::INFINITY;
+    let mut right = f64::NEG_INFINITY;
+    let mut bottom = f64::NEG_INFINITY;
+    for (x, y) in mapped {
+        left = left.min(x);
+        top = top.min(y);
+        right = right.max(x);
+        bottom = bottom.max(y);
+    }
+    let left = left.floor().clamp(0.0, w) as usize;
+    let top = top.floor().clamp(0.0, h) as usize;
+    let right = right.ceil().clamp(0.0, w) as usize;
+    let bottom = bottom.ceil().clamp(0.0, h) as usize;
+    clamp_rect([
+        left as f64 / w,
+        top as f64 / h,
+        right as f64 / w,
+        bottom as f64 / h,
+    ])
+}
+
+fn calibrate_detected_rect(
+    item: &CropEvidence,
+    roi: Roi,
+    template: &RollCropTemplate,
+) -> ([f64; 4], bool) {
+    let [mut x1, mut y1, mut x2, mut y2] = normalized_roi(roi, item.canvas_shape);
+    let (width, height) = (x2 - x1, y2 - y1);
+    let center = (x1 + x2) * 0.5;
+    let mut calibrated = false;
+    let width_tol = 0.035f64.max(4.0 * template.width_mad);
+    let center_tol = 0.035f64.max(4.0 * template.center_mad);
+    let top_tol = 0.03f64.max(4.0 * template.top_mad);
+    let mut target_width = width;
+    if (0.0 < template.width - width && template.width - width <= 0.10f64.max(width_tol))
+        || (item.confidence < TRUSTED_CONFIDENCE && (width - template.width).abs() > width_tol)
+    {
+        target_width = template.width;
+        calibrated = true;
+    }
+    if target_width != width {
+        let left = item.supported_sides.contains(&"left");
+        let right = item.supported_sides.contains(&"right");
+        if left && !right {
+            x2 = x1 + target_width;
+        } else if right && !left {
+            x1 = x2 - target_width;
+        } else {
+            x1 = center - target_width * 0.5;
+            x2 = center + target_width * 0.5;
+        }
+    }
+    if item.confidence < TRUSTED_CONFIDENCE {
+        if (center - template.center_x).abs() > center_tol {
+            x1 = template.center_x - target_width * 0.5;
+            x2 = template.center_x + target_width * 0.5;
+            calibrated = true;
+        }
+        if (y1 - template.top).abs() > top_tol
+            || (height - template.height).abs() > 0.04f64.max(4.0 * template.top_mad)
+        {
+            y1 = template.top;
+            y2 = template.top + template.height;
+            calibrated = true;
+        }
+    }
+    (clamp_rect([x1, y1, x2, y2]), calibrated)
+}
+
+fn rect_from_edge_profile(item: &CropEvidence, template: &RollCropTemplate) -> Option<[f64; 4]> {
+    negpy_core::autocrop::rect_from_edge_profile(
+        &item.vertical_edge_profile,
+        item.vertical_edge_contrast,
+        &negpy_core::autocrop::Template {
+            center_x: template.center_x,
+            width: template.width,
+            fallback_width: template.fallback_width,
+            top: template.top,
+            height: template.height,
+            center_mad: template.center_mad,
+            width_mad: template.width_mad,
+        },
+    )
+    .map(|rect| [rect.0, rect.1, rect.2, rect.3])
+}
+
+fn bright_only_border(bright: &[f64]) -> Vec<f64> {
+    if bright.len() != BORDER_SIDES.len() {
+        return Vec::new();
+    }
+    let finite = |value: f64| if value.is_finite() { value } else { 0.0 };
+    let amounts: Vec<f64> = bright.iter().copied().map(finite).collect();
+    let mut paired = vec![false; 4];
+    if amounts[0] > 0.0 && amounts[1] > 0.0 {
+        paired[0] = true;
+        paired[1] = true;
+    }
+    if amounts[2] > 0.0 && amounts[3] > 0.0 {
+        paired[2] = true;
+        paired[3] = true;
+    }
+    if !paired.iter().any(|value| *value) {
+        return Vec::new();
+    }
+    amounts
+        .iter()
+        .zip(&paired)
+        .map(|(value, paired)| if *paired { *value } else { 0.0 })
+        .collect()
+}
+
+fn resolve_border(frame: &[f64], roll: &[f64], bright: &[f64]) -> Vec<f64> {
+    if roll.len() != BORDER_SIDES.len() {
+        return bright_only_border(bright);
+    }
+    let frame = if frame.len() == BORDER_SIDES.len() {
+        frame.to_vec()
+    } else {
+        vec![f64::NAN; BORDER_SIDES.len()]
+    };
+    frame
+        .iter()
+        .zip(roll)
+        .map(|(own, fallback)| {
+            if own.is_finite() {
+                *own
+            } else if fallback.is_finite() {
+                *fallback
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+fn inset_rect_by_border(rect: [f64; 4], border: &[f64]) -> [f64; 4] {
+    if border.len() != BORDER_SIDES.len() {
+        return rect;
+    }
+    let [mut x1, mut y1, mut x2, mut y2] = rect;
+    let (width, height) = (x2 - x1, y2 - y1);
+    if width <= 0.0 || height <= 0.0 {
+        return rect;
+    }
+    y1 += border[0] * height;
+    y2 -= border[1] * height;
+    x1 += border[2] * width;
+    x2 -= border[3] * width;
+    if y2 - y1 <= 0.0 || x2 - x1 <= 0.0 {
+        return rect;
+    }
+    clamp_rect([x1, y1, x2, y2])
+}
+
+fn apply_target_ratio(roi: Roi, (height, width): (usize, usize), target_ratio: &str) -> Roi {
+    let ratio = if target_ratio == "Free" {
+        closest_standard_ratio(
+            roi,
+            (height, width),
+            crate::domain::models::AspectRatio::R3x2,
+        )
+    } else {
+        crate::domain::models::AspectRatio::coerce(target_ratio)
+    };
+    let [x1, y1, x2, y2] = [roi.2, roi.0, roi.3, roi.1].map(|value| value as f64);
+    let current = (x2 - x1) / (y2 - y1).max(1e-12);
+    let wanted = ratio_aspect(ratio).unwrap_or(current);
+    if (current - wanted).abs() <= 1e-3 {
+        return (
+            roi.0.max(0),
+            roi.1.min(height as i64),
+            roi.2.max(0),
+            roi.3.min(width as i64),
+        );
+    }
+    enforce_roi_aspect_ratio(roi, height, width, ratio)
+}
+
+fn add_uniform_safety_border(roi: Roi, (height, width): (usize, usize), ratio: f64) -> Roi {
+    let requested = (height.min(width) as f64 * ratio)
+        .round_ties_even()
+        .max(0.0) as i64;
+    let available = roi
+        .0
+        .min(roi.2)
+        .min(height as i64 - roi.1)
+        .min(width as i64 - roi.3)
+        .max(0);
+    let pad = requested.min(available);
+    (roi.0 - pad, roi.1 + pad, roi.2 - pad, roi.3 + pad)
+}
+
+fn own_crop(item: &CropEvidence) -> Vec<ResolvedCrop> {
+    let Some((y1, y2, x1, x2)) = item.fallback_roi else {
+        return Vec::new();
+    };
+    let (height, width) = item.canvas_shape;
+    if y2 <= y1 || x2 <= x1 || height == 0 || width == 0 {
+        return Vec::new();
+    }
+    vec![ResolvedCrop {
+        key: item.key.clone(),
+        crop_rect: [
+            (x1 as f64 / width as f64).clamp(0.0, 1.0),
+            (y1 as f64 / height as f64).clamp(0.0, 1.0),
+            (x2 as f64 / width as f64).clamp(0.0, 1.0),
+            (y2 as f64 / height as f64).clamp(0.0, 1.0),
+        ],
+        correction_angle: item.correction_angle,
+        confidence: 0.5,
+        calibrated: false,
+    }]
+}
+
+/// Resolve trustworthy and template-supported frames; ambiguous frames abstain.
+#[must_use]
+pub fn resolve_roll_crops(evidence: &[CropEvidence], safety_border: f64) -> Vec<ResolvedCrop> {
+    let pooled: Vec<&CropEvidence> = evidence
+        .iter()
+        .filter(|item| item.reason != "unsupported_orientation")
+        .collect();
+    let ratios: Vec<&str> = {
+        let mut seen = Vec::new();
+        for item in evidence {
+            if !seen.contains(&item.target_ratio.as_str()) {
+                seen.push(item.target_ratio.as_str());
+            }
+        }
+        seen
+    };
+    let templates: Vec<(&str, Option<RollCropTemplate>)> = ratios
+        .into_iter()
+        .map(|ratio| {
+            let group: Vec<CropEvidence> = pooled
+                .iter()
+                .filter(|item| item.target_ratio == ratio)
+                .map(|item| (*item).clone())
+                .collect();
+            (ratio, build_roll_template(&group))
+        })
+        .collect();
+    let mut results = Vec::new();
+    for item in evidence {
+        if item.reason == "unsupported_orientation" {
+            results.extend(own_crop(item));
+        }
+    }
+    if templates.iter().all(|(_, template)| template.is_none()) {
+        return results;
+    }
+    for item in evidence {
+        if item.reason == "unsupported_orientation" {
+            continue;
+        }
+        let Some(template) = templates
+            .iter()
+            .find(|(ratio, _)| *ratio == item.target_ratio)
+            .and_then(|(_, template)| template.as_ref())
+        else {
+            continue;
+        };
+        let mut roi = item.roi;
+        if roi.is_none() && template.from_fallback {
+            roi = item.fallback_roi;
+        }
+        let (mut rect, confidence);
+        let mut calibrated;
+        if let Some(roi) = roi {
+            let (found, changed) = calibrate_detected_rect(item, roi, template);
+            rect = found;
+            calibrated = changed;
+            if item.roi.is_none() {
+                calibrated = true;
+                confidence = 0.55f64.min(template.confidence * 0.72);
+            } else {
+                confidence = item.confidence;
+            }
+        } else {
+            let Some(found) = rect_from_edge_profile(item, template) else {
+                continue;
+            };
+            rect = found;
+            calibrated = true;
+            confidence = 0.55f64.min(template.confidence * 0.72);
+        }
+        let mut angle = item.correction_angle;
+        let angle_tol = 0.55f64.max(4.0 * template.angle_mad);
+        let angle_trusted = item.confidence >= TRUSTED_CONFIDENCE;
+        let divergence = (angle - template.correction_angle).abs();
+        let own_measurement = item.angle_confident || angle_trusted;
+        if item.roi.is_none()
+            || !(own_measurement && divergence <= CONFIRMED_ANGLE_TOL.max(angle_tol))
+        {
+            let target = template.correction_angle;
+            rect = map_rect_between_rotations(rect, item.canvas_shape, angle, target);
+            angle = target;
+            calibrated = true;
+        }
+        angle = angle.clamp(
+            -crate::features::geometry::logic::FINE_ROTATION_LIMIT,
+            crate::features::geometry::logic::FINE_ROTATION_LIMIT,
+        );
+        let mut border = resolve_border(&item.border, &template.border, &item.bright_border);
+        if item.rebate_trim != 1.0 {
+            border = border
+                .iter()
+                .map(|value| value * item.rebate_trim)
+                .collect();
+        }
+        let inset = inset_rect_by_border(rect, &border);
+        let trimmed = inset != rect;
+        let mut pixel = pixel_roi(inset, item.canvas_shape);
+        if trimmed && !template.from_fallback {
+            pixel = apply_target_ratio(pixel, item.canvas_shape, &item.target_ratio);
+        }
+        let pad_ratio = if trimmed { 0.0 } else { safety_border };
+        let (y1, y2, x1, x2) = add_uniform_safety_border(pixel, item.canvas_shape, pad_ratio);
+        if y2 <= y1 || x2 <= x1 {
+            continue;
+        }
+        let (height, width) = item.canvas_shape;
+        results.push(ResolvedCrop {
+            key: item.key.clone(),
+            crop_rect: [
+                (x1 as f64 / width as f64).clamp(0.0, 1.0),
+                (y1 as f64 / height as f64).clamp(0.0, 1.0),
+                (x2 as f64 / width as f64).clamp(0.0, 1.0),
+                (y2 as f64 / height as f64).clamp(0.0, 1.0),
+            ],
+            correction_angle: angle,
+            confidence: confidence.clamp(0.0, 1.0),
+            calibrated,
+        });
+    }
+    results
 }
