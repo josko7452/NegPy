@@ -17,6 +17,13 @@ fn repository(dir: &std::path::Path) -> StorageRepository {
     repo
 }
 
+fn crop(rect: Option<Vec<f64>>, auto: bool) -> WorkspaceConfig {
+    let mut config = WorkspaceConfig::default();
+    config.geometry.crop_rect = rect;
+    config.geometry.crop_from_auto = auto;
+    config
+}
+
 fn save(repo: &StorageRepository, hash: &str, config: &WorkspaceConfig, path: &str) {
     repo.save_file_settings(hash, config, path).unwrap();
 }
@@ -271,6 +278,95 @@ fn auto_crop_locks_only_a_frame_saved_with_it_on() {
     assert_eq!(cards(&repo, &roll, "a"), ["auto_crop"]);
     assert!(cards(&repo, &roll, "b").is_empty());
     assert!(cards(&repo, &roll, "c").is_empty());
+}
+
+#[test]
+fn each_frame_keeps_the_crop_its_roll_gave_it() {
+    use negpy_backend::domain::models::AspectRatio;
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_crop_to_frames;
+    use negpy_backend::services::assets::rolls::{
+        roll_defaults, set_frame_override, set_roll_defaults,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let rect = vec![0.1, 0.1, 0.9, 0.9];
+    let roll = create_virtual_roll(
+        &mut repo,
+        "Roll",
+        &["/r/a.tif", "/r/b.tif", "/r/c.tif", "/r/d.tif", "/r/e.tif"].map(str::to_string),
+    );
+    save(&repo, "a", &crop(None, false), "/r/a.tif");
+    save(&repo, "b", &crop(Some(rect.clone()), false), "/r/b.tif");
+    let mut c = crop(None, false);
+    c.geometry.autocrop_ratio = AspectRatio::R5x4;
+    save(&repo, "c", &c, "/r/c.tif");
+    save(&repo, "d", &crop(Some(rect.clone()), true), "/r/d.tif");
+
+    let mut defaults = serde_json::Map::new();
+    defaults.insert("crop_from_auto".to_string(), serde_json::json!(true));
+    defaults.insert("autocrop_ratio".to_string(), serde_json::json!("3:2"));
+    defaults.insert("autocrop_offset".to_string(), serde_json::json!(8));
+    defaults.insert("hue_trim".to_string(), serde_json::json!(2.0));
+    set_roll_defaults(&mut repo, &roll, defaults);
+    set_frame_override(&mut repo, &roll, "c", "autocrop", true, None);
+    set_frame_override(&mut repo, &roll, "d", "auto_crop", true, None);
+    set_frame_override(&mut repo, &roll, "d", "sensor", true, None);
+
+    migrate_crop_to_frames(&mut repo);
+
+    let a = repo.load_file_settings("a").unwrap().unwrap().geometry;
+    assert!(a.crop_from_auto);
+    assert_eq!(a.crop_rect, None);
+    assert_eq!(a.autocrop_ratio, AspectRatio::R3x2);
+    assert_eq!(a.autocrop_offset, 8);
+    let b = repo.load_file_settings("b").unwrap().unwrap().geometry;
+    assert!(!b.crop_from_auto);
+    assert_eq!(b.crop_rect, Some(rect.clone()));
+    assert_eq!(b.autocrop_ratio, AspectRatio::R3x2);
+    let c = repo.load_file_settings("c").unwrap().unwrap().geometry;
+    assert!(c.crop_from_auto);
+    assert_eq!(c.autocrop_ratio, AspectRatio::R5x4);
+    assert_eq!(c.autocrop_offset, 0);
+    let d = repo.load_file_settings("d").unwrap().unwrap().geometry;
+    assert!(d.crop_from_auto);
+    assert_eq!(d.crop_rect, Some(rect));
+    assert!(repo.load_file_settings("e").unwrap().is_none());
+    assert_eq!(
+        roll_defaults(&repo, &roll),
+        [("hue_trim".to_string(), serde_json::json!(2.0))]
+            .into_iter()
+            .collect()
+    );
+    assert!(cards(&repo, &roll, "c").is_empty());
+    assert_eq!(cards(&repo, &roll, "d"), ["sensor"]);
+}
+
+#[test]
+fn the_crop_migration_runs_once() {
+    use negpy_backend::domain::models::AspectRatio;
+    use negpy_backend::services::assets::migrations::roll_fields::migrate_crop_to_frames;
+    use negpy_backend::services::assets::rolls::set_roll_defaults;
+
+    let dir = tempfile::tempdir().unwrap();
+    let mut repo = repository(dir.path());
+    let roll = create_virtual_roll(&mut repo, "Roll", &["/r/a.tif".to_string()]);
+    save(&repo, "a", &crop(None, false), "/r/a.tif");
+    migrate_crop_to_frames(&mut repo);
+    let mut defaults = serde_json::Map::new();
+    defaults.insert("autocrop_ratio".to_string(), serde_json::json!("4:3"));
+    set_roll_defaults(&mut repo, &roll, defaults);
+
+    migrate_crop_to_frames(&mut repo);
+
+    assert_eq!(
+        repo.load_file_settings("a")
+            .unwrap()
+            .unwrap()
+            .geometry
+            .autocrop_ratio,
+        AspectRatio::Free
+    );
 }
 
 #[test]

@@ -1,8 +1,10 @@
 //! Lock the frame cards whose new roll-default fields already carry a frame value.
 
+use std::collections::HashMap;
+
 use serde_json::{Map, Value};
 
-use crate::domain::models::ProcessConfig;
+use crate::domain::models::{GeometryConfig, ProcessConfig, WorkspaceConfig};
 use crate::infrastructure::storage::repository::StorageRepository;
 use crate::services::assets::rolls::{rolls_containing_path, set_frame_override, unforked_hash};
 
@@ -338,6 +340,55 @@ pub fn migrate_auto_crop_roll_locks(repo: &mut StorageRepository) {
 }
 
 const FILM_ENCODING_FLAG: &str = "film_card_source_encoding_v1";
+const CROP_TO_FRAMES_FLAG: &str = "crop_to_frames_v1";
+
+const CROP_SHAPE_FIELDS: &[&str] = &[
+    "autocrop_mode",
+    "autocrop_offset",
+    "autocrop_rebate_trim",
+    "autocrop_ratio",
+    "autocrop_square",
+];
+
+fn with_roll_crop(
+    config: &WorkspaceConfig,
+    values: &Map<String, Value>,
+    locked: &[String],
+) -> WorkspaceConfig {
+    let mut config = config.clone();
+    if !locked.iter().any(|card| card == "autocrop") {
+        let shape: Map<String, Value> = CROP_SHAPE_FIELDS
+            .iter()
+            .filter_map(|field| {
+                values.get(*field).map(|value| {
+                    (
+                        (*field).to_string(),
+                        super::super::rolls::config_value(value),
+                    )
+                })
+            })
+            .collect();
+        if !shape.is_empty() {
+            if let Ok(Value::Object(mut fields)) = serde_json::to_value(&config.geometry) {
+                fields.extend(shape);
+                config.geometry = crate::domain::models::build_lenient::<GeometryConfig>(&fields);
+            }
+        }
+    }
+    let hand_drawn = config.geometry.crop_rect.is_some() && !config.geometry.crop_from_auto;
+    if !locked.iter().any(|card| card == "auto_crop") && !hand_drawn {
+        if let Some(on) = values
+            .get("crop_from_auto")
+            .filter(|value| value.as_bool().is_some())
+        {
+            let on = on.as_bool().unwrap_or(false);
+            if on != config.geometry.crop_from_auto {
+                config = crate::domain::models::geometry::with_auto_crop(config, on);
+            }
+        }
+    }
+    config
+}
 
 /// Give each roll with Film defaults the Auto encoding, once.
 pub fn migrate_film_card_source_encoding(repo: &mut StorageRepository) {
@@ -363,5 +414,118 @@ pub fn migrate_film_card_source_encoding(repo: &mut StorageRepository) {
     }
     if let Err(error) = save_setting(repo, FILM_ENCODING_FLAG, Value::Bool(true)) {
         log::error!("Could not record the Film card encoding migration: {error}");
+    }
+}
+
+/// Move each roll's crop onto the frames that followed it.
+///
+/// A saved frame keeps the crop it resolved through its roll, a frame with no saved edit
+/// takes the roll's frame seed, and the retired cards' locks are dropped.
+pub fn migrate_crop_to_frames(repo: &mut StorageRepository) {
+    if setting_truthy(repo, CROP_TO_FRAMES_FLAG) {
+        return;
+    }
+    let saved = crate::services::assets::rolls::saved_rolls(repo);
+    let roll_values: HashMap<String, Map<String, Value>> = saved
+        .iter()
+        .filter_map(|(roll_id, entry)| {
+            let values: Map<String, Value> = entry
+                .get("defaults")
+                .and_then(Value::as_object)
+                .map(|defaults| {
+                    defaults
+                        .iter()
+                        .filter(|(field, _)| {
+                            CROP_SHAPE_FIELDS.contains(&field.as_str())
+                                || field.as_str() == "crop_from_auto"
+                        })
+                        .map(|(field, value)| (field.clone(), value.clone()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            (!values.is_empty()).then_some((roll_id.clone(), values))
+        })
+        .collect();
+    if !roll_values.is_empty() {
+        let result = (|| -> rusqlite::Result<()> {
+            let connection = rusqlite::Connection::open(&repo.edits_db_path)?;
+            let transaction = connection.unchecked_transaction()?;
+            let rows = {
+                let mut statement = transaction
+                    .prepare("SELECT file_hash, settings_json, file_path FROM file_settings")?;
+                let rows = statement.query_map([], |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, Option<String>>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                })?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            };
+            for (file_hash, settings, file_path) in rows {
+                let Some(roll_id) = rolls_for_row(repo, &file_hash, file_path.as_deref())
+                    .into_iter()
+                    .find(|roll_id| roll_values.contains_key(roll_id))
+                else {
+                    continue;
+                };
+                let mut data = match settings.filter(|settings| !settings.is_empty()) {
+                    Some(settings) => match serde_json::from_str::<Value>(&settings) {
+                        Ok(Value::Object(data)) => data,
+                        _ => continue,
+                    },
+                    None => Map::new(),
+                };
+                let before = WorkspaceConfig::from_flat_dict(&data);
+                let locked = crate::services::assets::rolls::frame_override_cards(
+                    repo,
+                    &roll_id,
+                    &unforked_hash(&file_hash),
+                );
+                let old = before.to_dict();
+                let new = with_roll_crop(&before, &roll_values[&roll_id], &locked).to_dict();
+                let changed: Map<String, Value> = new
+                    .into_iter()
+                    .filter(|(key, value)| old.get(key) != Some(value))
+                    .collect();
+                if changed.is_empty() {
+                    continue;
+                }
+                data.extend(changed);
+                transaction.execute(
+                    "UPDATE file_settings SET settings_json = ? WHERE file_hash = ?",
+                    rusqlite::params![Value::Object(data).to_string(), file_hash],
+                )?;
+            }
+            transaction.commit()
+        })();
+        if let Err(error) = result {
+            log::error!("Crop move to the frames failed; continuing without it: {error}");
+        }
+    }
+    for (roll_id, entry) in &saved {
+        let overrides = entry
+            .get("frame_overrides")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        for (file_hash, cards) in overrides {
+            for card in ["autocrop", "auto_crop"] {
+                if cards
+                    .as_array()
+                    .is_some_and(|cards| cards.iter().any(|value| value.as_str() == Some(card)))
+                {
+                    set_frame_override(repo, roll_id, &file_hash, card, false, None);
+                }
+            }
+        }
+        if let Some(values) = roll_values.get(roll_id) {
+            crate::services::assets::rolls::add_frame_seed(repo, roll_id, values.clone());
+            let names: Vec<String> = values.keys().cloned().collect();
+            crate::services::assets::rolls::restore_roll_fields(repo, roll_id, Map::new(), &names);
+        }
+    }
+    if let Err(error) = save_setting(repo, CROP_TO_FRAMES_FLAG, Value::Bool(true)) {
+        log::error!("Could not record the Crop migration: {error}");
     }
 }

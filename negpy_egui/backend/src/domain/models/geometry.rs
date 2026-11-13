@@ -110,6 +110,28 @@ impl Default for GeometryConfig {
     }
 }
 
+/// A frame with Auto Crop armed or off.
+///
+/// Every path that switches Auto Crop goes through here: a rect kept across the switch
+/// would read as the other kind.
+#[must_use]
+pub fn with_auto_crop(
+    mut config: crate::domain::models::workspace::WorkspaceConfig,
+    on: bool,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    config.geometry.crop_rect = None;
+    config.geometry.crop_from_auto = on;
+    config.geometry.crop_detect_key.clear();
+    config.geometry.autocrop_squared = false;
+    let (invalidate, floors, ceils) =
+        crate::domain::models::process::invalidate_local_bounds(&config.process);
+    if invalidate {
+        config.process.local_floors = floors;
+        config.process.local_ceils = ceils;
+    }
+    config
+}
+
 const fn default_one() -> f64 {
     1.0
 }

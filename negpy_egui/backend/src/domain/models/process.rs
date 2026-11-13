@@ -249,7 +249,7 @@ pub fn auto_meter_for_mode(mode: ProcessMode, current: bool) -> bool {
     }
 }
 
-fn invalidate_local_bounds(process: &ProcessConfig) -> (bool, [f64; 3], [f64; 3]) {
+pub(crate) fn invalidate_local_bounds(process: &ProcessConfig) -> (bool, [f64; 3], [f64; 3]) {
     if process.lock_bounds {
         (false, process.local_floors, process.local_ceils)
     } else {
