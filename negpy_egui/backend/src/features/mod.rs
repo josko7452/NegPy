@@ -10,6 +10,7 @@ pub mod local;
 pub mod metadata;
 pub mod process;
 pub mod retouch;
+pub mod stitch;
 pub mod rgbscan;
 pub mod toning;
 pub mod transparency;
