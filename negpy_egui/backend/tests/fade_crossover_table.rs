@@ -4,8 +4,8 @@ use negpy_backend::domain::models::{ProcessConfig, ProcessMode};
 use negpy_backend::features::process::fade::{
     CROSSOVER_LIMIT, CROSSOVER_WEIGHTS, apply_crossover, cast_name, crossover_amount,
     crossover_bands, crossover_casts, crossover_offsets, crossover_reference, crossover_strength,
-    crossover_uniform, crossover_zero, measure_crossover, neutral_spread, resolve_crossover,
-    shape_cubic,
+    crossover_uniform, crossover_zero, measure_crossover, measure_crossover_at, neutral_spread,
+    resolve_crossover, shape_cubic,
 };
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 
@@ -188,4 +188,18 @@ fn a_measurable_grid_yields_a_rounded_table() {
     let table = measure_crossover(&grid).unwrap();
     assert_eq!((table.len() - 1) % 5, 0);
     assert!(table.len() >= 6);
+}
+
+#[test]
+fn a_known_zero_is_kept_and_the_band_mean_is_the_fallback() {
+    let mut pixels = Vec::new();
+    for index in 0..64 * 64 {
+        let level = -2.5 + 2.2 * index as f32 / (64.0 * 64.0);
+        pixels.extend([level, level, level]);
+    }
+    let grid = ImageBuffer::from_rgb(64, 64, pixels);
+    let measured = measure_crossover_at(&grid, Some(-1.25)).unwrap();
+    assert!((measured[0] + 1.25).abs() < 1e-5);
+    let auto = measure_crossover(&grid).unwrap();
+    assert!(auto[0] <= 0.0);
 }

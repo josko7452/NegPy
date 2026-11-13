@@ -26,6 +26,10 @@ pub const CROSSOVER_MIN_WEIGHT: f64 = 8.0;
 pub const CROSSOVER_MIN_SPAN: f64 = 0.05;
 pub const CROSSOVER_MEAN_SHIFT_STEPS: usize = 3;
 pub const CROSSOVER_MIN_CELLS: usize = 64;
+const COLOR_EXTREME_PCT: f64 = 0.00001;
+const ROBUST_EXTREME_PCT: f64 = 0.1;
+const MIN_CONFIDENCE: f64 = 0.2;
+const ROBUST_MIN_CONFIDENCE: f64 = 0.4;
 const CROSSOVER_BAND_EDGES: [f64; 7] = [0.06, 0.15, 0.3, 0.45, 0.6, 0.75, 0.9];
 const CROSSOVER_RANGE_PCT: (f64, f64) = (0.5, 99.5);
 const CROSSOVER_NEUTRAL_SPREAD: f64 = 0.25;
@@ -565,18 +569,21 @@ pub fn measure_crossover(grid: &ImageBuffer) -> Option<Vec<f64>> {
 #[must_use]
 pub fn measure_crossover_at(grid: &ImageBuffer, zero: Option<f64>) -> Option<Vec<f64>> {
     let bands = neutral_bands(grid)?;
-    let zero = zero.unwrap_or_else(|| {
-        let total: f64 = bands.share.iter().sum();
-        if total == 0.0 {
-            0.0
-        } else {
-            bands
-                .share
-                .iter()
-                .zip(&bands.level)
-                .map(|(share, level)| share * level)
-                .sum::<f64>()
-                / total
+    let zero = zero.unwrap_or_else(|| match neutral_axis_midtone(grid) {
+        Some(midtone) => midtone,
+        None => {
+            let total: f64 = bands.share.iter().sum();
+            if total == 0.0 {
+                0.0
+            } else {
+                bands
+                    .share
+                    .iter()
+                    .zip(&bands.level)
+                    .map(|(share, level)| share * level)
+                    .sum::<f64>()
+                    / total
+            }
         }
     });
     let mut out = vec![(zero * 100_000.0).round() / 100_000.0];
@@ -588,4 +595,74 @@ pub fn measure_crossover_at(grid: &ImageBuffer, zero: Option<f64>) -> Option<Vec
         }
     }
     Some(out)
+}
+
+fn slide_bounds(grid: &ImageBuffer, extreme_pct: f64) -> Option<[f64; 6]> {
+    let base = crate::features::exposure::normalization::BASE_LUMA_CLIP;
+    let cells: Vec<[f32; 3]> = grid
+        .pixels
+        .chunks_exact(3)
+        .map(|pixel| [pixel[0], pixel[1], pixel[2]])
+        .collect();
+    let extremes = negpy_core::fade::slide_extremes(
+        &cells,
+        CLIPPED_LOG,
+        &[100.0 - base, base, 100.0 - extreme_pct, extreme_pct],
+    )?;
+    let luma_f = extremes[0];
+    let luma_c = extremes[1];
+    let color_f = extremes[2];
+    let color_c = extremes[3];
+    let mean_f = luma_f.iter().sum::<f32>() as f64 / 3.0;
+    let mean_c = luma_c.iter().sum::<f32>() as f64 / 3.0;
+    let mut sorted_f = color_f;
+    sorted_f.sort_by(f32::total_cmp);
+    let mut sorted_c = color_c;
+    sorted_c.sort_by(f32::total_cmp);
+    let mid_f = sorted_f[1] as f64;
+    let mid_c = sorted_c[1] as f64;
+    let mut out = [0.0; 6];
+    for channel in 0..3 {
+        out[channel] = mean_f + (f64::from(color_f[channel]) - mid_f);
+        out[3 + channel] = mean_c + (f64::from(color_c[channel]) - mid_c);
+    }
+    Some(out)
+}
+
+/// The midtone neutral axis of a slide grid, or `None` without a trustworthy set.
+#[must_use]
+pub fn neutral_axis_midtone(grid: &ImageBuffer) -> Option<f64> {
+    let reading = |bounds: [f64; 6], exclude_subjects: bool| {
+        crate::features::exposure::metering::measure_neutral_axis(
+            &grid.pixels,
+            grid.width,
+            grid.height,
+            crate::features::exposure::normalization::LogNegativeBounds::new(
+                [bounds[0], bounds[1], bounds[2]],
+                [bounds[3], bounds[4], bounds[5]],
+            ),
+            exclude_subjects,
+        )
+    };
+    if let Some(bounds) = slide_bounds(grid, COLOR_EXTREME_PCT) {
+        if let Some(axis) = reading(bounds, true) {
+            if axis.confidence >= MIN_CONFIDENCE {
+                return Some(midtone_level(axis.mid));
+            }
+        }
+    }
+    if let Some(bounds) = slide_bounds(grid, ROBUST_EXTREME_PCT) {
+        for exclude_subjects in [true, false] {
+            if let Some(axis) = reading(bounds, exclude_subjects) {
+                if axis.confidence >= ROBUST_MIN_CONFIDENCE {
+                    return Some(midtone_level(axis.mid));
+                }
+            }
+        }
+    }
+    None
+}
+
+fn midtone_level(mid: [f64; 3]) -> f64 {
+    mid[0] * CROSSOVER_WEIGHTS[0] + mid[1] * CROSSOVER_WEIGHTS[1] + mid[2] * CROSSOVER_WEIGHTS[2]
 }

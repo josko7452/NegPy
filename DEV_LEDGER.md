@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 06:30 | **Last Commit:** `pending backend: share the camera white-balance fold`
+**Last Updated:** 2026-11-13 09:55 | **Last Commit:** `e44fa87e backend: zero fade crossover on the gray midtone`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
@@ -8,18 +8,18 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 **Audit rule:** a merged Rust file is not proof of parity; symbol-level gaps below remain.
 
 ## Audit (After Commit 10)
-- D12: `roll_fields` lacks `migrate_crop_to_frames`, `with_frame_seed`, `_with_roll_crop`; missing `flatfield`, `flatfield_layout`, `gear_presets`.
-- D12 assets: absent thumbnails, embeddings, semantic/search, half-frame, gear assets, capture/view/session glue.
-- D7: `auto_sliders` done; missing `placement`, analysis strip/ring/vectorscope helpers; fade lacks density, estimate, auto-red and crossover; process logic lacks should-fold and chart Lab/LM fit.
-- D8: missing geometry `skew` detection, `batch_autocrop`, film-border/edges, `film_and_picture`, `rebate_mask`; finish `rebate_tone`.
-- D9: HDR done; missing flatfield, lens logic/warps, RGB scan, stitch, transparency, cyanotype, lith, sabattier, pick-better.
-- D10: absent CPU/GPU engine wiring, display/color management, WGSL shaders, parity tests.
-- D11: absent export, scanning, film-edge and templating.
-- D13/E1-E8: absent desktop state glue and the egui UI.
-- D6: missing `read_exif_from_file`, bounded previews, `NonStandardFileWrapper`, supported demosaic list; lens readers/opcodes/bind.
+- Public Python callables: 1102; identifier-missing 590. Rust files alone are not parity proof.
+- D12: `roll_fields` lacks `with_frame_seed`/`_with_roll_crop`; gear-preset migration absent; thumbnails, embeddings, half-frame, gear assets, capture/view/session glue absent.
+- D7: `placement` absent; exposure logic lacks characteristic-curve application, auto shadow/highlight, WB/Kelvin helpers; analysis strip/ring/vectorscope helpers absent; fade estimate, auto-red and range helpers absent.
+- D8: geometry `skew`, `batch_autocrop`, film-border/edges, `rebate_mask` absent; `rebate_tone` absent.
+- D9: lens, RGB scan, stitch, transparency, cyanotype, lith, sabattier, pick-better absent.
+- D10: CPU/GPU engine wiring, display/color management, WGSL shaders and parity tests absent.
+- D11: export, scanning, film-edge and templating absent. D13/E1-E8: desktop glue and egui UI absent.
+- D6: `read_exif_from_file`, bounded previews, `NonStandardFileWrapper`, supported demosaic list and lens bind absent.
 
 ## Completed (This Session)
-- `pending` D7: shares the camera white-balance fold.
+- `e44fa87e` D7: zeros the crossover table on the gray midtone.
+- `cee6eb42` D7: shares the camera white-balance fold.
 - `979dd218` D7: applies and measures the fade crossover table.
 - `b5ce7ae8` D7: builds the fade crossover offset table.
 - `f8b811b2` D7: adds the fade crossover table helpers.
@@ -37,18 +37,17 @@ User override: 10 commits this session; targeted tests per commit, workspace tes
 - `b20bee5a` D8: ports keystone inverse and solver.
 - `aaf70b44` D7: ports Auto slider read-outs.
 - `26839c03` D9: ports HDR exposure choices.
-- `HEAD` D9: ports HDR merge path.
+- `54b34fb6` D9: ports HDR merge path.
 
 ## Next Steps (Ordered)
-1. [ ] D7: use the measured gray midtone as the crossover zero.
+1. [ ] D12: port the gear-preset migration.
 2. [ ] D7: add fade range and auto-red helpers after transparency.
-3. [ ] D12: port the gear-preset migration.
-4. [ ] D7: port exposure `placement` and the remaining fade/estimate helpers.
-5. [ ] D8: port skew detection, batch Auto Crop and film-border helpers.
-6. [ ] D9: port flatfield, lens, RGB scan and stitch.
+3. [ ] D7: port exposure `placement` and the remaining fade/estimate helpers.
+4. [ ] D8: port skew detection, batch Auto Crop and film-border helpers.
+5. [ ] D9: port lens, RGB scan, stitch and transparency.
 
 ## Constraints / Gotchas
-- Full workspace test: 2026-11-13 02:03, passed with `cargo test --workspace` after a 51m43s build.
+- Full workspace test: 2026-11-13 09:50, passed with `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast` in 1m55s.
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
 - Subject <=50 chars, body wrapped at 72, no trailing period; split on "and".
 - Anti-loop: 10 failed fixes => STOP and ask for human guidance.
