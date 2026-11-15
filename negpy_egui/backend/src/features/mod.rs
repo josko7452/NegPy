@@ -1,5 +1,6 @@
 //! Feature kernels and their pure configuration.
 
+pub mod altprocess;
 pub mod exposure;
 pub mod finish;
 pub mod flatfield;
