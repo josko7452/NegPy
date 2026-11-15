@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 00:30 | **Last Commit:** `pending merge writer`
+**Last Updated:** 2026-11-16 01:05 | **Last Commit:** `pending TIFF decode`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -17,7 +17,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - `df40538f` thumbnail keys and the positive preview.
 - `541f5b1d` headless import: decode, orient, flat-field, unmix, detect, base read.
 - `2879c2b8` search query parser, matcher and asset facts.
-- `pending` frame merge writer: labeled TIFF, read-back check, atomic rename.
+- `pending` TIFF decode: linearize, expand, orient, stacked IR.
 - `f5026088` format; earlier D7-D12 partials in git history.
 
 ## Audit (After This Session)
@@ -30,7 +30,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - **D13/UI:** session glue, controller and every egui view (out of scope).
 
 ## Next Steps (Ordered)
-1. [ ] D11: finish the Linear Output decoders.
+1. [ ] D11: finish the remaining Linear Output decoders (RAW/Pakon/Noritsu/JXL descriptors).
 2. [ ] D12: embeddings, semantic model, gear match, rehome, naming, the remaining migrations.
 3. [ ] D10: GPU engine, preview manager and `services.view.coordinate_mapping`.
 4. [ ] capture/scanner backends and `infrastructure.display`; then D13/UI.

@@ -6,6 +6,7 @@ use crate::domain::models::ProcessConfig;
 use crate::infrastructure::loaders::constants::{SUPPORTED_TIFF_EXTENSIONS, has_extension};
 use crate::infrastructure::loaders::factory::is_camera_raw;
 use crate::infrastructure::loaders::fff_loader::is_flextight_fff;
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::infrastructure::loaders::nef_loader::is_coolscan_nef;
 use crate::infrastructure::loaders::source_kind::{
     LoaderKind, is_noritsu, is_pakon, select_loader,
@@ -53,6 +54,59 @@ fn is_dng(path: &Path) -> bool {
 
 fn is_tiff(path: &Path) -> bool {
     has_extension(path, SUPPORTED_TIFF_EXTENSIONS)
+}
+
+/// One decoded TIFF frame: RGB in 0..1, its IR plane, and the orientation the pixels take.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DecodedTiff {
+    pub image: ImageBuffer,
+    pub ir: Option<Vec<f32>>,
+    pub orientation: u8,
+}
+
+/// Read a TIFF, optionally linearize and expand it, then apply EXIF orientation.
+#[must_use]
+pub fn decode_tiff(path: &Path, gamma_key: &str, expansion: Option<f64>) -> Option<DecodedTiff> {
+    let mut loaded = crate::infrastructure::loaders::tiff_loader::load(path, true, None, true)?;
+    let image = loaded.image.take()?;
+    let mut pixels = image.pixels;
+    if pixels.is_empty() {
+        let samples = image.source_u16?;
+        pixels = samples.iter().map(|v| *v as f32 / 65535.0).collect();
+    }
+    let mut clipped = vec![0.0; pixels.len()];
+    negpy_core::convert::clip_unit(&pixels, &mut clipped);
+    let mut linear = if gamma_key == "linear" {
+        clipped
+    } else {
+        linearize(&clipped, gamma_key)
+    };
+    if let Some(factor) = expansion.filter(|factor| *factor > 1.0) {
+        linear = expand(&linear, factor);
+    }
+    let image = ImageBuffer::from_rgb(image.width, image.height, linear);
+    let image = crate::services::rendering::import::oriented(&image, loaded.orientation);
+    let ir = loaded
+        .ir
+        .map(|ir| orient_ir(&ir, loaded.ir_width, loaded.ir_height, loaded.orientation));
+    Some(DecodedTiff {
+        image,
+        ir,
+        orientation: loaded.orientation,
+    })
+}
+
+fn orient_ir(ir: &[f32], width: usize, height: usize, orientation: u8) -> Vec<f32> {
+    if orientation < 2 || width == 0 || height == 0 {
+        return ir.to_vec();
+    }
+    let bytes: Vec<u8> = ir.iter().flat_map(|value| value.to_ne_bytes()).collect();
+    let (out_height, out_width) = negpy_core::orient::oriented_dims(height, width, orientation);
+    let mut dst = vec![0u8; out_height * out_width * 4];
+    negpy_core::orient::orient(&bytes, height, width, 4, orientation, &mut dst);
+    dst.chunks_exact(4)
+        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
 }
 
 fn is_pakon_f335(path: &Path) -> bool {
@@ -362,4 +416,55 @@ pub fn encode_linear_tiff(
         chunk.copy_from_slice(&code.to_ne_bytes());
     }
     encode_tiff(&bytes, width, height, 3, 16, compression, resolution, None)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs::File;
+    use tiff::encoder::TiffEncoder;
+    use tiff::encoder::colortype::{Gray8, RGB16};
+
+    fn write_rgb16(path: &Path, width: u32, height: u32, value: u16) {
+        let mut encoder = TiffEncoder::new(File::create(path).unwrap()).unwrap();
+        encoder
+            .write_image::<RGB16>(width, height, &vec![value; (width * height * 3) as usize])
+            .unwrap();
+    }
+
+    #[test]
+    fn a_tiff_decodes_to_unit_rgb() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("scan.tif");
+        write_rgb16(&path, 3, 2, 32768);
+        let decoded = decode_tiff(&path, "linear", None).expect("a tiff");
+        assert_eq!((decoded.image.width, decoded.image.height), (3, 2));
+        assert!((decoded.image.pixels[0] - 32768.0 / 65535.0).abs() < 1e-6);
+        assert!(decoded.ir.is_none());
+    }
+
+    #[test]
+    fn a_second_gray_page_is_ir() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("stack.tif");
+        let mut encoder = TiffEncoder::new(File::create(&path).unwrap()).unwrap();
+        encoder
+            .write_image::<RGB16>(2, 2, &[32768u16; 2 * 2 * 3])
+            .unwrap();
+        encoder.write_image::<Gray8>(2, 2, &[64u8; 2 * 2]).unwrap();
+        let decoded = decode_tiff(&path, "linear", None).expect("a stacked tiff");
+        assert_eq!(decoded.ir.as_ref().map(Vec::len), Some(4));
+    }
+
+    #[test]
+    fn gamma_and_expansion_apply_in_that_order() {
+        let folder = tempfile::tempdir().unwrap();
+        let path = folder.path().join("gamma.tif");
+        write_rgb16(&path, 2, 2, 32768);
+        let linear = decode_tiff(&path, "linear", None).unwrap();
+        let gamma = decode_tiff(&path, "2.2", None).unwrap();
+        assert!(gamma.image.pixels[0] < linear.image.pixels[0]);
+        let expanded = decode_tiff(&path, "2.2", Some(2.0)).unwrap();
+        assert!((expanded.image.pixels[0] - (gamma.image.pixels[0] * 2.0).min(1.0)).abs() < 1e-6);
+    }
 }
