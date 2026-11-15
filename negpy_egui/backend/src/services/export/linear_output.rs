@@ -131,6 +131,34 @@ pub fn effective_expansion(path: &Path, expansion: Option<f64>) -> f64 {
     1.0
 }
 
+/// The source label stamped into the output description, with the assembled variants
+/// `camera RAW (RGB triplet)` and `camera RAW (stitch N-part)`.
+#[must_use]
+pub fn source_format_label_for(
+    path: &Path,
+    rgbscan: Option<&crate::domain::models::RgbScanConfig>,
+    stitch: Option<&crate::domain::models::StitchConfig>,
+) -> String {
+    let is_stitch = stitch.is_some_and(|stitch| {
+        stitch.stitch_enabled && !stitch.stitch_paths.is_empty()
+    });
+    if linear_output_source_type(path) == "camera" && is_stitch {
+        let stitch = stitch.expect("checked above");
+        let parts = 1 + stitch.stitch_paths.len();
+        return if crate::domain::models::stitch_has_triplets(stitch) {
+            format!("camera RAW (stitch {parts}-part, RGB triplet)")
+        } else {
+            format!("camera RAW (stitch {parts}-part)")
+        };
+    }
+    if linear_output_source_type(path) == "camera"
+        && rgbscan.is_some_and(crate::domain::models::is_rgb_triplet)
+    {
+        return "camera RAW (RGB triplet)".to_string();
+    }
+    source_format_label(path).to_string()
+}
+
 /// The source label stamped into the output description.
 #[must_use]
 pub fn source_format_label(path: &Path) -> &'static str {
