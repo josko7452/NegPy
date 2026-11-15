@@ -8,3 +8,4 @@ pub mod presets;
 pub mod rolls;
 pub mod sidecar;
 pub mod toml_cache;
+pub mod thumbnail_fingerprint;
