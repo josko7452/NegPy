@@ -67,6 +67,28 @@ impl LogNegativeBounds {
     }
 }
 
+impl serde::Serialize for LogNegativeBounds {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeStruct;
+        let mut out = serializer.serialize_struct("LogNegativeBounds", 2)?;
+        out.serialize_field("floors", &self.floors)?;
+        out.serialize_field("ceils", &self.ceils)?;
+        out.end()
+    }
+}
+
+impl<'de> serde::Deserialize<'de> for LogNegativeBounds {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(serde::Deserialize)]
+        struct Fields {
+            floors: [f64; 3],
+            ceils: [f64; 3],
+        }
+        let fields = Fields::deserialize(deserializer)?;
+        Ok(Self::new(fields.floors, fields.ceils))
+    }
+}
+
 /// Linear scan -> log10 density clamped to 1e-6..1, NaN to 1e-6.
 #[must_use]
 pub fn to_log_density_image(image: &[f32]) -> Vec<f32> {

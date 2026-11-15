@@ -7,7 +7,7 @@ use serde_json::Value;
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
 /// The crop window a stage ran on, as `(x, y, width, height)` in frame pixels.
-pub type Roi = Option<(i64, i64, i64, i64)>;
+pub type Roi = Option<(usize, usize, usize, usize)>;
 
 /// One intermediate pipeline result.
 #[derive(Clone, Debug, PartialEq)]

@@ -1,0 +1,90 @@
+//! Ports the checkpoint contract of tests/test_engine_stage_keys.py and the stage order of
+//! tests/test_engine_order.py: a cached stage reuses its result, and an exposure edit leaves
+//! the base alone.
+
+use negpy_backend::domain::models::{ProcessMode, WorkspaceConfig};
+use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
+use negpy_backend::render_engine::{DarkroomEngine, PipelineContext};
+
+fn negative(width: usize, height: usize) -> ImageBuffer {
+    let mut pixels = Vec::with_capacity(width * height * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let scene = (0.05 + 0.8 * (y as f32 / height as f32)).clamp(1e-4, 1.0);
+            let texture = 1.0 + 0.1 * (x as f32 / 4.0).sin();
+            let value = (0.05 + 0.8 * (1.0 - (scene * texture).powf(0.4))).clamp(1e-4, 1.0);
+            pixels.extend_from_slice(&[value, value * 0.9, value * 0.8]);
+        }
+    }
+    ImageBuffer::from_rgb(width, height, pixels)
+}
+
+fn settings() -> WorkspaceConfig {
+    let mut config = WorkspaceConfig::default();
+    config.process.process_mode = ProcessMode::C41;
+    config.exposure.auto_exposure = false;
+    config
+}
+
+#[test]
+fn one_render_fills_every_checkpoint() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    let config = settings();
+    engine.process(&image, &config, "source-a", &mut context);
+    assert!(engine.cache.base.is_some());
+    assert!(engine.cache.exposure.is_some());
+    assert!(engine.cache.clahe.is_some());
+    assert!(engine.cache.lab.is_some());
+}
+
+#[test]
+fn an_exposure_edit_keeps_the_base_checkpoint() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    let mut config = settings();
+    engine.process(&image, &config, "source-a", &mut context);
+    let base_hash = engine.cache.base.as_ref().unwrap().config_hash.clone();
+    config.exposure.grade += 0.25;
+    let mut context = PipelineContext::new();
+    engine.process(&image, &config, "source-a", &mut context);
+    assert_eq!(engine.cache.base.as_ref().unwrap().config_hash, base_hash);
+}
+
+#[test]
+fn the_source_hash_clears_every_checkpoint() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    let config = settings();
+    engine.process(&image, &config, "source-a", &mut context);
+    let mut context = PipelineContext::new();
+    engine.process(&image, &config, "source-b", &mut context);
+    assert_eq!(engine.cache.source_hash, "source-b");
+}
+
+#[test]
+fn a_flat_master_ends_before_the_tail_stages() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    let mut config = settings();
+    config.exposure.render_intent = negpy_backend::domain::models::RenderIntent::Flat;
+    let out = engine.process(&image, &config, "source-a", &mut context);
+    assert!(engine.cache.clahe.is_none());
+    assert_eq!(out.width, image.width);
+    assert_eq!(out.height, image.height);
+}
+
+#[test]
+fn an_uncached_render_leaves_no_checkpoint() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    context.cache_stages = false;
+    let config = settings();
+    engine.process(&image, &config, "source-a", &mut context);
+    assert!(engine.cache.base.is_none());
+}

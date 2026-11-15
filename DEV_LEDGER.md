@@ -9,6 +9,7 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 ## Completed (This Session)
 - `f0665565` base: clear-base read cached per source key.
 - Contrast Mask and Diffusion planes; analysis-grid geometry replay; mask expansion.
+- Cached stage engine over base, exposure, CLAHE and Lab checkpoints.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.
