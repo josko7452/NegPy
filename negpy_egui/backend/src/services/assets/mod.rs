@@ -13,3 +13,4 @@ pub mod sidecar;
 pub mod thumbnail_fingerprint;
 pub mod thumbnails;
 pub mod toml_cache;
+pub mod triplets;
