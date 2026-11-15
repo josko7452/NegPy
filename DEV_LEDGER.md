@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 01:05 | **Last Commit:** `pending TIFF decode`
+**Last Updated:** 2026-11-16 01:20 | **Last Commit:** `pending capture modes`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -17,7 +17,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - `df40538f` thumbnail keys and the positive preview.
 - `541f5b1d` headless import: decode, orient, flat-field, unmix, detect, base read.
 - `2879c2b8` search query parser, matcher and asset facts.
-- `pending` TIFF decode: linearize, expand, orient, stacked IR.
+- `pending` capture modes: per-folder blend/single records.
 - `f5026088` format; earlier D7-D12 partials in git history.
 
 ## Audit (After This Session)
