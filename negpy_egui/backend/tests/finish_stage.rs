@@ -105,3 +105,91 @@ fn the_processor_skips_the_carrier_on_a_full_crop_preview() {
     );
     assert_ne!(framed.pixels, img.pixels);
 }
+
+#[test]
+fn a_rebate_tone_without_bounds_is_plain_light() {
+    use negpy_backend::features::finish::logic::linear_carrier_tone;
+    use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
+    let settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    let tone = rebate_tone(&settings, RebateMetrics::default());
+    assert_eq!(tone, linear_carrier_tone());
+}
+
+#[test]
+fn the_rebate_tone_is_normalized_to_the_bare_paper() {
+    use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+    use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
+    let mut settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    settings.process.process_mode = negpy_backend::domain::models::ProcessMode::BW;
+    let metrics = RebateMetrics {
+        final_bounds: Some(LogNegativeBounds::new([-1.4; 3], [0.0; 3])),
+    };
+    let tone = rebate_tone(&settings, metrics);
+    assert_eq!(tone.len(), 64);
+    // The first sample is bare paper, the reference the ramp is divided by.
+    for channel in tone[0] {
+        assert!((channel - 1.0).abs() < 1e-6);
+    }
+    assert!(
+        tone.iter()
+            .all(|row| row.iter().all(|value| value.is_finite()))
+    );
+}
+
+#[test]
+fn the_rebate_tone_darkens_toward_the_full_rebate() {
+    use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+    use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
+    let mut settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    settings.process.process_mode = negpy_backend::domain::models::ProcessMode::C41;
+    let tone = rebate_tone(
+        &settings,
+        RebateMetrics {
+            final_bounds: Some(LogNegativeBounds::new([-1.4; 3], [0.0; 3])),
+        },
+    );
+    let means: Vec<f32> = tone
+        .iter()
+        .map(|row| row.iter().sum::<f32>() / 3.0)
+        .collect();
+    assert!(means.windows(2).all(|pair| pair[1] <= pair[0]));
+    assert!(tone[63].iter().all(|value| *value < 0.01));
+}
+
+#[test]
+fn a_bw_rebate_tone_is_neutral() {
+    use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+    use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
+    let mut settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    settings.process.process_mode = negpy_backend::domain::models::ProcessMode::BW;
+    let tone = rebate_tone(
+        &settings,
+        RebateMetrics {
+            final_bounds: Some(LogNegativeBounds::new([-1.4; 3], [0.0; 3])),
+        },
+    );
+    for row in tone {
+        assert!((row[0] - row[1]).abs() < 1e-5);
+        assert!((row[0] - row[2]).abs() < 1e-5);
+    }
+}
+
+#[test]
+fn a_process_without_a_print_model_falls_back_to_plain_light() {
+    use negpy_backend::domain::models::{AltProcess, ProcessMode};
+    use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+    use negpy_backend::features::finish::logic::linear_carrier_tone;
+    use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
+    let bounds = RebateMetrics {
+        final_bounds: Some(LogNegativeBounds::new([-1.4; 3], [0.0; 3])),
+    };
+    let mut settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    settings.process.process_mode = ProcessMode::E6;
+    assert_eq!(rebate_tone(&settings, bounds), linear_carrier_tone());
+    settings.process.process_mode = ProcessMode::C41;
+    settings.altproc.alt_process = AltProcess::Lith;
+    assert_eq!(rebate_tone(&settings, bounds), linear_carrier_tone());
+    settings.altproc.alt_process = AltProcess::None;
+    settings.process.positive_source = true;
+    assert_eq!(rebate_tone(&settings, bounds), linear_carrier_tone());
+}
