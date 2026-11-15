@@ -4,3 +4,4 @@ pub mod contact_sheet_layout;
 pub mod contact_sheet_roll;
 pub mod encoders;
 pub mod print;
+pub mod templating;
