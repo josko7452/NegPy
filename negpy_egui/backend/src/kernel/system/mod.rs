@@ -3,6 +3,7 @@
 pub mod config;
 pub mod i18n;
 pub mod logging;
+pub mod memory;
 pub mod override_config;
 pub mod paths;
 pub mod text;
