@@ -15,6 +15,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - Frame-merge rules: part files, merged path, decode params, assembled labels.
 - Scan filename templates and the 16-bit TIFF writer with IR sidecars.
 - Thumbnail cache keys and the positive preview for the filmstrip.
+- Headless import: decode, orient, flat-field, unmix, detect the film, read the base.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.
