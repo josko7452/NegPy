@@ -67,7 +67,10 @@ fn an_export_only_change_keeps_the_fingerprint() {
     config.export.jpeg_quality = 55;
     config.export.export_fmt = negpy_backend::domain::models::ExportFormat::Png;
     config.metadata.capture_date = "2020-01-01".to_string();
-    assert_eq!(fingerprint(&config), fingerprint(&WorkspaceConfig::default()));
+    assert_eq!(
+        fingerprint(&config),
+        fingerprint(&WorkspaceConfig::default())
+    );
 }
 
 #[test]
@@ -76,7 +79,10 @@ fn a_sharpen_change_is_below_the_thumbnail() {
     config.lab.sharpen = 1.4;
     config.lab.sharpen_radius = 2.2;
     config.lab.chroma_denoise = 6.0;
-    assert_eq!(fingerprint(&config), fingerprint(&WorkspaceConfig::default()));
+    assert_eq!(
+        fingerprint(&config),
+        fingerprint(&WorkspaceConfig::default())
+    );
 }
 
 #[test]

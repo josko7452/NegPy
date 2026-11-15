@@ -10,9 +10,9 @@ use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use crate::domain::models::{
-    AltProcessConfig, ExposureConfig, FinishConfig, FlatFieldConfig, GeometryConfig, HdrConfig, LabConfig,
-    LocalAdjustmentsConfig, ProcessConfig, RetouchConfig, RgbScanConfig, StitchConfig, ToningConfig,
-    WorkspaceConfig,
+    AltProcessConfig, ExposureConfig, FinishConfig, FlatFieldConfig, GeometryConfig, HdrConfig,
+    LabConfig, LocalAdjustmentsConfig, ProcessConfig, RetouchConfig, RgbScanConfig, StitchConfig,
+    ToningConfig, WorkspaceConfig,
 };
 
 /// Bump in any change that alters rendered pixels for unchanged settings.
@@ -78,7 +78,11 @@ fn section_value<T: serde::Serialize>(config: &T) -> Value {
 }
 
 /// The fields of one section that differ from their defaults.
-fn changed_fields(section: &Map<String, Value>, defaults: &Map<String, Value>, skip: &[&str]) -> Map<String, Value> {
+fn changed_fields(
+    section: &Map<String, Value>,
+    defaults: &Map<String, Value>,
+    skip: &[&str],
+) -> Map<String, Value> {
     let mut out = Map::new();
     for (key, value) in section {
         if skip.contains(&key.as_str()) {
@@ -131,13 +135,21 @@ fn sections(config: &WorkspaceConfig) -> Map<String, Value> {
         section_value(&config.stitch),
         section_value(&StitchConfig::default()),
     );
-    push("hdr", section_value(&config.hdr), section_value(&HdrConfig::default()));
+    push(
+        "hdr",
+        section_value(&config.hdr),
+        section_value(&HdrConfig::default()),
+    );
     push(
         "geometry",
         section_value(&config.geometry),
         section_value(&GeometryConfig::default()),
     );
-    push("lab", section_value(&config.lab), section_value(&LabConfig::default()));
+    push(
+        "lab",
+        section_value(&config.lab),
+        section_value(&LabConfig::default()),
+    );
     push(
         "local",
         section_value(&config.local),
@@ -192,15 +204,9 @@ pub fn thumbnail_fingerprint(
     input_icc_path: Option<&str>,
 ) -> String {
     let mut payload = Map::new();
-    payload.insert(
-        "v".to_string(),
-        Value::from(THUMBNAIL_RENDER_VERSION),
-    );
+    payload.insert("v".to_string(), Value::from(THUMBNAIL_RENDER_VERSION));
     payload.insert("config".to_string(), Value::Object(sections(config)));
-    payload.insert(
-        "workspace".to_string(),
-        Value::from(workspace_color_space),
-    );
+    payload.insert("workspace".to_string(), Value::from(workspace_color_space));
     payload.insert(
         "input_icc".to_string(),
         file_identity(input_icc_path).map_or(Value::Null, Value::from),
