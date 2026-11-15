@@ -329,14 +329,15 @@ fn blend_refs(a: &NeutralAxisRefs, b: &NeutralAxisRefs, mix: f64) -> NeutralAxis
     }
 }
 
+/// One reader's grays and why it found none.
+pub type GrayReadings = (
+    (Option<NeutralAxisRefs>, String),
+    (Option<NeutralAxisRefs>, String),
+);
+
 /// Both readers' grays on `grid`.
 #[must_use]
-pub fn gray_readings(
-    grid: &ImageBuffer,
-) -> (
-    (Option<NeutralAxisRefs>, String),
-    (Option<NeutralAxisRefs>, String),
-) {
+pub fn gray_readings(grid: &ImageBuffer) -> GrayReadings {
     (neutral_axis_from_grid(grid), tone_band_refs(grid))
 }
 
