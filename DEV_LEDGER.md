@@ -28,8 +28,8 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
   `services.maps`. These gate D10's stage caching and source identity.
 - **D10:** no render engine assembling base/exposure/tail with stage caching, no GPU engine,
   no contrast-mask or diffusion planes.
-- **D11:** contact-sheet layout/roll, templating, linear output, frame merge, film-edge
-  barcode/paint/layouts, scanner writers.
+- **D11:** contact-sheet layout/roll, templating, linear output, frame merge, scanner
+  writers. The film-edge service has no Rust module; only the geometry edge helpers exist.
 - **D12:** thumbnails, embeddings, semantic model, search, naming, gear, half-frame, triplets,
   frame merge assets, and the remaining storage migrations.
 - **D13/UI:** session glue, controller, and every egui view (out of scope this session).
