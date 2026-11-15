@@ -13,6 +13,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - Half-frame slice bounds, hash suffix, point remap and diptych join.
 - Decode-side flat field, embedded warp and gain slicing.
 - Frame-merge rules: part files, merged path, decode params, assembled labels.
+- Scan filename templates and the 16-bit TIFF writer with IR sidecars.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.

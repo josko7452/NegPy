@@ -5,3 +5,4 @@ pub mod export;
 pub mod film_edge;
 pub mod maps;
 pub mod rendering;
+pub mod scanning;
