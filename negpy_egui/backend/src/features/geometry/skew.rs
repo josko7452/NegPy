@@ -204,7 +204,8 @@ const MIN_SEGMENT: f64 = 0.04;
 const MAX_LINE_RESIDUAL: f64 = 0.15;
 const MIN_PAIR_SEPARATION: f64 = 0.3;
 const SKEW_TRUSTED_CONFIDENCE: f64 = 0.5;
-const AUTOCROP_DETECT_RES: usize = 1800;
+/// Longest edge of the detection buffer both auto-crop and the base read use.
+pub const AUTOCROP_DETECT_RES: usize = 1800;
 
 fn fit_side_line(
     lum: &[f32],

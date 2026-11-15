@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-15 19:58 | **Last Commit:** `20079eb6 export: add the container encoders`
+**Last Updated:** 2026-11-15 23:30 | **Last Commit:** `ebbf7213 export: add the linear output core`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
+- Clear-base read cache per source key; detection input shared at 1800 px.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.
@@ -29,35 +30,30 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 - `918be03c` D7: strip/ring/paper/proof-grid helpers.
 
 ## Audit (After Commit 10)
-- 152 Rust modules, 918 `pub fn`. Public Python callables outnumber these because many
-  private helpers are inlined; the gaps below are the real missing behavior.
-- **Flat master** (`apply_flat_curve`, `_process_flat`) is not ported. The engine's flat
-  intent exits before the flat curve on both paths.
-- **Kernels without a Rust wrapper:** `kernel.caching.{logic,manager}`, `kernel.image.logic`,
-  `services.rendering.{source_identity,prefetch_policy,preview_cache,base_read,lens}`,
-  `services.maps`. These gate D10's stage caching and source identity.
-- **D10:** no render engine assembling base/exposure/tail with stage caching, no GPU engine,
-  no contrast-mask or diffusion planes.
-- **D11:** contact-sheet layout/roll, templating, linear output, frame merge, scanner
-  writers. The film-edge service has no Rust module; only the geometry edge helpers exist.
-- **D12:** thumbnails, embeddings, semantic model, search, naming, gear, half-frame, triplets,
-  frame merge assets, and the remaining storage migrations.
-- **D13/UI:** session glue, controller, and every egui view (out of scope this session).
+- 170 Rust modules, 1,012 `pub fn`. The Python callable count includes private helpers.
+- **D10:** the partials are now ported, but no cached engine assembles base, masks,
+  exposure and tail. No GPU engine, contrast-mask plane or diffusion plane exists.
+- **D10:** `services.rendering.{base_read,lens}` and `preview_manager` remain missing.
+- **D11:** frame merge, scanner writers, contact-sheet painting and the Linear Output
+  per-format decoders remain. Film-edge has geometry and frame turns only.
+- **D12:** thumbnails, embeddings, semantic model, search, naming, half-frame, triplets,
+  frame merge assets and the remaining storage migrations.
+- **D13/UI:** session glue, controller and every egui view (out of scope).
 
 ## Next Steps (Ordered)
 1. [ ] D10: build the cached engine over the stage checkpoints.
-2. [ ] D11: port the Linear Output source decoders and frame merge.
-3. [ ] D11: contact sheet, templating and linear output.
+2. [ ] D10: port `base_read`, `lens`, contrast-mask and diffusion planes.
+3. [ ] D11: port frame merge, scanner writers and the Linear Output decoders.
 4. [ ] D12: thumbnails and the remaining asset services.
 
 ## Constraints / Gotchas
 - Workspace test after commit 10: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast`
-  passed (101 test binaries, no failures).
-- Never edit `negpy/`; `negpy_core` stays its own workspace. `negpy_egui` gained direct
-  `crc32fast` and `flate2` deps this session.
+  passed (107 test binaries, no failures).
+- Never edit `negpy/`; `negpy_core` stays its own workspace. `negpy_egui` gained `md5`,
+  `ureq`, `minijinja` and `chrono`.
 - Fingerprint and export bytes are pinned to Python. A change that moves them breaks the
   cache and export parity.
 - Stitch composite and IR blending are pinned on translation fixtures only.
 - Skew synthetic round-trip test blocked: debug and release exceed 60s on a small strip.
 - D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
-- Clippy `-D warnings` still fails on existing storage/rolls code.
+- Clippy `-D warnings` still fails on pre-existing storage/export code.
