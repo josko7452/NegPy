@@ -189,6 +189,32 @@ pub fn encode_tiff(
     resolution: Option<Resolution>,
     icc: Option<&[u8]>,
 ) -> Option<Vec<u8>> {
+    encode_tiff_with_description(
+        pixels,
+        width,
+        height,
+        channels,
+        bits_per_sample,
+        compression,
+        resolution,
+        icc,
+        None,
+    )
+}
+
+/// A TIFF with an image description and the Software tag the Python writer stamps.
+#[must_use]
+pub fn encode_tiff_with_description(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    channels: usize,
+    bits_per_sample: u16,
+    compression: TiffCompression,
+    resolution: Option<Resolution>,
+    icc: Option<&[u8]>,
+    description: Option<&str>,
+) -> Option<Vec<u8>> {
     let samples = if channels == 1 { 1 } else { 3 };
     let row_bytes = width * samples * (bits_per_sample as usize / 8);
     if width == 0
@@ -297,7 +323,24 @@ pub fn encode_tiff(
             data: Vec::new(),
         });
     }
-    entries.retain(|entry| entry.tag != 305);
+    if let Some(text) = description {
+        let mut data = text.as_bytes().to_vec();
+        data.push(0);
+        entries.push(Entry {
+            tag: 270,
+            kind: TIFF_ASCII,
+            count: data.len() as u32,
+            data,
+        });
+        let mut software = b"NegPy\0".to_vec();
+        software.truncate(6);
+        entries.push(Entry {
+            tag: 305,
+            kind: TIFF_ASCII,
+            count: software.len() as u32,
+            data: software,
+        });
+    }
     entries.sort_by_key(|entry| entry.tag);
 
     let ifd_offset = 8u32;

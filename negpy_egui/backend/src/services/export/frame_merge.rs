@@ -4,10 +4,18 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
+use blake2::digest::consts::U16;
+use blake2::{Blake2b, Digest};
 use serde_json::Value;
 
 use crate::domain::models::{HdrConfig, StitchConfig, WorkspaceConfig};
 use crate::features::process::path::{RenderPath, render_path};
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
+use crate::kernel::system::paths::{apply_umask_mode, replace_file, safe_unlink};
+use crate::services::export::encoders::{TiffCompression, encode_tiff_with_description};
+use crate::services::export::linear_output::{
+    LinearBakes, LinearRecord, linear_description, source_format_label_for,
+};
 
 /// The assembled kinds whose parts a merge can replace. An HDR bracket keeps its detail
 /// below a 16-bit step, so it has no merged file.
@@ -187,6 +195,141 @@ pub fn decode_params(params: &WorkspaceConfig, kind: &str) -> Option<WorkspaceCo
     Some(updated)
 }
 
+/// The recovery error a failed merge reports.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MergeError {
+    /// The bytes read back do not match the frame that was written.
+    Verify(String),
+    /// The user cancelled before the rename.
+    Cancelled(String),
+    /// The destination already exists.
+    Exists(PathBuf),
+    Io(String),
+}
+
+/// Whether `path` is a TIFF whose description names a merged source.
+#[must_use]
+pub fn is_merged_source(path: &Path) -> bool {
+    if !crate::infrastructure::loaders::constants::has_extension(
+        path,
+        crate::infrastructure::loaders::constants::SUPPORTED_TIFF_EXTENSIONS,
+    ) {
+        return false;
+    }
+    let file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(_) => return false,
+    };
+    let mut decoder = match tiff::decoder::Decoder::new(std::io::BufReader::new(file)) {
+        Ok(decoder) => decoder,
+        Err(_) => return false,
+    };
+    let description = decoder
+        .get_tag_ascii_string(tiff::tags::Tag::ImageDescription)
+        .unwrap_or_default();
+    description.starts_with("NegPy Linear Output") && is_merge_description(&description)
+}
+
+/// Write `image` as an untagged 16-bit TIFF, verify it under a temporary name, then rename
+/// to `out_path`. An existing destination is never replaced.
+pub fn write_merged_frame(
+    image: &ImageBuffer,
+    primary_path: &Path,
+    out_path: &Path,
+    params: &WorkspaceConfig,
+    compression: TiffCompression,
+    should_cancel: Option<&dyn Fn() -> bool>,
+) -> Result<(), MergeError> {
+    let expected = uint16_bytes(image);
+    let folder = out_path.parent().unwrap_or_else(|| Path::new("."));
+    let name = out_path.file_name().unwrap_or_default().to_string_lossy();
+    let temporary = folder.join(format!(".{name}.{}.part", std::process::id()));
+    let source_name = primary_path
+        .file_name()
+        .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+    let source_format =
+        source_format_label_for(primary_path, Some(&params.rgbscan), Some(&params.stitch));
+    let description = linear_description(
+        LinearRecord {
+            source_name: &source_name,
+            camera_wb: None,
+            expansion: 1.0,
+            source_format: &source_format,
+            sensor_applied: None,
+            gamma_key: "linear",
+            meta: None,
+        },
+        LinearBakes::default(),
+    );
+    let bytes = encode_tiff_with_description(
+        &expected,
+        image.width,
+        image.height,
+        3,
+        16,
+        compression,
+        None,
+        None,
+        Some(&description),
+    )
+    .ok_or_else(|| MergeError::Io("the merge buffer does not match its size".to_string()))?;
+
+    let result = std::fs::write(&temporary, bytes)
+        .and_then(|()| apply_umask_mode(&temporary))
+        .map_err(|error| MergeError::Io(error.to_string()));
+    if let Err(error) = result {
+        safe_unlink(&temporary);
+        return Err(error);
+    }
+
+    let verified = verify_tiff(&temporary, &expected, image.width, image.height);
+    if !verified {
+        safe_unlink(&temporary);
+        return Err(MergeError::Verify(format!(
+            "{name} did not read back as written"
+        )));
+    }
+    if should_cancel.is_some_and(|cancel| cancel()) {
+        safe_unlink(&temporary);
+        return Err(MergeError::Cancelled(name.into_owned()));
+    }
+    if out_path.exists() {
+        safe_unlink(&temporary);
+        return Err(MergeError::Exists(out_path.to_path_buf()));
+    }
+    if let Err(error) = replace_file(&temporary, out_path) {
+        safe_unlink(&temporary);
+        return Err(MergeError::Io(error.to_string()));
+    }
+    Ok(())
+}
+
+fn uint16_bytes(image: &ImageBuffer) -> Vec<u8> {
+    let mut codes = vec![0u16; image.pixels.len()];
+    negpy_core::convert::to_uint(&image.pixels, &mut codes);
+    codes.iter().flat_map(|code| code.to_ne_bytes()).collect()
+}
+
+fn verify_tiff(path: &Path, expected: &[u8], width: usize, height: usize) -> bool {
+    let decoded = crate::infrastructure::loaders::tiff_loader::decode_page(path);
+    let Some((image, _, _)) = decoded else {
+        return false;
+    };
+    if image.width != width || image.height != height || image.source_u16.is_none() {
+        return false;
+    }
+    let Some(codes) = image.source_u16 else {
+        return false;
+    };
+    let written: Vec<u8> = codes.iter().flat_map(|code| code.to_ne_bytes()).collect();
+    let mut hasher = Blake2b::<U16>::new();
+    hasher.update(expected);
+    let expected_digest = hasher.finalize();
+    let mut hasher = Blake2b::<U16>::new();
+    hasher.update(&written);
+    hasher.finalize() == expected_digest
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +383,84 @@ mod tests {
         assert!(decode.flatfield.profile_id.is_empty());
         assert!(!decode.stitch.stitch_enabled);
         assert!(!decode.hdr.hdr_enabled);
+    }
+
+    #[test]
+    fn a_written_merge_reads_back_with_its_label() {
+        let folder = std::env::temp_dir().join(format!("negpy-merge-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let primary = folder.join("frame.arw");
+        std::fs::write(&primary, b"raw").unwrap();
+        let out = folder.join("frame_RGB.tif");
+        let image = ImageBuffer::from_rgb(4, 3, vec![0.25; 4 * 3 * 3]);
+        let mut params = WorkspaceConfig::default();
+        params.rgbscan.enabled = true;
+        params.rgbscan.green_path = "/scans/frame_g.dng".to_string();
+        params.rgbscan.blue_path = "/scans/frame_b.dng".to_string();
+        write_merged_frame(
+            &image,
+            &primary,
+            &out,
+            &params,
+            TiffCompression::Deflate,
+            None,
+        )
+        .expect("a merged frame");
+        assert!(out.exists());
+        assert!(is_merged_source(&out));
+        let (decoded, _, _) =
+            crate::infrastructure::loaders::tiff_loader::decode_page(&out).expect("read back");
+        assert_eq!(decoded.source_u16.as_ref().map(Vec::len), Some(4 * 3 * 3));
+        assert!(
+            !folder
+                .join(format!(".frame_RGB.tif.{}.part", std::process::id()))
+                .exists()
+        );
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn a_cancelled_merge_leaves_no_file() {
+        let folder = std::env::temp_dir().join(format!("negpy-cancel-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let primary = folder.join("frame.dng");
+        std::fs::write(&primary, b"raw").unwrap();
+        let out = folder.join("frame_RGB.tif");
+        let image = ImageBuffer::from_rgb(2, 2, vec![0.5; 2 * 2 * 3]);
+        let error = write_merged_frame(
+            &image,
+            &primary,
+            &out,
+            &WorkspaceConfig::default(),
+            TiffCompression::Deflate,
+            Some(&|| true),
+        )
+        .expect_err("cancelled");
+        assert!(matches!(error, MergeError::Cancelled(_)));
+        assert!(!out.exists());
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
+    #[test]
+    fn an_existing_merge_is_refused() {
+        let folder = std::env::temp_dir().join(format!("negpy-exists-{}", std::process::id()));
+        std::fs::create_dir_all(&folder).unwrap();
+        let primary = folder.join("frame.dng");
+        std::fs::write(&primary, b"raw").unwrap();
+        let out = folder.join("frame_RGB.tif");
+        std::fs::write(&out, b"keep").unwrap();
+        let image = ImageBuffer::from_rgb(2, 2, vec![0.5; 2 * 2 * 3]);
+        let error = write_merged_frame(
+            &image,
+            &primary,
+            &out,
+            &WorkspaceConfig::default(),
+            TiffCompression::Deflate,
+            None,
+        )
+        .expect_err("exists");
+        assert!(matches!(error, MergeError::Exists(_)));
+        assert_eq!(std::fs::read(&out).unwrap(), b"keep");
+        std::fs::remove_dir_all(folder).unwrap();
     }
 }
