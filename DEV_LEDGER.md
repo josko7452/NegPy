@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
+- Flat-master exposure kernel on the print and slide paths.
 - `20079eb6` D11: PNG/JPEG/TIFF encoders; PNG and JPEG bytes match Python.
 - `c01207eb` D12: thumbnail fingerprint, hashes match Python byte for byte.
 - `e6256cf1` D10: fade Estimate orchestration.
@@ -35,11 +36,10 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 - **D13/UI:** session glue, controller, and every egui view (out of scope this session).
 
 ## Next Steps (Ordered)
-1. [ ] D10: port `apply_flat_curve` and route the flat intent through it on both paths.
-2. [ ] D10: port `kernel.caching` and `services.rendering.source_identity`; build the cached engine.
-3. [ ] D10: port `services.maps` and `prefetch_policy`/`preview_cache`.
-4. [ ] D11: contact sheet, templating and linear output.
-5. [ ] D12: thumbnails and the remaining asset services.
+1. [ ] D10: port `kernel.caching` and `services.rendering.source_identity`; build the cached engine.
+2. [ ] D10: port `services.maps` and `prefetch_policy`/`preview_cache`.
+3. [ ] D11: contact sheet, templating and linear output.
+4. [ ] D12: thumbnails and the remaining asset services.
 
 ## Constraints / Gotchas
 - Workspace test after commit 10: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast`

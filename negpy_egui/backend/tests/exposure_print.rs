@@ -1,10 +1,12 @@
 //! Smoke tests for the print wrapper over `negpy_core::print_curve`.
 
+use negpy_backend::domain::models::{ExposureConfig, ProcessConfig, ProcessMode};
 use negpy_backend::features::exposure::constants as c;
 use negpy_backend::features::exposure::papers::resolve_paper;
 use negpy_backend::features::exposure::print::{
-    PrintParams, PrintSettings, black_density_rgb, flat_curve_params, paper_dmin_rgb,
-    per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths, render_print,
+    FlatRenderSettings, PrintParams, PrintSettings, black_density_rgb, flat_curve_params,
+    paper_dmin_rgb, per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths,
+    render_flat, render_print,
 };
 
 #[test]
@@ -98,4 +100,84 @@ fn black_density_follows_the_toe_sign() {
 #[test]
 fn the_flat_master_parameters_are_fixed() {
     assert_eq!(flat_curve_params(), (0.65, 0.10));
+}
+
+#[test]
+fn the_flat_master_emits_the_log_code_value() {
+    let image: Vec<f32> = (0..32)
+        .map(|index| 0.05 + 0.9 * index as f32 / 31.0)
+        .collect();
+    let image: Vec<f32> = image.iter().flat_map(|value| [*value; 3]).collect();
+    let out = render_flat(
+        &image,
+        &FlatRenderSettings {
+            exposure: &ExposureConfig::default(),
+            process: &ProcessConfig::default(),
+            mode: ProcessMode::C41,
+            bounds: None,
+        },
+    );
+    let (gain, lift) = flat_curve_params();
+    for (got, value) in out.iter().zip(&image) {
+        let expected = (lift as f32 + gain as f32 * (1.0 - value)).clamp(0.0, 1.0);
+        assert!((got - expected).abs() < 1e-6, "{got} != {expected}");
+    }
+}
+
+#[test]
+fn a_flat_master_ignores_the_print_decisions() {
+    let image = vec![0.35; 16 * 16 * 3];
+    let plain = render_flat(
+        &image,
+        &FlatRenderSettings {
+            exposure: &ExposureConfig::default(),
+            process: &ProcessConfig::default(),
+            mode: ProcessMode::C41,
+            bounds: None,
+        },
+    );
+    let loud = ExposureConfig {
+        auto_exposure: true,
+        auto_normalize_contrast: true,
+        cast_removal_strength: 1.0,
+        grade: 50.0,
+        density: 1.8,
+        toe: 0.9,
+        shoulder: 0.9,
+        paper_dmin: true,
+        ..ExposureConfig::default()
+    };
+    let varied = render_flat(
+        &image,
+        &FlatRenderSettings {
+            exposure: &loud,
+            process: &ProcessConfig::default(),
+            mode: ProcessMode::C41,
+            bounds: None,
+        },
+    );
+    assert_eq!(plain, varied);
+}
+
+#[test]
+fn a_flat_bw_master_collapses_to_a_neutral() {
+    let image: Vec<f32> = (0..8 * 8)
+        .flat_map(|index| {
+            let value = 0.05 + 0.8 * index as f32 / 63.0;
+            [value, value * 0.92, value * 0.84]
+        })
+        .collect();
+    let out = render_flat(
+        &image,
+        &FlatRenderSettings {
+            exposure: &ExposureConfig::default(),
+            process: &ProcessConfig::default(),
+            mode: ProcessMode::BW,
+            bounds: None,
+        },
+    );
+    for pixel in out.chunks_exact(3) {
+        assert!((pixel[0] - pixel[1]).abs() < 1e-6);
+        assert!((pixel[1] - pixel[2]).abs() < 1e-6);
+    }
 }

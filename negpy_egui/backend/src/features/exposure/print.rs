@@ -4,6 +4,7 @@
 
 use negpy_core::print_curve::{Lut, PrintCurve, apply_print_curve, tetra};
 
+use crate::domain::models::{ExposureConfig, ProcessConfig, ProcessMode, RenderIntent};
 use crate::features::exposure::constants as c;
 use crate::features::exposure::curve::{
     compute_pivot, effective_midtone_gamma, grade_to_slope, reference_linear_value,
@@ -47,6 +48,59 @@ impl PrintParams {
             midtone_gamma: midtone_gamma.unwrap_or(effective_midtone_gamma(paper, 0.0)),
         }
     }
+}
+
+/// The inputs of a Flat-master render: a fixed log curve over the normalized image.
+#[derive(Clone, Copy, Debug)]
+pub struct FlatRenderSettings<'a> {
+    pub exposure: &'a ExposureConfig,
+    pub process: &'a ProcessConfig,
+    pub mode: ProcessMode,
+    pub bounds: Option<LogNegativeBounds>,
+}
+
+/// Render the Flat master: the normalized log signal through a fixed low-contrast curve.
+#[must_use]
+pub fn render_flat(image: &[f32], settings: &FlatRenderSettings<'_>) -> Vec<f32> {
+    let is_bw = settings.mode == ProcessMode::BW;
+    let printed =
+        crate::features::exposure::bw_filter::printed_exposure(settings.process, settings.exposure);
+    let cmy = curve::filtration_offsets(
+        [printed.wb_cyan, printed.wb_magenta, printed.wb_yellow],
+        settings.bounds,
+    )
+    .map(|value| value as f32);
+    let input = if is_bw {
+        let weights = crate::features::exposure::bw_filter::collapse_weights(
+            settings.process,
+            settings.exposure,
+        );
+        let matrix = crate::features::exposure::bw_filter::collapse_matrix(weights);
+        let mut out = vec![0.0; image.len()];
+        negpy_core::color::matmul_3x3(image, &mut out, matrix);
+        out
+    } else {
+        image.to_vec()
+    };
+    let paper = crate::features::exposure::papers::effective_paper_profile(
+        &settings.exposure.paper_profile,
+        Some(settings.mode),
+    );
+    let stock = if is_bw {
+        None
+    } else {
+        crate::features::exposure::papers::resolve_flat_matrix(Some(paper))
+            .map(|matrix| matrix.map(|row| row.map(|value| value as f32)))
+    };
+    let (gain, lift) = flat_curve_params();
+    let mut out = vec![0.0; input.len()];
+    negpy_core::color::flat_curve(&input, &mut out, cmy, stock, gain as f32, lift as f32);
+    if is_bw {
+        let mut lum = vec![0.0; input.len() / 3];
+        negpy_core::analysis::luminance(&out, &mut lum);
+        out = lum.iter().flat_map(|value| [*value; 3]).collect();
+    }
+    out
 }
 
 /// Every scalar the print kernel needs beyond the image.
@@ -407,6 +461,17 @@ pub fn render_negative(
     settings: &PrintRenderSettings<'_>,
 ) -> Vec<f32> {
     let exposure = settings.config;
+    if exposure.render_intent == RenderIntent::Flat {
+        return render_flat(
+            image,
+            &FlatRenderSettings {
+                exposure,
+                process: settings.process,
+                mode: settings.mode,
+                bounds: settings.bounds,
+            },
+        );
+    }
     let solved = solve_print(settings);
     let paper = crate::features::exposure::papers::effective_paper_profile(
         &exposure.paper_profile,

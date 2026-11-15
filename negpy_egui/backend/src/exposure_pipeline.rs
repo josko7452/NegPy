@@ -8,7 +8,9 @@ use crate::features::altprocess::process as alt_process;
 use crate::features::exposure::auto_metrics::AutoSliderMetrics;
 use crate::features::exposure::metering::{self, Roi};
 use crate::features::exposure::papers::effective_paper_profile;
-use crate::features::exposure::print::{PrintRenderSettings, render_negative};
+use crate::features::exposure::print::{
+    FlatRenderSettings, PrintRenderSettings, render_flat, render_negative,
+};
 use crate::features::exposure::processor::{NormalizationSettings, normalize_negative};
 use crate::features::finish::processor::{FinishContext, process as finish_process};
 use crate::features::geometry::processor::{
@@ -121,10 +123,17 @@ pub fn render_exposure(
         mode: config.process.process_mode,
         base_black_hold: black_hold_taper(&config.exposure),
     };
-    let pixels = render_negative(&normalized.image, frame.width, &print);
+    let pixels = apply_hue_trim(
+        &ImageBuffer::from_rgb(
+            frame.width,
+            frame.height,
+            render_negative(&normalized.image, frame.width, &print),
+        ),
+        config.process.hue_trim,
+    );
     ExposureResult {
         image: Frame {
-            pixels,
+            pixels: pixels.pixels,
             width: frame.width,
             height: frame.height,
         },
@@ -171,17 +180,33 @@ pub fn render_slide(
         context.capture().camera_wb,
     );
     let exposed = slide_exposure(&config.process, &config.exposure);
-    let output = transfer_process(
-        &base.image,
-        &exposed,
-        &config.process,
-        TransferContext {
-            metrics,
-            positive_source: config.process.positive_source,
-            white_target: fade_white_target(&config.process, &white_space),
-            mono_weights: slide_mono_weights(&config.process, &config.exposure),
-        },
-    );
+    let output = if config.exposure.render_intent == crate::domain::models::RenderIntent::Flat {
+        ImageBuffer::from_rgb(
+            base.image.width,
+            base.image.height,
+            render_flat(
+                &base.image.pixels,
+                &FlatRenderSettings {
+                    exposure: &config.exposure,
+                    process: &config.process,
+                    mode: config.process.process_mode,
+                    bounds: Some(base.metrics.bounds),
+                },
+            ),
+        )
+    } else {
+        transfer_process(
+            &base.image,
+            &exposed,
+            &config.process,
+            TransferContext {
+                metrics,
+                positive_source: config.process.positive_source,
+                white_target: fade_white_target(&config.process, &white_space),
+                mono_weights: slide_mono_weights(&config.process, &config.exposure),
+            },
+        )
+    };
     let output = apply_hue_trim(&output, config.process.hue_trim);
     ExposureResult {
         image: Frame {
