@@ -1,16 +1,36 @@
 //! Mirrors the bounds core of `negpy/features/exposure/normalization.py`: log-density
 //! conversion, the meter prefilter, percentile bounds and the luma/color mix.
 
-use negpy_core::analysis::{block_median_grid, normalize_log_image, to_log_density};
+use negpy_core::analysis::{
+    block_median_grid, contrast_mask_tail, diffusion_tail, normalize_log_image, to_log_density,
+};
 use negpy_core::bounds::{ColorPass, channel_percentiles, same_pixel_color_floor_refs};
 
 use crate::domain::types::{LUMA_B, LUMA_G, LUMA_R};
+use crate::features::exposure::metering::unmix_log_image;
+use crate::features::geometry::logic::{
+    apply_fine_rotation, apply_geometry_orientation, apply_keystone, apply_radial_distortion,
+};
+use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
 /// Bump in any change that alters the bounds a frame measures for unchanged settings.
 pub const BOUNDS_VERSION: u32 = 5;
 
 /// Side length of the block-median prefilter grid for exposure analysis.
 pub const ANALYSIS_GRID: usize = 1024;
+
+/// Standard deviation of the Contrast Mask blur, as a percent of the grid's short side.
+pub const MASK_BLUR_PERCENT: f64 = 4.0;
+
+/// The Diffusion point-spread function: light fraction and its radius, as a fraction of the
+/// grid's short side.
+pub const DIFFUSION_PSF: [(f32, f64); 5] = [
+    (0.0421, 0.213),
+    (0.1576, 0.449),
+    (0.2723, 0.926),
+    (0.3540, 2.017),
+    (0.1740, 5.48),
+];
 
 /// Base percentile clip on the luma-range histogram analysis.
 pub const BASE_LUMA_CLIP: f64 = 0.01;
@@ -311,4 +331,231 @@ pub fn mix_luma_color_bounds(
         color_src.floors.map(|value| value + df),
         color_src.ceils.map(|value| value + d_ceil),
     )
+}
+
+/// A pixel ROI as fractions of the frame, replayable on a downsampled copy. A full-frame
+/// ROI and no ROI both stay None.
+#[must_use]
+pub fn normalized_roi(
+    roi: Option<(i64, i64, i64, i64)>,
+    (height, width): (usize, usize),
+) -> Option<[f64; 4]> {
+    let (y1, y2, x1, x2) = roi?;
+    if (y1, x1, y2, x2) == (0, 0, height as i64, width as i64) {
+        return None;
+    }
+    Some([
+        y1 as f64 / height as f64,
+        y2 as f64 / height as f64,
+        x1 as f64 / width as f64,
+        x2 as f64 / width as f64,
+    ])
+}
+
+/// The geometry an analysis-grid plane replays, so every plane on either engine replays the
+/// same fields.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlaneGeometry {
+    pub rotation: i64,
+    pub fine_rotation: f64,
+    pub flip_horizontal: bool,
+    pub flip_vertical: bool,
+    pub distortion_k1: f64,
+    pub converge_v: f64,
+    pub converge_h: f64,
+}
+
+impl PlaneGeometry {
+    /// The fields the geometry stage applies, with its own distortion coefficient.
+    #[must_use]
+    pub fn from_config(config: &crate::domain::models::GeometryConfig, distortion_k1: f64) -> Self {
+        Self {
+            rotation: config.rotation,
+            fine_rotation: config.fine_rotation,
+            flip_horizontal: config.flip_horizontal,
+            flip_vertical: config.flip_vertical,
+            distortion_k1,
+            converge_v: config.converge_v,
+            converge_h: config.converge_h,
+        }
+    }
+
+    /// Replay the geometry on the analysis grid.
+    #[must_use]
+    pub fn apply(&self, image: &ImageBuffer) -> ImageBuffer {
+        let mut image = apply_geometry_orientation(
+            image,
+            self.rotation,
+            self.flip_horizontal,
+            self.flip_vertical,
+        );
+        if self.fine_rotation != 0.0 {
+            image = apply_fine_rotation(&image, self.fine_rotation);
+        }
+        if self.distortion_k1 != 0.0 {
+            image = apply_radial_distortion(&image, self.distortion_k1);
+        }
+        apply_keystone(&image, self.converge_v, self.converge_h)
+    }
+}
+
+/// The frame before geometry, area-downsampled to the analysis grid, geometry replayed and
+/// cropped to `roi_norm`. Both engines call this on the same array, and the Contrast Mask
+/// and Diffusion planes blur from it.
+#[must_use]
+pub fn analysis_plane_grid(
+    image: &ImageBuffer,
+    geometry: PlaneGeometry,
+    roi_norm: Option<[f64; 4]>,
+) -> ImageBuffer {
+    let long = image.width.max(image.height);
+    let image = if long > ANALYSIS_GRID {
+        let scale = ANALYSIS_GRID as f64 / long as f64;
+        let width = ((image.width as f64 * scale).round() as usize).max(1);
+        let height = ((image.height as f64 * scale).round() as usize).max(1);
+        let pixels = negpy_core::resize::resize_area(
+            &image.pixels,
+            image.height,
+            image.width,
+            3,
+            height,
+            width,
+        )
+        .expect("a positive source and destination size");
+        ImageBuffer::from_rgb(width, height, pixels)
+    } else {
+        image.clone()
+    };
+    let image = geometry.apply(&image);
+    let Some(roi) = roi_norm else {
+        return image;
+    };
+    let (height, width) = (image.height, image.width);
+    let clamp = |value: f64, limit: f64| (value * limit).round() as i64;
+    let y1 = clamp(roi[0], height as f64).clamp(0, height as i64 - 1) as usize;
+    let y2 = clamp(roi[1], height as f64).clamp(y1 as i64 + 1, height as i64) as usize;
+    let x1 = clamp(roi[2], width as f64).clamp(0, width as i64 - 1) as usize;
+    let x2 = clamp(roi[3], width as f64).clamp(x1 as i64 + 1, width as i64) as usize;
+    let mut pixels = Vec::with_capacity((y2 - y1) * (x2 - x1) * 3);
+    for y in y1..y2 {
+        let start = (y * width + x1) * 3;
+        pixels.extend_from_slice(&image.pixels[start..start + (x2 - x1) * 3]);
+    }
+    ImageBuffer::from_rgb(x2 - x1, y2 - y1, pixels)
+}
+
+/// The zero-mean blurred luma plane the Contrast Mask reads, on the analysis grid, plus the
+/// value it was centred on. `bw_weights` collapses the value first, as a B&W print does the
+/// pixel.
+#[must_use]
+pub fn contrast_mask_plane(
+    image: &ImageBuffer,
+    bounds: LogNegativeBounds,
+    unmix: Option<[[f32; 3]; 3]>,
+    geometry: PlaneGeometry,
+    roi_norm: Option<[f64; 4]>,
+    bw_weights: Option<[f32; 3]>,
+) -> (Vec<f32>, f32) {
+    let grid = analysis_plane_grid(image, geometry, roi_norm);
+    if luminance_density_range(bounds) < 1e-6 {
+        return (vec![0.0; grid.width * grid.height], 0.5);
+    }
+    let (prefiltered, _, _) = prefilter_log_grid(&grid.pixels, grid.width, grid.height, None, 0.0);
+    let mut val = vec![0.0; prefiltered.len()];
+    normalize_log_image(
+        &unmix_log_image(&prefiltered, unmix),
+        bounds.floors.map(|value| value as f32),
+        bounds.ceils.map(|value| value as f32),
+        &mut val,
+    );
+    if let Some(weights) = bw_weights {
+        val = collapse_grid(&val, weights);
+    }
+    contrast_mask_tail(&val, grid.height, grid.width, mask_sigma(grid.height, grid.width))
+        .unwrap_or_else(|| (vec![0.0; grid.width * grid.height], 0.5))
+}
+
+fn mask_sigma(height: usize, width: usize) -> f64 {
+    MASK_BLUR_PERCENT * 0.01 * height.min(width) as f64
+}
+
+fn collapse_grid(values: &[f32], weights: [f32; 3]) -> Vec<f32> {
+    let matrix = crate::features::exposure::bw_filter::collapse_matrix(weights);
+    let mut out = vec![0.0; values.len()];
+    negpy_core::color::matmul_3x3(values, &mut out, matrix);
+    out
+}
+
+/// The unmixed light, blurred by [`DIFFUSION_PSF`], as log density on the analysis grid. It
+/// takes no bounds: the print's normalization is a per-channel gain on that light.
+#[must_use]
+pub fn diffusion_grid(
+    image: &ImageBuffer,
+    unmix: Option<[[f32; 3]; 3]>,
+    geometry: PlaneGeometry,
+    roi_norm: Option<[f64; 4]>,
+) -> ImageBuffer {
+    let grid = analysis_plane_grid(image, geometry, roi_norm);
+    let (prefiltered, _, _) = prefilter_log_grid(&grid.pixels, grid.width, grid.height, None, 0.0);
+    let unmixed = unmix_log_image(&prefiltered, unmix);
+    let short = 0.01 * grid.height.min(grid.width) as f64;
+    let psf: Vec<(f32, f64)> = DIFFUSION_PSF
+        .iter()
+        .map(|(weight, sigma)| (*weight, sigma * short))
+        .collect();
+    let mut out = vec![0.0; unmixed.len()];
+    let _ = diffusion_tail(&unmixed, grid.height, grid.width, &psf, &mut out);
+    ImageBuffer::from_rgb(grid.width, grid.height, out)
+}
+
+/// [`diffusion_grid`] in the print's normalization, for the kernel to mix as light. None when
+/// the frame never metered.
+#[must_use]
+pub fn diffusion_plane(
+    grid: &ImageBuffer,
+    bounds: LogNegativeBounds,
+    bw_weights: Option<[f32; 3]>,
+) -> Option<Vec<f32>> {
+    if luminance_density_range(bounds) < 1e-6 {
+        return None;
+    }
+    let mut val = vec![0.0; grid.pixels.len()];
+    normalize_log_image(
+        &grid.pixels,
+        bounds.floors.map(|value| value as f32),
+        bounds.ceils.map(|value| value as f32),
+        &mut val,
+    );
+    Some(match bw_weights {
+        Some(weights) => collapse_grid(&val, weights),
+        None => val,
+    })
+}
+
+/// The analysis-grid plane at render size, edge-replicated onto `roi` so the uncropped
+/// preview has no seam.
+#[must_use]
+pub fn expand_mask_plane(
+    plane: &[f32],
+    plane_dims: (usize, usize),
+    out_shape: (usize, usize),
+    roi: Option<(i64, i64, i64, i64)>,
+) -> Option<Vec<f32>> {
+    let (height, width) = out_shape;
+    let (y1, y2, x1, x2) = roi.unwrap_or((0, height as i64, 0, width as i64));
+    let (y1, x1) = (y1.max(0) as usize, x1.max(0) as usize);
+    let (y2, x2) = (y2.min(height as i64).max(0) as usize, x2.min(width as i64).max(0) as usize);
+    if y2 <= y1 || x2 <= x1 {
+        return None;
+    }
+    let mut out = vec![0.0; height * width];
+    negpy_core::resize::expand_plane(
+        plane,
+        plane_dims,
+        out_shape,
+        (y1, y2, x1, x2),
+        1.0,
+        &mut out,
+    )?;
+    Some(out)
 }

@@ -7,7 +7,8 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
-- Clear-base read cache per source key; detection input shared at 1800 px.
+- `f0665565` base: clear-base read cached per source key.
+- Contrast Mask and Diffusion planes; analysis-grid geometry replay; mask expansion.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.
