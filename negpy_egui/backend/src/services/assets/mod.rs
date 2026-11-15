@@ -9,6 +9,7 @@ pub mod library;
 pub mod migrations;
 pub mod naming;
 pub mod presets;
+pub mod profiles;
 pub mod rolls;
 pub mod search;
 pub mod sidecar;
