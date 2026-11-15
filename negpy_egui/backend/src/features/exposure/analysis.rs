@@ -25,6 +25,21 @@ pub const WEDGE_STEPS: usize = 21;
 pub const WEDGE_STEP_DENSITY: f64 = 0.15;
 pub const WEDGE_SEPARATION: f64 = 0.004;
 
+/// The test strip's absolute density ladder, centered on the default.
+pub const STRIP_DENSITIES: [f64; 5] = [0.4, 0.7, 1.0, 1.3, 1.6];
+/// The test strip's absolute grade ladder, in ISO-R.
+pub const STRIP_GRADES: [f64; 5] = [75.0, 95.0, 115.0, 135.0, 155.0];
+/// Rows are grades, columns densities.
+pub const STRIP_GRID: (usize, usize) = (STRIP_GRADES.len(), STRIP_DENSITIES.len());
+/// Slider units per cc on the ring-around's filtration axes.
+pub const RING_CC_PER_UNIT: f64 = 20.0;
+/// The ring-around's step in slider units, 2 cc.
+pub const RING_CC_STEP: f64 = 0.1;
+pub const RING_GRID: (usize, usize) = (5, 5);
+/// Past this many columns per row, an even grid draws the papers smaller than a
+/// near-square one with a short last row.
+pub const PAPER_GRID_MAX_RATIO: usize = 3;
+
 const MAX_HIST_SAMPLES: usize = 2_000_000;
 const SCOPE_MAX_SAMPLES: usize = 262_144;
 
@@ -283,6 +298,285 @@ pub fn scan_density_axis(density: f64) -> f64 {
 #[must_use]
 pub fn scan_density_of_val(val: [f64; 3], floors: [f64; 3], ceils: [f64; 3]) -> [f64; 3] {
     std::array::from_fn(|index| -(floors[index] + val[index] * (ceils[index] - floors[index])))
+}
+
+/// The middle patch's `(density, grade)`; a proof memo keys on it.
+#[must_use]
+pub fn strip_center() -> (f64, f64) {
+    (
+        STRIP_DENSITIES[STRIP_DENSITIES.len() / 2],
+        STRIP_GRADES[STRIP_GRADES.len() / 2],
+    )
+}
+
+/// `(row, col, density, grade)` of every patch, row-major.
+#[must_use]
+pub fn strip_cells() -> Vec<(usize, usize, f64, f64)> {
+    let mut cells = Vec::with_capacity(STRIP_GRID.0 * STRIP_GRID.1);
+    for (row, grade) in STRIP_GRADES.iter().enumerate() {
+        for (col, density) in STRIP_DENSITIES.iter().enumerate() {
+            cells.push((row, col, *density, *grade));
+        }
+    }
+    cells
+}
+
+fn round6(value: f64) -> f64 {
+    (value * 1e6).round() / 1e6
+}
+
+/// The absolute filtration rungs on one ring axis, centered on neutral.
+#[must_use]
+pub fn ring_rungs() -> Vec<f64> {
+    let mid = (RING_GRID.0 / 2) as f64;
+    (0..RING_GRID.0)
+        .map(|index| round6((index as f64 - mid) * RING_CC_STEP))
+        .collect()
+}
+
+/// `(row, col, wb_magenta, wb_yellow)` row-major. Rows step magenta, columns yellow.
+#[must_use]
+pub fn ring_cells() -> Vec<(usize, usize, f64, f64)> {
+    let rungs = ring_rungs();
+    let mut cells = Vec::with_capacity(RING_GRID.0 * RING_GRID.1);
+    for row in 0..RING_GRID.0 {
+        for col in 0..RING_GRID.1 {
+            cells.push((row, col, rungs[row], rungs[col]));
+        }
+    }
+    cells
+}
+
+/// A rung's filtration in cc, as the axis labels show it.
+#[must_use]
+pub fn ring_cc(index: usize) -> f64 {
+    ring_rungs()[index] * RING_CC_PER_UNIT
+}
+
+fn nearest_index(value: f64, ladder: &[f64]) -> usize {
+    let mut best = 0;
+    let mut best_distance = f64::INFINITY;
+    for (index, step) in ladder.iter().enumerate() {
+        let distance = (value - *step).abs();
+        if distance < best_distance {
+            best = index;
+            best_distance = distance;
+        }
+    }
+    best
+}
+
+/// `(row, col)` of the patch closest to the filtration in force.
+#[must_use]
+pub fn ring_nearest_cell(magenta: f64, yellow: f64) -> (usize, usize) {
+    let rungs = ring_rungs();
+    (
+        nearest_index(magenta, &rungs),
+        nearest_index(yellow, &rungs),
+    )
+}
+
+/// One patch's boundary on an extent split into `divisions` equal parts.
+#[must_use]
+pub fn strip_bound(extent: usize, divisions: usize, index: usize) -> usize {
+    ((extent as f64 * index as f64) / divisions as f64).round_ties_even() as usize
+}
+
+/// `(x0, y0, x1, y1)` of one patch inside an `h`x`w` frame.
+#[must_use]
+pub fn strip_patch_rect(
+    height: usize,
+    width: usize,
+    row: usize,
+    col: usize,
+    grid: (usize, usize),
+) -> (usize, usize, usize, usize) {
+    let (rows, cols) = grid;
+    (
+        strip_bound(width, cols, col),
+        strip_bound(height, rows, row),
+        strip_bound(width, cols, col + 1),
+        strip_bound(height, rows, row + 1),
+    )
+}
+
+/// Assemble one frame from row-major renders over `grid`, each contributing its own patch.
+#[must_use]
+pub fn strip_mosaic(
+    tiles: &[crate::infrastructure::loaders::image_buffer::ImageBuffer],
+    grid: (usize, usize),
+) -> Option<crate::infrastructure::loaders::image_buffer::ImageBuffer> {
+    let (rows, cols) = grid;
+    let first = tiles.first()?;
+    if tiles.len() != rows * cols {
+        return None;
+    }
+    let (height, width) = (first.height, first.width);
+    if tiles.iter().any(|tile| {
+        tile.width != width || tile.height != height || tile.pixels.len() != width * height * 3
+    }) {
+        return None;
+    }
+    let mut out = vec![0.0; width * height * 3];
+    for (index, tile) in tiles.iter().enumerate() {
+        let (row, col) = (index / cols, index % cols);
+        let (x0, y0, x1, y1) = strip_patch_rect(height, width, row, col, grid);
+        for y in y0..y1 {
+            let start = (y * width + x0) * 3;
+            let end = (y * width + x1) * 3;
+            out[start..end].copy_from_slice(&tile.pixels[start..end]);
+        }
+    }
+    Some(crate::infrastructure::loaders::image_buffer::ImageBuffer::from_rgb(width, height, out))
+}
+
+/// Content-normalized position (0..1) to `(row, col)`.
+#[must_use]
+pub fn strip_cell_at(nx: f64, ny: f64, grid: (usize, usize)) -> (usize, usize) {
+    let (rows, cols) = grid;
+    let row = (ny * rows as f64) as i64;
+    let col = (nx * cols as f64) as i64;
+    (
+        row.clamp(0, rows as i64 - 1) as usize,
+        col.clamp(0, cols as i64 - 1) as usize,
+    )
+}
+
+/// `(row, col)` of the patch closest to the density and grade in force.
+#[must_use]
+pub fn strip_nearest_cell(density: f64, grade: f64) -> (usize, usize) {
+    (
+        nearest_index(grade, &STRIP_GRADES),
+        nearest_index(density, &STRIP_DENSITIES),
+    )
+}
+
+/// Row-major indices of `grid` after a quarter-turn count, counter-clockwise like `np.rot90`.
+#[must_use]
+pub fn rotation_index(grid: (usize, usize), rotation: u32) -> Vec<usize> {
+    let (rows, cols) = grid;
+    match rotation % 4 {
+        1 => (0..cols)
+            .flat_map(|out_row| {
+                let col = cols - 1 - out_row;
+                (0..rows).map(move |row| row * cols + col)
+            })
+            .collect(),
+        2 => (0..rows * cols).rev().collect(),
+        3 => (0..cols)
+            .flat_map(|out_row| (0..rows).map(move |row| (rows - 1 - row) * cols + out_row))
+            .collect(),
+        _ => (0..rows * cols).collect(),
+    }
+}
+
+/// `(rows, cols)` after a quarter-turn count.
+#[must_use]
+pub fn proof_grid(grid: (usize, usize), rotation: u32) -> (usize, usize) {
+    if rotation % 2 == 1 {
+        (grid.1, grid.0)
+    } else {
+        grid
+    }
+}
+
+/// Row-major items re-placed by the rotation.
+#[must_use]
+pub fn rotate_grid<T: Copy>(items: &[T], grid: (usize, usize), rotation: u32) -> Vec<T> {
+    rotation_index(grid, rotation)
+        .into_iter()
+        .filter_map(|index| items.get(index).copied())
+        .collect()
+}
+
+/// Where a base `(row, col)` lands after the rotation.
+#[must_use]
+pub fn rotated_cell(
+    base: (usize, usize),
+    grid: (usize, usize),
+    rotation: u32,
+) -> Option<(usize, usize)> {
+    let target = base.0 * grid.1 + base.1;
+    let position = rotation_index(grid, rotation)
+        .iter()
+        .position(|index| *index == target)?;
+    let cols = proof_grid(grid, rotation).1;
+    Some((position / cols, position % cols))
+}
+
+/// `(rows, cols)` of the paper strip: the even grid nearest square, else near square.
+#[must_use]
+pub fn paper_grid(count: usize) -> (usize, usize) {
+    if count == 0 {
+        return (0, 0);
+    }
+    let mut rows = (count as f64).sqrt() as usize;
+    while rows > 0 {
+        if count % rows == 0 && count / rows <= PAPER_GRID_MAX_RATIO * rows {
+            return (rows, count / rows);
+        }
+        rows -= 1;
+    }
+    let cols = (count as f64).sqrt().ceil() as usize;
+    (count.div_ceil(cols), cols)
+}
+
+/// Each paper's `(x0, y0, x1, y1)` as fractions of the frame, row-major.
+#[must_use]
+pub fn paper_grid_cells(count: usize) -> Vec<(f64, f64, f64, f64)> {
+    let (rows, cols) = paper_grid(count);
+    if rows == 0 || cols == 0 {
+        return Vec::new();
+    }
+    let size = 1.0 / rows.max(cols) as f64;
+    let top = (1.0 - rows as f64 * size) / 2.0;
+    let mut cells = Vec::with_capacity(count);
+    for index in 0..count {
+        let (row, col) = (index / cols, index % cols);
+        let in_row = (count - row * cols).min(cols);
+        let x0 = (1.0 - in_row as f64 * size) / 2.0 + col as f64 * size;
+        let y0 = top + row as f64 * size;
+        cells.push((x0, y0, x0 + size, y0 + size));
+    }
+    cells
+}
+
+/// One frame holding every render whole, each scaled into its cell; the rest stays black.
+#[must_use]
+pub fn paper_grid_mosaic(
+    tiles: &[crate::infrastructure::loaders::image_buffer::ImageBuffer],
+) -> Option<crate::infrastructure::loaders::image_buffer::ImageBuffer> {
+    let first = tiles.first()?;
+    let (height, width) = (first.height, first.width);
+    let mut out = vec![0.0; width * height * 3];
+    for (tile, (x0, y0, x1, y1)) in tiles.iter().zip(paper_grid_cells(tiles.len())) {
+        let (top, bottom) = (
+            (y0 * height as f64).round() as usize,
+            (y1 * height as f64).round() as usize,
+        );
+        let (left, right) = (
+            (x0 * width as f64).round() as usize,
+            (x1 * width as f64).round() as usize,
+        );
+        let (cell_w, cell_h) = (right.saturating_sub(left), bottom.saturating_sub(top));
+        if cell_w == 0 || cell_h == 0 {
+            continue;
+        }
+        let scaled = negpy_core::resize::resize_area(
+            &tile.pixels,
+            tile.height,
+            tile.width,
+            3,
+            cell_h,
+            cell_w,
+        )?;
+        for y in 0..cell_h {
+            let dst = ((top + y) * width + left) * 3;
+            let src = y * cell_w * 3;
+            out[dst..dst + cell_w * 3].copy_from_slice(&scaled[src..src + cell_w * 3]);
+        }
+    }
+    Some(crate::infrastructure::loaders::image_buffer::ImageBuffer::from_rgb(width, height, out))
 }
 
 /// A stride-subsampled crop of an RGB frame.
