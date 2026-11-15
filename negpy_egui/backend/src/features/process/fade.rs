@@ -477,6 +477,87 @@ pub fn crossover_strength(process: &ProcessConfig) -> f64 {
 /// A table a render measured for itself: `(table, fade_crossover_space)`.
 pub type MeasuredCrossover = (Option<Vec<f64>>, String);
 
+/// The Python `repr` of a tuple of floats or ints, without spaces, which the tag hashes.
+fn py_tuple(values: &[f64]) -> String {
+    let items: Vec<String> = values
+        .iter()
+        .map(|value| {
+            if value.fract() == 0.0 {
+                format!("{value:.1}")
+            } else {
+                let text = format!("{value}");
+                if text.contains(['.', 'e', 'E']) {
+                    text
+                } else {
+                    format!("{text}.0")
+                }
+            }
+        })
+        .collect();
+    format!("({})", items.join(", "))
+}
+
+fn py_rect(values: Option<&Vec<f64>>) -> String {
+    let Some(values) = values else {
+        return "None".to_string();
+    };
+    py_tuple(values)
+}
+
+/// `crossover_space`: names the grid a table was measured on.
+///
+/// The fade matrix, its anchor, the white space and the process's meter area all move the
+/// densities under the bands; a table tagged with another name was read on other pixels.
+#[must_use]
+pub fn crossover_space(
+    density: &FadeDensity,
+    white_space: &str,
+    process: &ProcessConfig,
+) -> String {
+    let mut named = b"crossover".to_vec();
+    if let Some(matrix) = density.matrix {
+        for row in matrix {
+            for value in row {
+                named.extend_from_slice(&round5(value).to_le_bytes());
+            }
+        }
+    }
+    if let Some(anchor) = density.anchor {
+        named.extend_from_slice(b"anchor");
+        for value in anchor {
+            named.extend_from_slice(&round5(value).to_le_bytes());
+        }
+    }
+    named.extend_from_slice(b"area");
+    let area = format!(
+        "({}, {}, {})",
+        py_float(process.analysis_buffer),
+        py_rect(process.analysis_rect.as_ref()),
+        py_rect(process.meter_rect.as_ref())
+    );
+    named.extend_from_slice(area.as_bytes());
+    named.extend_from_slice(white_space.as_bytes());
+    let digest = Sha1::digest(&named);
+    digest
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>()[..12]
+        .to_string()
+}
+
+fn round5(value: f64) -> f64 {
+    (value * 1e5).round() / 1e5
+}
+
+/// A Python float's shortest repr for the values a config holds.
+fn py_float(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.1}")
+    } else {
+        format!("{value}")
+    }
+}
+
 /// The table a render applies, and the one it measured from `grid` when the frame has none.
 #[must_use]
 pub fn resolve_crossover(
