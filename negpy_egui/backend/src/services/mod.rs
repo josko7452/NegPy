@@ -2,4 +2,5 @@
 
 pub mod assets;
 pub mod export;
+pub mod maps;
 pub mod rendering;
