@@ -4,7 +4,9 @@
 //! entry point owns their order and the metrics the GUI reads back.
 
 use crate::domain::models::{ProcessConfig, WorkspaceConfig};
+use crate::features::altprocess::process as alt_process;
 use crate::features::exposure::metering::{self, Roi};
+use crate::features::exposure::papers::effective_paper_profile;
 use crate::features::exposure::print::{PrintRenderSettings, render_negative};
 use crate::features::exposure::processor::{NormalizationSettings, normalize_negative};
 use crate::features::finish::processor::{FinishContext, process as finish_process};
@@ -190,6 +192,11 @@ pub fn render_tail(
         image = apply_clahe(&image, config.lab.clahe_strength);
         let lab = lab_process(&image, &config.lab, mono, LabContext { scale_factor: 1.0 });
         image = lab.image;
+        let paper = effective_paper_profile(
+            &config.exposure.paper_profile,
+            Some(config.process.process_mode),
+        );
+        image = alt_process(&image, &config.altproc, config.process.process_mode, paper);
         image = toning_process(&image, &config.toning, config.altproc.alt_process, mono);
     }
     let geometry = geometry_process(&image, &config.geometry, geometry);

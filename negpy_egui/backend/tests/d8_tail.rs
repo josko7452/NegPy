@@ -72,3 +72,34 @@ fn a_flat_intent_bypasses_the_creative_stages() {
     );
     assert_eq!(out.pixels, source.pixels);
 }
+
+#[test]
+fn the_tail_runs_the_alt_process_before_toning_on_a_bw_negative() {
+    use negpy_backend::domain::models::AltProcess;
+    let mut config = WorkspaceConfig::default();
+    config.process.process_mode = negpy_backend::domain::models::ProcessMode::BW;
+    config.altproc.alt_process = AltProcess::Cyanotype;
+    let source = gradient(64, 48);
+    let plain = render_tail(
+        &source,
+        &WorkspaceConfig {
+            altproc: negpy_backend::domain::models::AltProcessConfig::default(),
+            ..config.clone()
+        },
+        GeometryContext { scale_factor: 1.0 },
+        1600.0,
+    );
+    let cyan = render_tail(
+        &source,
+        &config,
+        GeometryContext { scale_factor: 1.0 },
+        1600.0,
+    );
+    assert_ne!(plain.pixels, cyan.pixels);
+    // A cyanotype print carries its density in red, so the blue channel stays brighter.
+    let mean = |frame: &Frame, channel: usize| {
+        frame.pixels.iter().skip(channel).step_by(3).sum::<f32>()
+            / (frame.width * frame.height) as f32
+    };
+    assert!(mean(&cyan, 2) > mean(&cyan, 0));
+}
