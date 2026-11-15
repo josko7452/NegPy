@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
+- Contact-sheet roll ordering, format inference and label text.
 - Contact-sheet paper, strip, row and pagination planning.
 - Film-edge geometry and the frame-turn rule.
 - Maps, tile cache and version helpers.
@@ -43,7 +44,7 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 
 ## Next Steps (Ordered)
 1. [ ] D10: build the cached engine over the stage checkpoints.
-2. [ ] D11: port contact-sheet roll reads.
+2. [ ] D11: port sheet look and straight proof.
 3. [ ] D11: contact sheet, templating and linear output.
 4. [ ] D12: thumbnails and the remaining asset services.
 
