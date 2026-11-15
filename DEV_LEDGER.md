@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
+- Film-edge geometry and the frame-turn rule.
 - Maps, tile cache and version helpers.
 - Prefetch admission policy and the platform memory probe.
 - Preview buffer LRU with entry, byte and full-res slot budgets.
@@ -41,7 +42,7 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 
 ## Next Steps (Ordered)
 1. [ ] D10: build the cached engine over the stage checkpoints.
-2. [ ] D11: port contact-sheet layout and roll.
+2. [ ] D11: port contact-sheet layout over the film-edge geometry.
 3. [ ] D11: contact sheet, templating and linear output.
 4. [ ] D12: thumbnails and the remaining asset services.
 
