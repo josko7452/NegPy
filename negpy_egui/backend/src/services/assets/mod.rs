@@ -2,6 +2,7 @@
 
 pub mod composites;
 pub mod flatfield;
+pub mod half_frame;
 pub mod library;
 pub mod migrations;
 pub mod presets;
