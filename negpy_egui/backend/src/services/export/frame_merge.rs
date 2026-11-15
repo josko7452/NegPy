@@ -64,7 +64,9 @@ pub fn part_files(asset: &Value, kind: &str) -> Vec<String> {
             let mut paths = strings(asset, "stitch_paths");
             if let Some(triplets) = asset.get("stitch_triplets").and_then(Value::as_array) {
                 for pair in triplets {
-                    let Some(pair) = pair.as_array() else { continue };
+                    let Some(pair) = pair.as_array() else {
+                        continue;
+                    };
                     let green = pair.first().and_then(Value::as_str).unwrap_or_default();
                     let blue = pair.get(1).and_then(Value::as_str).unwrap_or_default();
                     if !green.is_empty() && !blue.is_empty() {
@@ -104,7 +106,10 @@ pub fn registration_complete(asset: &Value) -> bool {
     let parts = 1 + strings(asset, "stitch_paths").len();
     let canvas = asset.get("stitch_canvas").and_then(Value::as_array);
     let canvas_ok = canvas.is_some_and(|values| {
-        values.len() >= 2 && values.iter().all(|value| value.as_f64().is_some_and(|v| v != 0.0))
+        values.len() >= 2
+            && values
+                .iter()
+                .all(|value| value.as_f64().is_some_and(|v| v != 0.0))
     });
     canvas_ok
         && strings(asset, "stitch_transforms").len() == parts
@@ -141,12 +146,19 @@ pub fn needs_camera_matrix(params: &WorkspaceConfig) -> bool {
 /// `<primary stem><suffix>.tif` beside the primary, numbered past any existing file and
 /// any path the caller already took.
 #[must_use]
-pub fn merged_path_for(primary_path: &Path, kind: &str, taken: &BTreeSet<String>) -> Option<PathBuf> {
+pub fn merged_path_for(
+    primary_path: &Path,
+    kind: &str,
+    taken: &BTreeSet<String>,
+) -> Option<PathBuf> {
     let suffix = merged_suffix(kind)?;
     let folder = primary_path.parent().unwrap_or_else(|| Path::new(""));
     let stem = format!(
         "{}{suffix}",
-        primary_path.file_stem().unwrap_or_default().to_string_lossy()
+        primary_path
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
     );
     let mut candidate = folder.join(format!("{stem}{MERGED_EXT}"));
     let mut counter = 2;

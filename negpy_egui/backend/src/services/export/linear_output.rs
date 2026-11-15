@@ -139,9 +139,8 @@ pub fn source_format_label_for(
     rgbscan: Option<&crate::domain::models::RgbScanConfig>,
     stitch: Option<&crate::domain::models::StitchConfig>,
 ) -> String {
-    let is_stitch = stitch.is_some_and(|stitch| {
-        stitch.stitch_enabled && !stitch.stitch_paths.is_empty()
-    });
+    let is_stitch =
+        stitch.is_some_and(|stitch| stitch.stitch_enabled && !stitch.stitch_paths.is_empty());
     if linear_output_source_type(path) == "camera" && is_stitch {
         let stitch = stitch.expect("checked above");
         let parts = 1 + stitch.stitch_paths.len();

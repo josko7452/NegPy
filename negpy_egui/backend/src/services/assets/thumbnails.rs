@@ -16,9 +16,12 @@ pub fn asset_thumbnail_key(asset: &Value) -> String {
         .get("hash")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    let triplet = ["green_path", "blue_path"]
-        .iter()
-        .all(|key| asset.get(*key).and_then(Value::as_str).is_some_and(|p| !p.is_empty()));
+    let triplet = ["green_path", "blue_path"].iter().all(|key| {
+        asset
+            .get(*key)
+            .and_then(Value::as_str)
+            .is_some_and(|p| !p.is_empty())
+    });
     thumbnail_cache_key(file_hash, triplet)
 }
 
@@ -39,7 +42,8 @@ pub fn thumbnail_cache_key(file_hash: &str, is_triplet: bool) -> String {
 /// when nothing has decided yet.
 #[must_use]
 pub fn preview_positive(img: &ImageBuffer, process_mode: Option<ProcessMode>) -> ImageBuffer {
-    let mode = process_mode.unwrap_or_else(|| detect_process_mode(&img.pixels, img.width, img.height));
+    let mode =
+        process_mode.unwrap_or_else(|| detect_process_mode(&img.pixels, img.width, img.height));
     if mode == ProcessMode::E6 {
         return img.clone();
     }
@@ -62,7 +66,8 @@ mod tests {
 
     #[test]
     fn the_asset_key_reads_the_hash_and_the_parts() {
-        let asset = serde_json::json!({"hash": "abc", "green_path": "/g.dng", "blue_path": "/b.dng"});
+        let asset =
+            serde_json::json!({"hash": "abc", "green_path": "/g.dng", "blue_path": "/b.dng"});
         assert_eq!(asset_thumbnail_key(&asset), "abc-rgb-v3");
         let asset = serde_json::json!({"hash": "abc"});
         assert_eq!(asset_thumbnail_key(&asset), "abc-v3");

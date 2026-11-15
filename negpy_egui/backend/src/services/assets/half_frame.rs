@@ -64,7 +64,11 @@ pub fn half_of(file_hash: Option<&str>) -> Option<i32> {
 #[must_use]
 pub fn base_hash(file_hash: Option<&str>) -> Option<String> {
     let hash = file_hash?;
-    Some(hash.split_once(SEP).map_or(hash, |(base, _)| base).to_string())
+    Some(
+        hash.split_once(SEP)
+            .map_or(hash, |(base, _)| base)
+            .to_string(),
+    )
 }
 
 /// A half's display name.
@@ -131,22 +135,11 @@ pub fn slice_half_bounds(
 ) -> (usize, usize, usize, usize) {
     if split_axis == 'y' {
         let transposed = crop_rect.map(|rect| [rect[1], rect[0], rect[3], rect[2]]);
-        let (ty1, ty2, tx1, tx2) = slice_axis_bounds(
-            (width, height),
-            half,
-            split_x,
-            transposed,
-            gutter_thickness,
-        );
+        let (ty1, ty2, tx1, tx2) =
+            slice_axis_bounds((width, height), half, split_x, transposed, gutter_thickness);
         return (tx1, tx2, ty1, ty2);
     }
-    slice_axis_bounds(
-        (height, width),
-        half,
-        split_x,
-        crop_rect,
-        gutter_thickness,
-    )
+    slice_axis_bounds((height, width), half, split_x, crop_rect, gutter_thickness)
 }
 
 /// The full-resolution dimensions of a half slice.
@@ -264,18 +257,14 @@ pub fn gap_px(left_width: usize, right_width: usize, gutter_thickness: f64) -> u
     if gutter_thickness <= 0.0 || gutter_thickness >= 1.0 {
         return 0;
     }
-    px((left_width + right_width) as f64 * gutter_thickness / (1.0 - gutter_thickness)).max(0) as usize
+    px((left_width + right_width) as f64 * gutter_thickness / (1.0 - gutter_thickness)).max(0)
+        as usize
 }
 
 /// Join two rendered halves with a filled `gap`-wide band. Unequal cross sizes are
 /// centre-padded, never resampled.
 #[must_use]
-pub fn join_halves(
-    left: &ImageBuffer,
-    right: &ImageBuffer,
-    gap: usize,
-    axis: char,
-) -> ImageBuffer {
+pub fn join_halves(left: &ImageBuffer, right: &ImageBuffer, gap: usize, axis: char) -> ImageBuffer {
     let (join_axis_x, pad_height) = if axis == 'x' {
         (true, left.height.max(right.height))
     } else {
@@ -393,7 +382,12 @@ pub fn remap_workspace_config(
         .collect();
     out.retouch.scratch_lines = out.retouch.scratch_lines.iter().map(remap_line).collect();
     out.retouch.clone_strokes = out.retouch.clone_strokes.iter().map(remap_stroke).collect();
-    out.retouch.manual_dust_spots = out.retouch.manual_dust_spots.iter().map(remap_spot).collect();
+    out.retouch.manual_dust_spots = out
+        .retouch
+        .manual_dust_spots
+        .iter()
+        .map(remap_spot)
+        .collect();
     out.retouch.dust_exclusion_strokes = out
         .retouch
         .dust_exclusion_strokes

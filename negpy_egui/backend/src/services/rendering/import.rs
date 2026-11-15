@@ -4,15 +4,11 @@
 
 use std::path::Path;
 
-use crate::domain::models::{
-    ProcessMode, WorkspaceConfig, is_rgb_triplet, stitch_has_triplets,
-};
+use crate::domain::models::{ProcessMode, WorkspaceConfig, is_rgb_triplet, stitch_has_triplets};
 use crate::features::flatfield::logic::GainEntry;
 use crate::features::process::detect::{detect_process_and_source, detect_process_mode};
 use crate::features::process::path::positive_decode;
-use crate::features::process::sensor::{
-    apply_sensor_correction, effective_sensor_matrix,
-};
+use crate::features::process::sensor::{apply_sensor_correction, effective_sensor_matrix};
 use crate::infrastructure::loaders::factory::{self, LoadOptions};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::services::assets::half_frame::HalfSlice;
@@ -44,7 +40,11 @@ pub fn oriented(image: &ImageBuffer, orientation: u8) -> ImageBuffer {
     if orientation < 2 {
         return image.clone();
     }
-    let bytes: Vec<u8> = image.pixels.iter().flat_map(|value| value.to_ne_bytes()).collect();
+    let bytes: Vec<u8> = image
+        .pixels
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect();
     let (height, width) = negpy_core::orient::oriented_dims(image.height, image.width, orientation);
     let mut dst = vec![0u8; height * width * 12];
     negpy_core::orient::orient(&bytes, image.height, image.width, 12, orientation, &mut dst);
@@ -95,7 +95,8 @@ pub fn import_source(
         .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
     let image = oriented(&decoded, loaded.orientation);
     let image = precorrect_source(&image, config, entry, gain_slices, loaded.orientation);
-    let (process_mode, source_color) = detect_process_and_source(&image.pixels, image.width, image.height);
+    let (process_mode, source_color) =
+        detect_process_and_source(&image.pixels, image.width, image.height);
     let base_log = if crate::features::process::path::render_path(&config.process)
         == crate::features::process::path::RenderPath::Print
     {
@@ -159,8 +160,8 @@ mod tests {
 
     #[test]
     fn a_decoded_frame_reports_its_process_and_base() {
-        let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/jxl_rgb8.jxl");
+        let fixture =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/jxl_rgb8.jxl");
         if !fixture.exists() {
             return;
         }
@@ -168,7 +169,11 @@ mod tests {
         let source = import_source(&fixture, &config, None, &[]).expect("a decodable fixture");
         assert!(source.image.width > 0);
         assert!(source.image.height > 0);
-        let detected = detect_process_mode(&source.image.pixels, source.image.width, source.image.height);
+        let detected = detect_process_mode(
+            &source.image.pixels,
+            source.image.width,
+            source.image.height,
+        );
         assert_eq!(source.process_mode, detected);
     }
 

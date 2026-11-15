@@ -101,9 +101,6 @@ mod tests {
     fn an_inactive_flat_field_leaves_the_source() {
         let image = frame(0.4);
         let config = WorkspaceConfig::default();
-        assert_eq!(
-            flatfield_source(&image, &config, None, &[], Some(1)),
-            image
-        );
+        assert_eq!(flatfield_source(&image, &config, None, &[], Some(1)), image);
     }
 }

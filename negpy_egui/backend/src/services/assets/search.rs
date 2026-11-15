@@ -9,8 +9,21 @@ pub const FLAG_FIELDS: [&str; 3] = ["keeper", "rejected", "edited"];
 pub const NUMERIC_FIELDS: [&str; 5] = ["iso", "frame", "push", "devtime", "temp"];
 /// Terms compared as text.
 pub const TEXT_FIELDS: [&str; 15] = [
-    "name", "path", "ext", "film", "camera", "lens", "developer", "dilution", "format",
-    "scanning", "roll", "date", "shot", "place", "scene",
+    "name",
+    "path",
+    "ext",
+    "film",
+    "camera",
+    "lens",
+    "developer",
+    "dilution",
+    "format",
+    "scanning",
+    "roll",
+    "date",
+    "shot",
+    "place",
+    "scene",
 ];
 
 /// One ANDed query term. An empty field matches the filename as a bare word.
@@ -111,16 +124,21 @@ fn term(token: &str) -> Option<Term> {
 /// Whether every term holds for these facts. An empty query matches everything.
 #[must_use]
 pub fn matches(terms: &[Term], facts: &Value) -> bool {
-    terms
-        .iter()
-        .all(|term| term.negate != holds(term, facts))
+    terms.iter().all(|term| term.negate != holds(term, facts))
 }
 
 fn holds(term: &Term, facts: &Value) -> bool {
     if FLAG_FIELDS.contains(&term.field.as_str()) {
-        return facts.get(&term.field).and_then(Value::as_bool).unwrap_or(false);
+        return facts
+            .get(&term.field)
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
     }
-    let key = if term.field.is_empty() { "name" } else { &term.field };
+    let key = if term.field.is_empty() {
+        "name"
+    } else {
+        &term.field
+    };
     let Some(fact) = facts.get(key) else {
         return false;
     };
@@ -137,7 +155,10 @@ fn holds(term: &Term, facts: &Value) -> bool {
     if term.op == ":" {
         return fact.contains(&term.value);
     }
-    let prefix = fact.chars().take(term.value.chars().count()).collect::<String>();
+    let prefix = fact
+        .chars()
+        .take(term.value.chars().count())
+        .collect::<String>();
     apply_op(&term.op, prefix.as_str(), term.value.as_str())
 }
 
@@ -162,8 +183,14 @@ fn apply_op<T: PartialOrd>(op: &str, left: T, right: T) -> bool {
 /// edit's archival metadata.
 #[must_use]
 pub fn facts_for(asset: &Value, config: Option<&crate::domain::models::WorkspaceConfig>) -> Value {
-    let name = asset.get("name").and_then(Value::as_str).unwrap_or_default();
-    let path = asset.get("path").and_then(Value::as_str).unwrap_or_default();
+    let name = asset
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let path = asset
+        .get("path")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
     let ext = std::path::Path::new(name)
         .extension()
         .map(|ext| ext.to_string_lossy().to_lowercase())
@@ -203,15 +230,21 @@ pub fn facts_for(asset: &Value, config: Option<&crate::domain::models::Workspace
     facts["dilution"] = metadata.process_dilution.to_lowercase().into();
     facts["devtime"] = metadata
         .process_time_seconds
-        .map_or(Value::Null, |seconds| serde_json::json!(seconds as f64 / 60.0));
-    facts["temp"] = metadata.process_temperature_c.map_or(Value::Null, |value| serde_json::json!(value));
+        .map_or(Value::Null, |seconds| {
+            serde_json::json!(seconds as f64 / 60.0)
+        });
+    facts["temp"] = metadata
+        .process_temperature_c
+        .map_or(Value::Null, |value| serde_json::json!(value));
     facts["format"] = format.to_lowercase().into();
     facts["scanning"] = metadata.scanning.to_lowercase().into();
     let roll_name = config.process.roll_name.clone().unwrap_or_default();
     facts["roll"] = join([&metadata.capture_roll, &roll_name]).into();
     facts["capture_roll"] = metadata.capture_roll.to_lowercase().into();
     facts["frame"] = serde_json::json!(metadata.capture_frame);
-    facts["iso"] = metadata.film_iso.map_or(Value::Null, |iso| serde_json::json!(iso));
+    facts["iso"] = metadata
+        .film_iso
+        .map_or(Value::Null, |iso| serde_json::json!(iso));
     facts["push"] = serde_json::json!(metadata.push_pull);
     facts["shot"] = metadata.capture_date.to_lowercase().into();
     facts["place"] = [

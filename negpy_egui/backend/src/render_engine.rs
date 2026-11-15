@@ -21,14 +21,20 @@ use crate::features::exposure::papers::effective_paper_profile;
 use crate::features::exposure::print::{
     FlatRenderSettings, PrintRenderSettings, render_flat, render_negative,
 };
-use crate::features::exposure::processor::{NormalizationMetrics, NormalizationSettings, normalize_negative};
-use crate::features::finish::processor::{FinishContext, RebateMetrics, process as finish_process, rebate_tone};
+use crate::features::exposure::processor::{
+    NormalizationMetrics, NormalizationSettings, normalize_negative,
+};
+use crate::features::finish::processor::{
+    FinishContext, RebateMetrics, process as finish_process, rebate_tone,
+};
 use crate::features::geometry::processor::{
     GeometryContext, crop_image, process as geometry_process,
 };
 use crate::features::lab::logic::apply_clahe;
 use crate::features::lab::processor::{LabContext, process as lab_process};
-use crate::features::process::fade::{MeasuredWhite, fade_white_target, render_white_space, with_fade_white};
+use crate::features::process::fade::{
+    MeasuredWhite, fade_white_target, render_white_space, with_fade_white,
+};
 use crate::features::process::hue::apply_hue_trim;
 use crate::features::process::path::{RenderPath, is_mono, render_path};
 use crate::features::toning::processor::process as toning_process;
@@ -253,7 +259,12 @@ impl DarkroomEngine {
                 &settings.exposure.paper_profile,
                 Some(settings.process.process_mode),
             );
-            current = alt_process(&current, &settings.altproc, settings.process.process_mode, paper);
+            current = alt_process(
+                &current,
+                &settings.altproc,
+                settings.process.process_mode,
+                paper,
+            );
             current = toning_process(
                 &current,
                 &settings.toning,
@@ -262,9 +273,12 @@ impl DarkroomEngine {
             );
         }
         if !context.crop_preview_full {
-            current = crop_image(&current, context.active_roi.map(|(y1, y2, x1, x2)| {
-                (y1 as i64, y2 as i64, x1 as i64, x2 as i64)
-            }));
+            current = crop_image(
+                &current,
+                context
+                    .active_roi
+                    .map(|(y1, y2, x1, x2)| (y1 as i64, y2 as i64, x1 as i64, x2 as i64)),
+            );
         }
         if !flat {
             let paper = crate::services::export::print::effective_paper_linear(
@@ -293,7 +307,9 @@ impl DarkroomEngine {
             let encoded = crate::features::exposure::analysis::working_oetf_encode(&current.pixels);
             current = ImageBuffer::from_rgb(current.width, current.height, encoded);
         }
-        context.metrics.insert("content_rect".to_string(), Value::Null);
+        context
+            .metrics
+            .insert("content_rect".to_string(), Value::Null);
         current
     }
 
@@ -307,7 +323,6 @@ impl DarkroomEngine {
             "slide_bw": copy.process.slide_bw,
         }))
     }
-
 
     fn store_plane_metrics(
         &mut self,
@@ -323,14 +338,16 @@ impl DarkroomEngine {
             .get("pre_trim_bounds")
             .and_then(|value| serde_json::from_value(value.clone()).ok())
             .or(Some(bounds));
-        let geometry = PlaneGeometry::from_config(&settings.geometry, settings.geometry.distortion_k1);
+        let geometry =
+            PlaneGeometry::from_config(&settings.geometry, settings.geometry.distortion_k1);
         let roi = normalized_roi(
-            context.active_roi.map(|(y1, y2, x1, x2)| {
-                (y1 as i64, y2 as i64, x1 as i64, x2 as i64)
-            }),
+            context
+                .active_roi
+                .map(|(y1, y2, x1, x2)| (y1 as i64, y2 as i64, x1 as i64, x2 as i64)),
             (image.height, image.width),
         );
-        let unmix = effective_crosstalk_matrix(&settings.process, Some(settings.process.process_mode));
+        let unmix =
+            effective_crosstalk_matrix(&settings.process, Some(settings.process.process_mode));
         let weights = plane_weights(&settings.process, &settings.exposure);
         let key = format!("{roi:?}|{geometry:?}|{weights:?}");
         if settings.exposure.contrast_mask_strength > 0.0
@@ -339,21 +356,10 @@ impl DarkroomEngine {
         {
             if let Some(mask_bounds) = mask_bounds {
                 if self.planes.mask.as_ref().map(|cached| &cached.0) != Some(&key) {
-                    let (plane, centre) = contrast_mask_plane(
-                        image,
-                        mask_bounds,
-                        unmix,
-                        geometry,
-                        roi,
-                        weights,
-                    );
-                    self.planes.mask = Some((
-                        key.clone(),
-                        plane,
-                        image.height,
-                        image.width,
-                        centre,
-                    ));
+                    let (plane, centre) =
+                        contrast_mask_plane(image, mask_bounds, unmix, geometry, roi, weights);
+                    self.planes.mask =
+                        Some((key.clone(), plane, image.height, image.width, centre));
                 }
             }
         }
@@ -376,13 +382,34 @@ fn render_scale_factor(height: usize, width: usize) -> f64 {
 
 fn metrics_to_map(metrics: &NormalizationMetrics) -> BTreeMap<String, Value> {
     BTreeMap::from([
-        ("norm_density_range".to_string(), serde_json::json!(metrics.norm_density_range)),
-        ("metered_anchor".to_string(), serde_json::json!(metrics.metered_anchor)),
-        ("textural_range".to_string(), serde_json::json!(metrics.textural_range)),
-        ("shadow_point".to_string(), serde_json::json!(metrics.shadow_point)),
-        ("highlight_point".to_string(), serde_json::json!(metrics.highlight_point)),
-        ("final_bounds".to_string(), serde_json::to_value(metrics.final_bounds).unwrap_or(Value::Null)),
-        ("pre_trim_bounds".to_string(), serde_json::to_value(metrics.pre_trim_bounds).unwrap_or(Value::Null)),
+        (
+            "norm_density_range".to_string(),
+            serde_json::json!(metrics.norm_density_range),
+        ),
+        (
+            "metered_anchor".to_string(),
+            serde_json::json!(metrics.metered_anchor),
+        ),
+        (
+            "textural_range".to_string(),
+            serde_json::json!(metrics.textural_range),
+        ),
+        (
+            "shadow_point".to_string(),
+            serde_json::json!(metrics.shadow_point),
+        ),
+        (
+            "highlight_point".to_string(),
+            serde_json::json!(metrics.highlight_point),
+        ),
+        (
+            "final_bounds".to_string(),
+            serde_json::to_value(metrics.final_bounds).unwrap_or(Value::Null),
+        ),
+        (
+            "pre_trim_bounds".to_string(),
+            serde_json::to_value(metrics.pre_trim_bounds).unwrap_or(Value::Null),
+        ),
     ])
 }
 
@@ -417,7 +444,12 @@ fn run_base(
     }
     let geometry = geometry_process(image, &settings.geometry, geometry_context);
     context.active_roi = geometry.active_roi.map(|(y1, y2, x1, x2)| {
-        (y1.max(0) as usize, y2.max(0) as usize, x1.max(0) as usize, x2.max(0) as usize)
+        (
+            y1.max(0) as usize,
+            y2.max(0) as usize,
+            x1.max(0) as usize,
+            x2.max(0) as usize,
+        )
     });
     context.metrics.insert(
         "geometry_params".to_string(),
@@ -447,7 +479,12 @@ fn run_base(
                 config: &settings.process,
                 mode: settings.process.process_mode,
                 active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
-                    (y1.max(0) as usize, y2.max(0) as usize, x1.max(0) as usize, x2.max(0) as usize)
+                    (
+                        y1.max(0) as usize,
+                        y2.max(0) as usize,
+                        x1.max(0) as usize,
+                        x2.max(0) as usize,
+                    )
                 }),
                 base_log: context
                     .metrics
@@ -463,7 +500,12 @@ fn run_base(
             settings.process.process_mode,
             TransferBaseSettings {
                 active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
-                    (y1.max(0) as usize, y2.max(0) as usize, x1.max(0) as usize, x2.max(0) as usize)
+                    (
+                        y1.max(0) as usize,
+                        y2.max(0) as usize,
+                        x1.max(0) as usize,
+                        x2.max(0) as usize,
+                    )
                 }),
                 cast_strength: slide_exposure(&settings.process, &settings.exposure)
                     .cast_removal_strength,
@@ -489,14 +531,15 @@ fn run_base(
         }
     };
     StageOutcome {
-        image: ImageBuffer::from_rgb(
-            geometry.image.width,
-            geometry.image.height,
-            outcome.image,
-        ),
+        image: ImageBuffer::from_rgb(geometry.image.width, geometry.image.height, outcome.image),
         metrics: metrics_to_map(&outcome.metrics),
         active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
-            (y1.max(0) as usize, y2.max(0) as usize, x1.max(0) as usize, x2.max(0) as usize)
+            (
+                y1.max(0) as usize,
+                y2.max(0) as usize,
+                x1.max(0) as usize,
+                x2.max(0) as usize,
+            )
         }),
     }
 }
@@ -570,7 +613,6 @@ fn run_exposure(
         active_roi: None,
     }
 }
-
 
 fn run_stage(
     cache: &mut PipelineCache,

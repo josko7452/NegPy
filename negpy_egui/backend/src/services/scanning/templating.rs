@@ -120,6 +120,9 @@ mod tests {
 
     #[test]
     fn an_invalid_template_falls_back_to_the_date_and_sequence() {
-        assert_eq!(render_scan_filename("{{", "2026-01-02", 3), "2026-01-02_003");
+        assert_eq!(
+            render_scan_filename("{{", "2026-01-02", 3),
+            "2026-01-02_003"
+        );
     }
 }

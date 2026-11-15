@@ -3,7 +3,7 @@
 
 use negpy_backend::features::exposure::metering::effective_crosstalk_matrix;
 use negpy_backend::features::exposure::normalization::{
-    LogNegativeBounds, PlaneGeometry, contrast_mask_plane, diffusion_plane, diffusion_grid,
+    LogNegativeBounds, PlaneGeometry, contrast_mask_plane, diffusion_grid, diffusion_plane,
     expand_mask_plane, normalized_roi,
 };
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -45,14 +45,8 @@ fn flat_rgb(width: usize, height: usize, value: f32) -> ImageBuffer {
 #[test]
 fn the_plane_is_zero_mean() {
     let image = negative(360, 240);
-    let (plane, _) = contrast_mask_plane(
-        &image,
-        BOUNDS,
-        None,
-        PlaneGeometry::default(),
-        None,
-        None,
-    );
+    let (plane, _) =
+        contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), None, None);
     assert!(mean(&plane).abs() < 1e-5);
 }
 
@@ -84,25 +78,18 @@ fn the_surround_outside_the_crop_stays_out_of_the_mask() {
         }
     }
     let roi = normalized_roi(
-        Some((border as i64, (height - border) as i64, border as i64, (width - border) as i64)),
+        Some((
+            border as i64,
+            (height - border) as i64,
+            border as i64,
+            (width - border) as i64,
+        )),
         (height, width),
     );
-    let (cropped, _) = contrast_mask_plane(
-        &image,
-        BOUNDS,
-        None,
-        PlaneGeometry::default(),
-        roi,
-        None,
-    );
-    let (whole, _) = contrast_mask_plane(
-        &image,
-        BOUNDS,
-        None,
-        PlaneGeometry::default(),
-        None,
-        None,
-    );
+    let (cropped, _) =
+        contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), roi, None);
+    let (whole, _) =
+        contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), None, None);
     assert!(std_dev(&cropped) < 0.002);
     assert!(std_dev(&whole) > 10.0 * std_dev(&cropped) + 0.01);
 }

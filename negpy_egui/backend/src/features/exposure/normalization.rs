@@ -493,8 +493,13 @@ pub fn contrast_mask_plane(
     if let Some(weights) = bw_weights {
         val = collapse_grid(&val, weights);
     }
-    contrast_mask_tail(&val, grid.height, grid.width, mask_sigma(grid.height, grid.width))
-        .unwrap_or_else(|| (vec![0.0; grid.width * grid.height], 0.5))
+    contrast_mask_tail(
+        &val,
+        grid.height,
+        grid.width,
+        mask_sigma(grid.height, grid.width),
+    )
+    .unwrap_or_else(|| (vec![0.0; grid.width * grid.height], 0.5))
 }
 
 fn mask_sigma(height: usize, width: usize) -> f64 {
@@ -566,7 +571,10 @@ pub fn expand_mask_plane(
     let (height, width) = out_shape;
     let (y1, y2, x1, x2) = roi.unwrap_or((0, height as i64, 0, width as i64));
     let (y1, x1) = (y1.max(0) as usize, x1.max(0) as usize);
-    let (y2, x2) = (y2.min(height as i64).max(0) as usize, x2.min(width as i64).max(0) as usize);
+    let (y2, x2) = (
+        y2.min(height as i64).max(0) as usize,
+        x2.min(width as i64).max(0) as usize,
+    );
     if y2 <= y1 || x2 <= x1 {
         return None;
     }

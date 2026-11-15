@@ -30,7 +30,8 @@ fn to_uint16(samples: &[u8]) -> Vec<u8> {
 fn to_grey(rgb: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(rgb.len() / 3 * 2);
     for pixel in rgb.as_chunks::<3>().0 {
-        let mean = ((pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32) as f64 / 3.0).round() as u16;
+        let mean =
+            ((pixel[0] as u32 + pixel[1] as u32 + pixel[2] as u32) as f64 / 3.0).round() as u16;
         out.extend_from_slice(&mean.to_ne_bytes());
     }
     out
@@ -49,7 +50,10 @@ fn ir_path(path: &Path) -> PathBuf {
 }
 
 fn valid_path(path: &Path) -> PathBuf {
-    PathBuf::from(format!("{}_IR_VALID.tif", path.with_extension("").display()))
+    PathBuf::from(format!(
+        "{}_IR_VALID.tif",
+        path.with_extension("").display()
+    ))
 }
 
 fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
@@ -116,7 +120,10 @@ pub fn write_tiff_16bit(
         write_atomic(&ir_path(&path), &bytes).map_err(|error| error.to_string())?;
     }
     if let Some(mask) = &result.ir_valid_mask {
-        let data: Vec<u8> = mask.iter().map(|value| u8::from(*value != 0) * 255).collect();
+        let data: Vec<u8> = mask
+            .iter()
+            .map(|value| u8::from(*value != 0) * 255)
+            .collect();
         let bytes = encode_tiff(
             &data,
             width,
@@ -138,7 +145,9 @@ mod tests {
     use super::*;
 
     fn result(width: usize, height: usize) -> ScanResult {
-        let rgb = (0..width * height * 3).map(|value| (value % 255) as u8).collect();
+        let rgb = (0..width * height * 3)
+            .map(|value| (value % 255) as u8)
+            .collect();
         ScanResult {
             rgb,
             dpi: 300,
@@ -159,14 +168,26 @@ mod tests {
 
     #[test]
     fn a_scan_gains_its_tiff_extension() {
-        assert_eq!(with_extension(Path::new("frame.psd")), PathBuf::from("frame.tif"));
-        assert_eq!(with_extension(Path::new("frame.TIFF")), PathBuf::from("frame.TIFF"));
+        assert_eq!(
+            with_extension(Path::new("frame.psd")),
+            PathBuf::from("frame.tif")
+        );
+        assert_eq!(
+            with_extension(Path::new("frame.TIFF")),
+            PathBuf::from("frame.TIFF")
+        );
     }
 
     #[test]
     fn the_ir_sidecars_sit_beside_the_scan() {
-        assert_eq!(ir_path(Path::new("/scans/frame.tif")), PathBuf::from("/scans/frame_IR.tif"));
-        assert_eq!(valid_path(Path::new("/scans/frame.tif")), PathBuf::from("/scans/frame_IR_VALID.tif"));
+        assert_eq!(
+            ir_path(Path::new("/scans/frame.tif")),
+            PathBuf::from("/scans/frame_IR.tif")
+        );
+        assert_eq!(
+            valid_path(Path::new("/scans/frame.tif")),
+            PathBuf::from("/scans/frame_IR_VALID.tif")
+        );
     }
 
     #[test]
