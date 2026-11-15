@@ -16,6 +16,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - Scan filename templates and the 16-bit TIFF writer with IR sidecars.
 - Thumbnail cache keys and the positive preview for the filmstrip.
 - Headless import: decode, orient, flat-field, unmix, detect the film, read the base.
+- Search query parser and matcher; asset facts from file identity and saved metadata.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.

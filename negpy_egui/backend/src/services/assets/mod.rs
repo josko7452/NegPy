@@ -7,6 +7,7 @@ pub mod library;
 pub mod migrations;
 pub mod presets;
 pub mod rolls;
+pub mod search;
 pub mod sidecar;
 pub mod thumbnail_fingerprint;
 pub mod thumbnails;
