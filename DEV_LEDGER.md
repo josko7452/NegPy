@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 02:20 | **Last Commit:** `pending rehome`
+**Last Updated:** 2026-11-16 02:35 | **Last Commit:** `pending capture helpers`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -17,7 +17,7 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - `df40538f` thumbnail keys and the positive preview.
 - `541f5b1d` headless import: decode, orient, flat-field, unmix, detect, base read.
 - `2879c2b8` search query parser, matcher and asset facts.
-- `pending` rehome service and roll path rewrite.
+- `pending` capture shutter, clipping and focus helpers.
 - `f5026088` format; earlier D7-D12 partials in git history.
 
 ## Audit (After This Session)
