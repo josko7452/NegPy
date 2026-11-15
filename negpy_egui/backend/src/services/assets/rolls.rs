@@ -342,6 +342,31 @@ pub fn create_virtual_roll(
     roll_id
 }
 
+/// Pass every folder and member path of every roll through `move`.
+pub fn rehome_paths(repo: &mut StorageRepository, move_path: impl Fn(&str) -> String) {
+    let mut store = read(repo);
+    for entry in store.values_mut() {
+        let Some(object) = entry.as_object_mut() else {
+            continue;
+        };
+        if let Some(folder) = object.get("folder_path").and_then(Value::as_str) {
+            let moved = move_path(folder);
+            object.insert("folder_path".into(), Value::String(moved));
+        }
+        for key in ["member_paths", "excluded_paths"] {
+            let Some(paths) = object.get(key).and_then(Value::as_array) else {
+                continue;
+            };
+            let moved: Vec<Value> = paths
+                .iter()
+                .map(|path| Value::String(move_path(path.as_str().unwrap_or_default())))
+                .collect();
+            object.insert(key.into(), Value::Array(moved));
+        }
+    }
+    write(repo, store);
+}
+
 /// Add paths to a roll in one write.
 ///
 /// A virtual roll gains new members. A folder roll holds only its own folder's files, so

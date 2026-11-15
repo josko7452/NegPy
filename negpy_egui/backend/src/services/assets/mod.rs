@@ -10,6 +10,7 @@ pub mod migrations;
 pub mod naming;
 pub mod presets;
 pub mod profiles;
+pub mod rehome;
 pub mod rolls;
 pub mod search;
 pub mod sidecar;
