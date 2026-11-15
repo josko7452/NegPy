@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
 
 ## Completed (This Session)
+- Preview buffer LRU with entry, byte and full-res slot budgets.
 - Source token and MD5 config hash; default hash matches Python.
 - Flat-master exposure kernel on the print and slide paths.
 - `20079eb6` D11: PNG/JPEG/TIFF encoders; PNG and JPEG bytes match Python.
@@ -38,7 +39,7 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 
 ## Next Steps (Ordered)
 1. [ ] D10: build the cached engine over the stage checkpoints.
-2. [ ] D10: port `services.maps` and `prefetch_policy`/`preview_cache`.
+2. [ ] D10: port `prefetch_policy` and `services.maps`.
 3. [ ] D11: contact sheet, templating and linear output.
 4. [ ] D12: thumbnails and the remaining asset services.
 
