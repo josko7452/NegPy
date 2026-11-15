@@ -11,6 +11,7 @@ User override: 10 commits this session; targeted tests per commit; workspace tes
 - Contrast Mask and Diffusion planes; analysis-grid geometry replay; mask expansion.
 - Cached stage engine over base, exposure, CLAHE and Lab checkpoints.
 - Half-frame slice bounds, hash suffix, point remap and diptych join.
+- Decode-side flat field, embedded warp and gain slicing.
 - Linear Output source classification, gamma, WB, expansion and 16-bit TIFF core.
 - Export filename templates and metadata date helpers.
 - Contact-sheet roll ordering, format inference and label text.
