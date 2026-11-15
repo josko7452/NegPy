@@ -45,6 +45,12 @@ fn the_shipped_edit_matches_the_dataclass_defaults() {
     assert_eq!(shipped.local, bare.local);
     assert_eq!(shipped.altproc, bare.altproc);
     assert_eq!(shipped.metadata, bare.metadata);
+    assert_eq!(
+        shipped.export.user_dir,
+        negpy_backend::kernel::system::paths::default_user_dir()
+            .display()
+            .to_string()
+    );
     assert_eq!(shipped.export.export_path, "/tmp/export");
 }
 

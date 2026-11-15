@@ -85,6 +85,7 @@ pub fn default_workspace_config(export_path: impl Into<String>) -> WorkspaceConf
         },
         ..WorkspaceConfig::default()
     };
+    config.export.user_dir = default_user_dir().display().to_string();
     config.export.export_path = export_path.into();
     config
 }
