@@ -1,52 +1,54 @@
 # Development Ledger
-**Last Updated:** 2026-11-13 17:05 | **Last Commit:** `ff5b309c backend: add the analysis scope readouts`
+**Last Updated:** 2026-11-15 19:58 | **Last Commit:** `20079eb6 export: add the container encoders`
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`, bottom-up.
+Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 User override: 10 commits this session; targeted tests per commit; workspace test after commit 10.
-Workspace test: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast` passed after commit 10.
-**Audit rule:** a merged Rust file is not parity proof; the gaps below remain.
-
-## Audit (After Commit 10)
-- Public Python callables: 2207; Rust `pub fn`: 1132; exact-name gaps: 1643.
-- Most exact-name gaps are private helpers inlined in Rust. Real gaps are listed below.
-- D9: density grids, Positive cast window, `apply_lens` and stitch IR blending landed; render wiring remains.
-- D9: Panasonic/Sony fill-chain pixel parity is still unpinned.
-- D8: batch Auto Crop evidence and resolver landed; `rebate_tone` and the composite wiring remain.
-- D7: fade estimate and scope readouts landed; the proof-grid helpers remain.
-- D12: gear-preset conversion exists; startup wiring and asset/session glue remain.
-- D10-D11, D13/E1-E8: engine wiring, export/scanning, desktop glue and egui UI remain.
 
 ## Completed (This Session)
-- `ff5b309c` D7: waveform color and vectorscope readouts.
-- `e36113d5` D7: fade estimate orchestration.
-- `b4f5924e` D8: per-frame crop evidence.
-- `dc2f7db5` D8: roll crop resolver.
-- `daabd314` D8: roll crop templates.
-- `91dc1038` D8: film border and rebate helpers.
-- `b1336f92` D9: stitch IR uses lit coverage.
-- `35b89497` D9: lens chain uses the Python entry point and cubic remap.
-- `93755351` D9: Positive cast window and retry.
-- `1cc5c80a` D9: slide density grids.
-- `578fd82a` D9: slide density stages and WB/Kelvin helpers.
-- `4b33cb3a` D9: stitch registration and blending.
+- `20079eb6` D11: PNG/JPEG/TIFF encoders; PNG and JPEG bytes match Python.
+- `c01207eb` D12: thumbnail fingerprint, hashes match Python byte for byte.
+- `e6256cf1` D10: fade Estimate orchestration.
+- `b07288ce` D10: exposure stage routes by render path (slide base + transfer).
+- `fe17f59e` D10: slide base stage; crossover tag matches Python.
+- `4edb0491` D11: paper layout, borders and toned paper white.
+- `c059f9e6` D10: alt process runs ahead of toning in the tail.
+- `1e7e4f44` D9: lith, cyanotype and Sabattier stages.
+- `57ba0f19` D8: rebate tone ramp.
+- `918be03c` D7: strip/ring/paper/proof-grid helpers.
+
+## Audit (After Commit 10)
+- 152 Rust modules, 918 `pub fn`. Public Python callables outnumber these because many
+  private helpers are inlined; the gaps below are the real missing behavior.
+- **Flat master** (`apply_flat_curve`, `_process_flat`) is not ported. The engine's flat
+  intent exits before the flat curve on both paths.
+- **Kernels without a Rust wrapper:** `kernel.caching.{logic,manager}`, `kernel.image.logic`,
+  `services.rendering.{source_identity,prefetch_policy,preview_cache,base_read,lens}`,
+  `services.maps`. These gate D10's stage caching and source identity.
+- **D10:** no render engine assembling base/exposure/tail with stage caching, no GPU engine,
+  no contrast-mask or diffusion planes.
+- **D11:** contact-sheet layout/roll, templating, linear output, frame merge, film-edge
+  barcode/paint/layouts, scanner writers.
+- **D12:** thumbnails, embeddings, semantic model, search, naming, gear, half-frame, triplets,
+  frame merge assets, and the remaining storage migrations.
+- **D13/UI:** session glue, controller, and every egui view (out of scope this session).
 
 ## Next Steps (Ordered)
-1. [ ] D8: port `rebate_tone` and wire Auto Crop into the composite path.
-2. [ ] D10: wire the density grids and fade estimate into the render engine.
-3. [ ] D7: port the proof-grid helpers from `analysis.py`.
-4. [ ] D11: port export and scanning services.
-5. [ ] D12: port thumbnail and session glue.
+1. [ ] D10: port `apply_flat_curve` and route the flat intent through it on both paths.
+2. [ ] D10: port `kernel.caching` and `services.rendering.source_identity`; build the cached engine.
+3. [ ] D10: port `services.maps` and `prefetch_policy`/`preview_cache`.
+4. [ ] D11: contact sheet, templating and linear output.
+5. [ ] D12: thumbnails and the remaining asset services.
 
 ## Constraints / Gotchas
-- Workspace test after commit 10: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast` passed.
-- Skew synthetic round-trip test blocked: debug and release exceed 60s on a small strip; only abstain cases are pinned.
+- Workspace test after commit 10: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast`
+  passed (101 test binaries, no failures).
+- Never edit `negpy/`; `negpy_core` stays its own workspace. `negpy_egui` gained direct
+  `crc32fast` and `flate2` deps this session.
+- Fingerprint and export bytes are pinned to Python. A change that moves them breaks the
+  cache and export parity.
 - Stitch composite and IR blending are pinned on translation fixtures only.
-- Never edit `negpy/`; `negpy_core` stays its own workspace.
-- Subject <=50 chars, body wrapped at 72, no trailing period; split on "and".
-- Anti-loop: 10 failed fixes => STOP and ask for human guidance.
-- D2 tokens use canonical JSON, not Python-interchangeable.
+- Skew synthetic round-trip test blocked: debug and release exceed 60s on a small strip.
 - D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
-- D6: JXL fixtures use `imagecodecs`; 16-bit stays `source_u16`.
 - Clippy `-D warnings` still fails on existing storage/rolls code.
