@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 02:50 | **Last Commit:** `pending printing notes`
+**Last Updated:** 2026-11-16 03:25 | **Last Commit:** `4d6084f1 plan: record the backend gap audit`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -21,13 +21,17 @@ User override: 10 commits this session replaces the AGENTS 5-commit stop; target
 - `f5026088` format; earlier D7-D12 partials in git history.
 
 ## Audit (After This Session)
-- 181 Rust modules, 1,069 `pub fn`. The D10 engine now assembles base, planes, exposure and tail
-  with checkpoints; no GPU engine or `preview_manager` exists.
-- **D11:** frame merge lacks the TIFF write and verify; contact-sheet painting and
-  the Linear Output per-format decoders remain.
-- **D12:** embeddings, semantic model, gear match, rehome, naming, triplets, the
-  remaining migrations and half-frame detection remain.
+- 193 Rust modules, 1,126 `pub fn`. Closed: frame-merge write/verify, TIFF Linear Output,
+  capture modes, triplets, gear match, naming, crosstalk/sensor profiles, rehome,
+  capture shutter/live helpers, printer's notes.
+- **D11:** contact-sheet painting, the remaining Linear Output format descriptors and
+  the capture service remain. Scanning service is still absent.
+- **D12:** embeddings, semantic model, clip tokenizer, capture calibration/meter,
+  preview manager and half-frame detection remain.
+- **D10:** GPU engine and `services.view.coordinate_mapping` remain.
 - **D13/UI:** session glue, controller and every egui view (out of scope).
+- Workspace test after 10 commits: `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast`
+  passed (no failures; pre-existing test warnings only). `cargo fmt --check` is clean.
 
 ## Next Steps (Ordered)
 1. [ ] D11: finish the remaining Linear Output decoders (RAW/Pakon/Noritsu/JXL descriptors).
