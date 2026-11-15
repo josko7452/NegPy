@@ -80,3 +80,25 @@ fn a_bw_frame_renders_neutral_output() {
         assert!((pixel[1] - pixel[2]).abs() < 1e-5);
     }
 }
+
+#[test]
+fn a_slide_routes_to_the_transfer_base_and_curve() {
+    use negpy_backend::domain::models::ProcessMode;
+    let frame = gradient(32, 24);
+    let mut config = WorkspaceConfig::default();
+    config.process.process_mode = ProcessMode::E6;
+    let result = render_exposure(&frame, &config, ExposureContext::default());
+    assert_eq!((result.image.width, result.image.height), (32, 24));
+    assert!(result.image.pixels.iter().all(|value| value.is_finite()));
+    // A slide's window is the fixed three-decade range, not the frame's own stretch.
+    assert!((result.metrics.density_range - 3.0).abs() < 0.01);
+}
+
+#[test]
+fn a_negative_routes_to_the_measured_stretch() {
+    let frame = gradient(32, 24);
+    let config = WorkspaceConfig::default();
+    let result = render_exposure(&frame, &config, ExposureContext::default());
+    assert!(result.metrics.density_range > 0.0);
+    assert!((result.metrics.density_range - 3.0).abs() > 0.01);
+}

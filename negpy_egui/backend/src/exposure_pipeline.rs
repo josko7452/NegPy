@@ -5,6 +5,7 @@
 
 use crate::domain::models::{ProcessConfig, WorkspaceConfig};
 use crate::features::altprocess::process as alt_process;
+use crate::features::exposure::auto_metrics::AutoSliderMetrics;
 use crate::features::exposure::metering::{self, Roi};
 use crate::features::exposure::papers::effective_paper_profile;
 use crate::features::exposure::print::{PrintRenderSettings, render_negative};
@@ -15,8 +16,21 @@ use crate::features::geometry::processor::{
 };
 use crate::features::lab::logic::apply_clahe;
 use crate::features::lab::processor::{LabContext, process as lab_process};
+use crate::features::process::fade::{fade_white_target, render_white_space};
+use crate::features::process::hue::apply_hue_trim;
+use crate::features::process::path::{RenderPath, render_path};
 use crate::features::toning::processor::process as toning_process;
+use crate::features::transparency::base::{TransferBaseSettings, process as transfer_base};
+use crate::features::transparency::logic::{slide_exposure, slide_mono_weights};
+use crate::features::transparency::processor::{TransferContext, process as transfer_process};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
+
+/// The camera matrices and white balance a capture carries.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CaptureContext<'a> {
+    pub cam_xyz: Option<[[f64; 3]; 3]>,
+    pub camera_wb: Option<&'a [f64]>,
+}
 
 /// One frame's pixels and size.
 #[derive(Clone, Debug, PartialEq)]
@@ -31,6 +45,14 @@ pub struct Frame {
 pub struct ExposureContext {
     pub active_roi: Option<Roi>,
     pub base_log: Option<[f64; 3]>,
+}
+
+impl ExposureContext {
+    /// The capture a source decode carried; absent in a synthetic render.
+    #[must_use]
+    pub fn capture(&self) -> CaptureContext<'static> {
+        CaptureContext::default()
+    }
 }
 
 /// The result of the exposure stages.
@@ -67,6 +89,9 @@ pub fn render_exposure(
     config: &WorkspaceConfig,
     context: ExposureContext,
 ) -> ExposureResult {
+    if render_path(&config.process) != RenderPath::Print {
+        return render_slide(frame, config, context);
+    }
     let normalized = normalize_negative(
         &frame.pixels,
         frame.width,
@@ -109,6 +134,67 @@ pub fn render_exposure(
             textural_range: metrics.textural_range,
             shadow_point: metrics.shadow_point,
             highlight_point: metrics.highlight_point,
+        },
+    }
+}
+
+/// The slide half of the render: the fixed-window base, then the transfer curve.
+#[must_use]
+pub fn render_slide(
+    frame: &Frame,
+    config: &WorkspaceConfig,
+    context: ExposureContext,
+) -> ExposureResult {
+    let image = ImageBuffer::from_rgb(frame.width, frame.height, frame.pixels.clone());
+    let base = transfer_base(
+        &image,
+        &config.process,
+        config.process.process_mode,
+        TransferBaseSettings {
+            active_roi: context.active_roi,
+            cast_strength: slide_exposure(&config.process, &config.exposure).cast_removal_strength,
+            ..TransferBaseSettings::default()
+        },
+    );
+    let metrics = AutoSliderMetrics {
+        metered_anchor: Some(base.metrics.metered_anchor),
+        textural_range: Some(base.metrics.textural_range),
+        norm_density_range: Some(base.metrics.norm_density_range),
+        shadow_point: Some(base.metrics.shadow_point),
+        highlight_point: Some(base.metrics.highlight_point),
+        bounds: Some(base.metrics.bounds),
+        neutral_axis: base.metrics.neutral_axis,
+    };
+    let white_space = render_white_space(
+        &config.process,
+        context.capture().cam_xyz,
+        context.capture().camera_wb,
+    );
+    let exposed = slide_exposure(&config.process, &config.exposure);
+    let output = transfer_process(
+        &base.image,
+        &exposed,
+        &config.process,
+        TransferContext {
+            metrics,
+            positive_source: config.process.positive_source,
+            white_target: fade_white_target(&config.process, &white_space),
+            mono_weights: slide_mono_weights(&config.process, &config.exposure),
+        },
+    );
+    let output = apply_hue_trim(&output, config.process.hue_trim);
+    ExposureResult {
+        image: Frame {
+            pixels: output.pixels,
+            width: output.width,
+            height: output.height,
+        },
+        metrics: ExposureMetrics {
+            anchor: base.metrics.metered_anchor,
+            density_range: base.metrics.norm_density_range,
+            textural_range: base.metrics.textural_range,
+            shadow_point: base.metrics.shadow_point,
+            highlight_point: base.metrics.highlight_point,
         },
     }
 }
