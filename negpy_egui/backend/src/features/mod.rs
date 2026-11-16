@@ -9,6 +9,7 @@ pub mod hdr;
 pub mod lab;
 pub mod local;
 pub mod metadata;
+pub mod pickbetter;
 pub mod process;
 pub mod retouch;
 pub mod rgbscan;

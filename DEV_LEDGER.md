@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `capture: store the scan recipes`
+**Last Updated:** 2026-11-16 | **Last Commit:** `pickbetter: propose the A/B exposure pairs`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -12,6 +12,7 @@ This session runs 10 commits, then the workspace test and a new gap audit.
 - `chart` Levenberg-Marquardt fit with the unit diagonal and ridge.
 - `capture` shutter labels, ladder spacing, display and start point.
 - `capture` scan presets and framing levels over the settings store.
+- `pickbetter` eleven controls, route, A/B pair and temperature.
 - `a82c3ae2` view: viewport/raw coordinate maps, off-frame homography.
 - `a6206a94` export: Pakon model descriptions, XMP provenance, TIFF datetime.
 - `4072373e` film-edge: DX and KEYKODE barcode bits.
