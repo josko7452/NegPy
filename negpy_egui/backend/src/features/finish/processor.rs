@@ -74,6 +74,8 @@ pub fn rebate_tone(
         neutral_axis: None,
         mode: settings.process.process_mode,
         base_black_hold: 0.0,
+        mask: None,
+        diffusion: None,
     };
     let printed = render_negative(&strip, 1, &print);
     let mut image = ImageBuffer::from_rgb(1, exposures.len(), printed);

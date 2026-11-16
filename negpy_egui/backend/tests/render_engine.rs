@@ -88,3 +88,42 @@ fn an_uncached_render_leaves_no_checkpoint() {
     engine.process(&image, &config, "source-a", &mut context);
     assert!(engine.cache.base.is_none());
 }
+
+fn textured_negative(width: usize, height: usize) -> ImageBuffer {
+    let mut pixels = Vec::with_capacity(width * height * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let key = (-3.2 * (y as f32 / height as f32)).exp();
+            let texture = 1.0 + 0.16 * (x as f32 / 3.0).sin() * (y as f32 / 2.5).sin();
+            let scene = (key * texture).max(1e-5);
+            let value = (0.03 + 0.85 * (1.0 - scene.powf(0.35))).clamp(1e-4, 1.0);
+            pixels.extend_from_slice(&[value, value, value]);
+        }
+    }
+    ImageBuffer::from_rgb(width, height, pixels)
+}
+
+#[test]
+fn the_contrast_mask_reaches_the_print() {
+    let image = textured_negative(120, 80);
+    let base = settings();
+    let mut masked = base.clone();
+    masked.exposure.contrast_mask_strength = 0.8;
+    let plain =
+        DarkroomEngine::new().process(&image, &base, "source-a", &mut PipelineContext::new());
+    let with_mask =
+        DarkroomEngine::new().process(&image, &masked, "source-a", &mut PipelineContext::new());
+    assert_ne!(plain.pixels, with_mask.pixels);
+}
+
+#[test]
+fn diffusion_reaches_the_print() {
+    let image = textured_negative(120, 80);
+    let mut diffused = settings();
+    diffused.exposure.diffusion = 0.7;
+    let plain =
+        DarkroomEngine::new().process(&image, &settings(), "source-a", &mut PipelineContext::new());
+    let with_diffusion =
+        DarkroomEngine::new().process(&image, &diffused, "source-a", &mut PipelineContext::new());
+    assert_ne!(plain.pixels, with_diffusion.pixels);
+}

@@ -52,6 +52,16 @@ pub const PAPER_MIDTONE_GAMMA: f64 = 0.05;
 pub const PAPER_GAMMA_WIDTH: f64 = 0.6;
 pub const SEPARATION_DAMPING_REF_SPREAD: f64 = 0.35;
 
+/// Contrast Mask's print-density codes, after the Frontier HyperTone.
+pub const MASK_MID_CODE: f64 = 412.0;
+pub const MASK_AIM_CODE: f64 = 450.0;
+pub const MASK_CODES_PER_DENSITY: f64 = 145.0;
+pub const MASK_CODE_MAX: f64 = 1023.0;
+pub const MASK_TABLE_CAP: f64 = 819.0;
+
+/// The most light a full Diffusion setting adds from the blurred copy.
+pub const DIFFUSION_MIX_MAX: f64 = 0.25;
+
 /// Linear level the scan-exposure warning counts as sensor white.
 pub const SCAN_CLIP_LEVEL: f32 = 0.99;
 /// Grid side the block-median prefilter targets.

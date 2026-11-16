@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `bee3dd9c` backend: run CLIP towers over tract-onnx
+**Last Updated:** 2026-11-16 | **Last Commit:** `9439885e` backend: expose the crosstalk and sensor library API
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session runs 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
+- `9439885e` backend: expose the crosstalk and sensor library API.
 - `bee3dd9c` backend: run CLIP towers over tract-onnx.
 - `861d6b02` backend: detect the system monitor ICC profile.
 - `3ffd3dc5` kernel: add the shared image conversion helpers.

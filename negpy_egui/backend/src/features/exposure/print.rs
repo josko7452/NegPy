@@ -2,7 +2,7 @@
 //! `negpy_core::print_curve`. The pure curve stays in the core; this module builds the
 //! per-image values the Python wrapper derives from the paper profile and config.
 
-use negpy_core::print_curve::{Lut, PrintCurve, apply_print_curve, tetra};
+use negpy_core::print_curve::{Diffusion, Lut, Plane, PrintCurve, apply_print_curve, tetra};
 
 use crate::domain::models::{ExposureConfig, ProcessConfig, ProcessMode, RenderIntent};
 use crate::features::exposure::constants as c;
@@ -364,6 +364,26 @@ pub struct PrintRenderSettings<'a> {
     pub neutral_axis: Option<NeutralAxisRefs>,
     pub mode: crate::domain::models::ProcessMode,
     pub base_black_hold: f64,
+    /// The Contrast Mask plane, expanded to the render size.
+    pub mask: Option<MaskPlane<'a>>,
+    /// The Diffusion plane on its analysis grid, with the rect it covers.
+    pub diffusion: Option<DiffusionPlane<'a>>,
+}
+
+/// A Contrast Mask plane and the value it was centred on.
+#[derive(Clone, Copy, Debug)]
+pub struct MaskPlane<'a> {
+    pub data: &'a [f32],
+    pub centre: f32,
+}
+
+/// A Diffusion plane on its analysis grid and the rect it covers in output pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct DiffusionPlane<'a> {
+    pub data: &'a [f32],
+    pub height: usize,
+    pub width: usize,
+    pub rect: [f64; 4],
 }
 
 /// The per-channel curve and tone values of one print render.
@@ -604,6 +624,44 @@ pub fn render_negative(
     curve.shadow_grade = solved.shadow_grade;
     curve.highlight_grade = solved.highlight_grade;
     curve.dye_mix = if is_bw { None } else { curve.dye_mix };
+    let mut ev_map = Vec::new();
+    if let Some(mask) = settings.mask {
+        let offsets = settings_out.cmy_offsets.map(f64::from);
+        if let Some(coeffs) = contrast_mask_coeffs(
+            exposure.contrast_mask_strength,
+            f64::from(mask.centre),
+            solved.slopes,
+            solved.pivots,
+            offsets,
+            settings.density_range.unwrap_or(0.0),
+        ) {
+            ev_map = vec![0.0; image.len() / 3];
+            negpy_core::analysis::contrast_mask_stops(
+                mask.data,
+                &mut ev_map,
+                coeffs.map(|value| value as f32),
+            );
+        }
+    }
+    if !ev_map.is_empty() {
+        curve.ev = Some(Plane {
+            data: &ev_map,
+            w: width,
+        });
+        curve.ev_scale = local_ev_scale(settings.bounds);
+    }
+    if let Some(diffusion) = settings.diffusion {
+        if !diffusion.data.is_empty() {
+            curve.diffusion = Some(Diffusion {
+                plane: diffusion.data,
+                gh: diffusion.height,
+                gw: diffusion.width,
+                rect: diffusion.rect,
+                mix: diffusion_mix(exposure.diffusion),
+                range: curve::channel_density_ranges(settings.bounds),
+            });
+        }
+    }
     let mut out = vec![0.0; input.len()];
     apply_print_curve(&input, width, &curve, &mut out);
     if is_bw {
@@ -612,6 +670,57 @@ pub fn render_negative(
         out = lum.iter().flat_map(|value| [*value; 3]).collect();
     }
     out
+}
+
+/// The Contrast Mask's seven kernel coefficients, or `None` when the slider is off.
+#[must_use]
+pub fn contrast_mask_coeffs(
+    strength: f64,
+    centre: f64,
+    slopes: [f64; 3],
+    pivots: [f64; 3],
+    offsets: [f64; 3],
+    density_range: f64,
+) -> Option<[f64; 7]> {
+    let slope = slopes.iter().sum::<f64>() / 3.0;
+    if strength <= 0.0 || slope <= 0.0 || slopes[1] <= 0.0 || density_range <= 0.0 {
+        return None;
+    }
+    let c = c::MASK_CODES_PER_DENSITY;
+    let reference = c::REFERENCE_PRINT_DENSITY;
+    let shift = (0..3)
+        .map(|ch| slopes[ch] * (offsets[ch] - pivots[ch]))
+        .sum::<f64>()
+        / 3.0;
+    let stops_per_code = density_range / (c * slopes[1] * std::f64::consts::LOG10_2);
+    let gain = strength * stops_per_code / (4.0 * 256.0);
+    Some([
+        c * slope,
+        c::MASK_AIM_CODE + c * (slope * centre + shift - reference) - c::MASK_MID_CODE,
+        -c::MASK_MID_CODE,
+        c::MASK_CODE_MAX - c::MASK_MID_CODE,
+        gain,
+        gain,
+        c::MASK_TABLE_CAP / 4.0 * stops_per_code,
+    ])
+}
+
+/// One dodge or burn stop per channel in the print's normalized space.
+#[must_use]
+pub fn local_ev_scale(bounds: Option<LogNegativeBounds>) -> [f32; 3] {
+    let step = std::f64::consts::LOG10_2;
+    std::array::from_fn(|ch| {
+        let range = bounds.map_or(1.0, |bounds| {
+            (bounds.ceils[ch] - bounds.floors[ch]).abs().max(1e-6)
+        });
+        (step / range) as f32
+    })
+}
+
+/// The fraction of blurred light the paper sees at a Diffusion slider value.
+#[must_use]
+pub fn diffusion_mix(diffusion: f64) -> f64 {
+    c::DIFFUSION_MIX_MAX * diffusion.clamp(0.0, 1.0)
 }
 
 /// Fixed (gain, lift) for the flat log master.

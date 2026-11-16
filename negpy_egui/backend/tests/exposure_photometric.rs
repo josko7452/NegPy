@@ -29,6 +29,8 @@ fn render(
             neutral_axis: None,
             mode,
             base_black_hold: 0.0,
+            mask: None,
+            diffusion: None,
         },
     )
 }
@@ -70,6 +72,8 @@ fn the_solved_curve_has_three_channels() {
         neutral_axis: None,
         mode: ProcessMode::C41,
         base_black_hold: 0.0,
+        mask: None,
+        diffusion: None,
     });
     assert!(solved.slopes.iter().all(|value| *value >= 2.0));
     assert_eq!(solved.curvatures, [0.0; 3]);
@@ -99,6 +103,8 @@ fn a_cast_free_neutral_axis_does_not_curve() {
         }),
         mode: ProcessMode::C41,
         base_black_hold: 0.0,
+        mask: None,
+        diffusion: None,
     });
     for ch in 1..3 {
         assert!((solved.slopes[ch] - solved.slopes[1]).abs() < 1e-6);

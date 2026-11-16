@@ -122,6 +122,8 @@ pub fn render_exposure(
         neutral_axis: metrics.neutral_axis,
         mode: config.process.process_mode,
         base_black_hold: black_hold_taper(&config.exposure),
+        mask: None,
+        diffusion: None,
     };
     let pixels = apply_hue_trim(
         &ImageBuffer::from_rgb(

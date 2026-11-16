@@ -477,10 +477,15 @@ pub fn contrast_mask_plane(
     geometry: PlaneGeometry,
     roi_norm: Option<[f64; 4]>,
     bw_weights: Option<[f32; 3]>,
-) -> (Vec<f32>, f32) {
+) -> (Vec<f32>, usize, usize, f32) {
     let grid = analysis_plane_grid(image, geometry, roi_norm);
     if luminance_density_range(bounds) < 1e-6 {
-        return (vec![0.0; grid.width * grid.height], 0.5);
+        return (
+            vec![0.0; grid.width * grid.height],
+            grid.height,
+            grid.width,
+            0.5,
+        );
     }
     let (prefiltered, _, _) = prefilter_log_grid(&grid.pixels, grid.width, grid.height, None, 0.0);
     let mut val = vec![0.0; prefiltered.len()];
@@ -493,13 +498,14 @@ pub fn contrast_mask_plane(
     if let Some(weights) = bw_weights {
         val = collapse_grid(&val, weights);
     }
-    contrast_mask_tail(
+    let (plane, centre) = contrast_mask_tail(
         &val,
         grid.height,
         grid.width,
         mask_sigma(grid.height, grid.width),
     )
-    .unwrap_or_else(|| (vec![0.0; grid.width * grid.height], 0.5))
+    .unwrap_or_else(|| (vec![0.0; grid.width * grid.height], 0.5));
+    (plane, grid.height, grid.width, centre)
 }
 
 fn mask_sigma(height: usize, width: usize) -> f64 {

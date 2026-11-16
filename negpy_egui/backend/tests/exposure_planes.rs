@@ -45,7 +45,7 @@ fn flat_rgb(width: usize, height: usize, value: f32) -> ImageBuffer {
 #[test]
 fn the_plane_is_zero_mean() {
     let image = negative(360, 240);
-    let (plane, _) =
+    let (plane, _, _, _) =
         contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), None, None);
     assert!(mean(&plane).abs() < 1e-5);
 }
@@ -53,7 +53,7 @@ fn the_plane_is_zero_mean() {
 #[test]
 fn an_unmetered_frame_has_a_flat_plane() {
     let image = negative(120, 80);
-    let (plane, centre) = contrast_mask_plane(
+    let (plane, _, _, centre) = contrast_mask_plane(
         &image,
         LogNegativeBounds::new([0.0; 3], [0.0; 3]),
         None,
@@ -86,9 +86,9 @@ fn the_surround_outside_the_crop_stays_out_of_the_mask() {
         )),
         (height, width),
     );
-    let (cropped, _) =
+    let (cropped, _, _, _) =
         contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), roi, None);
-    let (whole, _) =
+    let (whole, _, _, _) =
         contrast_mask_plane(&image, BOUNDS, None, PlaneGeometry::default(), None, None);
     assert!(std_dev(&cropped) < 0.002);
     assert!(std_dev(&whole) > 10.0 * std_dev(&cropped) + 0.01);

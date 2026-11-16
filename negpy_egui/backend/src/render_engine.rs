@@ -15,11 +15,12 @@ use crate::features::exposure::bw_filter::plane_weights;
 use crate::features::exposure::metering::{Roi, effective_crosstalk_matrix};
 use crate::features::exposure::normalization::{
     LogNegativeBounds, PlaneGeometry, contrast_mask_plane, diffusion_grid, diffusion_plane,
-    normalized_roi,
+    expand_mask_plane, normalized_roi,
 };
 use crate::features::exposure::papers::effective_paper_profile;
 use crate::features::exposure::print::{
-    FlatRenderSettings, PrintRenderSettings, render_flat, render_negative,
+    DiffusionPlane, FlatRenderSettings, MaskPlane, PrintRenderSettings, render_flat,
+    render_negative,
 };
 use crate::features::exposure::processor::{
     NormalizationMetrics, NormalizationSettings, normalize_negative,
@@ -143,6 +144,16 @@ struct Planes {
     diffusion: Option<(String, Option<Vec<f32>>, usize, usize)>,
 }
 
+/// The derived planes an exposure pass reads on its own frame size.
+#[derive(Clone, Debug, Default)]
+struct ExposurePlanes {
+    mask: Option<Vec<f32>>,
+    mask_centre: f32,
+    diffusion: Option<Vec<f32>>,
+    diffusion_dims: (usize, usize),
+    diffusion_rect: [f64; 4],
+}
+
 /// The engine holds the stage checkpoints and the planes of the active source.
 #[derive(Debug, Default)]
 pub struct DarkroomEngine {
@@ -200,11 +211,17 @@ impl DarkroomEngine {
             context,
             |image, ctx| run_base(image, settings, source_hash, ctx, geometry_context),
         );
-        if let Some(base_image) = self.cache.base.as_ref().map(|entry| entry.data.clone()) {
-            self.store_plane_metrics(&base_image, settings, context);
-        }
+        self.store_plane_metrics(img, settings, context);
         let exposure_key = self.exposure_key(settings);
         let measured = settings.clone();
+        let frame_dims = self
+            .cache
+            .base
+            .as_ref()
+            .map_or((img.height, img.width), |entry| {
+                (entry.data.height, entry.data.width)
+            });
+        let planes = self.exposure_planes(settings, context, frame_dims);
         (current, _) = run_stage(
             &mut self.cache,
             "exposure",
@@ -212,7 +229,7 @@ impl DarkroomEngine {
             &exposure_key,
             pipeline_changed,
             context,
-            |image, ctx| run_exposure(image, &measured, ctx),
+            |image, ctx| run_exposure(image, &measured, &planes, ctx),
         );
         let flat = settings.exposure.render_intent == RenderIntent::Flat;
         if !flat {
@@ -340,11 +357,18 @@ impl DarkroomEngine {
             .or(Some(bounds));
         let geometry =
             PlaneGeometry::from_config(&settings.geometry, settings.geometry.distortion_k1);
+        let frame_dims = self
+            .cache
+            .base
+            .as_ref()
+            .map_or((image.height, image.width), |entry| {
+                (entry.data.height, entry.data.width)
+            });
         let roi = normalized_roi(
             context
                 .active_roi
                 .map(|(y1, y2, x1, x2)| (y1 as i64, y2 as i64, x1 as i64, x2 as i64)),
-            (image.height, image.width),
+            frame_dims,
         );
         let unmix =
             effective_crosstalk_matrix(&settings.process, Some(settings.process.process_mode));
@@ -356,10 +380,9 @@ impl DarkroomEngine {
         {
             if let Some(mask_bounds) = mask_bounds {
                 if self.planes.mask.as_ref().map(|cached| &cached.0) != Some(&key) {
-                    let (plane, centre) =
+                    let (plane, height, width, centre) =
                         contrast_mask_plane(image, mask_bounds, unmix, geometry, roi, weights);
-                    self.planes.mask =
-                        Some((key.clone(), plane, image.height, image.width, centre));
+                    self.planes.mask = Some((key.clone(), plane, height, width, centre));
                 }
             }
         }
@@ -373,6 +396,41 @@ impl DarkroomEngine {
                 self.planes.diffusion = Some((key, plane, grid.height, grid.width));
             }
         }
+    }
+
+    fn exposure_planes(
+        &self,
+        settings: &WorkspaceConfig,
+        context: &PipelineContext,
+        frame_dims: (usize, usize),
+    ) -> ExposurePlanes {
+        let mut out = ExposurePlanes::default();
+        if settings.exposure.render_intent == RenderIntent::Flat
+            || render_path(&settings.process) != RenderPath::Print
+        {
+            return out;
+        }
+        let (height, width) = frame_dims;
+        let (y1, y2, x1, x2) = context
+            .active_roi
+            .map_or((0, height, 0, width), |(y1, y2, x1, x2)| (y1, y2, x1, x2));
+        let roi = if (y1, x1, y2, x2) == (0, 0, height, width) {
+            None
+        } else {
+            Some((y1 as i64, y2 as i64, x1 as i64, x2 as i64))
+        };
+        if let Some((_, plane, height, width, centre)) = &self.planes.mask {
+            if let Some(expanded) = expand_mask_plane(plane, (*height, *width), frame_dims, roi) {
+                out.mask = Some(expanded);
+                out.mask_centre = *centre;
+            }
+        }
+        if let Some((_, Some(plane), height, width)) = &self.planes.diffusion {
+            out.diffusion = Some(plane.clone());
+            out.diffusion_dims = (*height, *width);
+            out.diffusion_rect = [x1 as f64, y1 as f64, (x2 - x1) as f64, (y2 - y1) as f64];
+        }
+        out
     }
 }
 
@@ -547,6 +605,7 @@ fn run_base(
 fn run_exposure(
     image: &ImageBuffer,
     settings: &WorkspaceConfig,
+    planes: &ExposurePlanes,
     context: &mut PipelineContext,
 ) -> StageOutcome {
     let metrics = auto_metrics_from(context);
@@ -572,6 +631,16 @@ fn run_exposure(
             } else {
                 0.0
             },
+            mask: planes.mask.as_deref().map(|data| MaskPlane {
+                data,
+                centre: planes.mask_centre,
+            }),
+            diffusion: planes.diffusion.as_deref().map(|data| DiffusionPlane {
+                data,
+                height: planes.diffusion_dims.0,
+                width: planes.diffusion_dims.1,
+                rect: planes.diffusion_rect,
+            }),
         };
         if settings.exposure.render_intent == RenderIntent::Flat {
             ImageBuffer::from_rgb(
@@ -645,6 +714,9 @@ fn run_stage(
         }
     }
     let outcome = run(image, context);
+    for (name, value) in &outcome.metrics {
+        context.metrics.insert(name.clone(), value.clone());
+    }
     let entry = CacheEntry {
         config_hash: key.to_string(),
         data: outcome.image.clone(),
