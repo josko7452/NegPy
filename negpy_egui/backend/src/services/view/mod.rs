@@ -1,3 +1,4 @@
-//! View-domain text: printer's notes and the dodge/burn record.
+//! View-domain text and the coordinate maps a canvas uses.
 
+pub mod coordinate_mapping;
 pub mod printing_notes;
