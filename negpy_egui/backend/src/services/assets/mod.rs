@@ -3,6 +3,7 @@
 pub mod capture_modes;
 pub mod clip_tokenizer;
 pub mod composites;
+pub mod embeddings;
 pub mod flatfield;
 pub mod gear_match;
 pub mod half_frame;
