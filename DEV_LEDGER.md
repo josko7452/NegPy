@@ -13,6 +13,7 @@ This session adds 10 backend commits, then runs the workspace test and a gap aud
 - `pending` metadata: JPEG EXIF and XMP segments.
 - `pending` metadata: PNG, WebP and JXL metadata rewrite.
 - `pending` film-edge: fixed face and measured text runs.
+- `pending` film-edge: strip rebate, marks and perforations.
 
 ## Verification (After Commit 10)
 - `cargo fmt --check` clean. Targeted tests passed per commit.

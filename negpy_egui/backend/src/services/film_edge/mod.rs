@@ -6,3 +6,4 @@ pub mod geometry;
 pub mod glyphs;
 pub mod layout;
 pub mod layouts;
+pub mod paint;
