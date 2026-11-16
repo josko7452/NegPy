@@ -9,6 +9,7 @@ pub mod ir_planes;
 pub mod jpeg_loader;
 pub mod jxl_boxes;
 pub mod jxl_loader;
+pub mod lens_metadata;
 pub mod logluv;
 pub mod memory;
 pub mod nef_loader;

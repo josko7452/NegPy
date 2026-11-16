@@ -25,6 +25,28 @@ pub struct IfdInfo {
     pub strip_byte_counts: Vec<u64>,
 }
 
+/// One raw TIFF directory entry, with its values in the file's byte order.
+#[derive(Clone, Debug, PartialEq)]
+pub struct TagValue {
+    pub kind: u16,
+    pub count: u64,
+    pub unsigned: Vec<u64>,
+    pub signed: Option<Vec<i64>>,
+    pub floats: Option<Vec<f64>>,
+    /// The bytes for an UNDEFINED/BYTE tag, where the reader interprets them itself.
+    pub bytes: Vec<u8>,
+}
+
+/// Every tag in one directory, plus its image geometry.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DirectoryTags {
+    pub width: u32,
+    pub height: u32,
+    pub samples_per_pixel: u16,
+    pub photometric: u16,
+    pub tags: std::collections::HashMap<u16, TagValue>,
+}
+
 impl IfdInfo {
     /// Pixel count, with the TIFF width and height.
     #[must_use]
@@ -140,13 +162,13 @@ impl<'a> Tiff<'a> {
     fn unsigned_values(&self, kind: u16, count: u64, raw: &[u8]) -> Option<Vec<u64>> {
         let count = usize::try_from(count).ok()?;
         let values = match kind {
-            1 | 7 => raw.iter().take(count).map(|v| u64::from(*v)).collect(),
-            3 => raw
+            1 | 6 | 7 => raw.iter().take(count).map(|v| u64::from(*v)).collect(),
+            3 | 8 => raw
                 .chunks_exact(2)
                 .take(count)
                 .map(|v| u64::from(self.endian.u16(v)))
                 .collect(),
-            4 | 13 => raw
+            4 | 9 | 13 => raw
                 .chunks_exact(4)
                 .take(count)
                 .map(|v| u64::from(self.endian.u32(v)))
@@ -159,6 +181,31 @@ impl<'a> Tiff<'a> {
             _ => return None,
         };
         Some(values)
+    }
+
+    fn signed_values(&self, kind: u16, count: u64, raw: &[u8]) -> Option<Vec<i64>> {
+        let count = usize::try_from(count).ok()?;
+        match kind {
+            6 => Some(
+                raw.iter()
+                    .take(count)
+                    .map(|value| i64::from(*value as i8))
+                    .collect(),
+            ),
+            8 => Some(
+                raw.chunks_exact(2)
+                    .take(count)
+                    .map(|value| i64::from(self.endian.u16(value) as i16))
+                    .collect(),
+            ),
+            9 => Some(
+                raw.chunks_exact(4)
+                    .take(count)
+                    .map(|value| i64::from(self.endian.u32(value) as i32))
+                    .collect(),
+            ),
+            _ => None,
+        }
     }
 
     fn entry_values(&self, entry: &[u8]) -> Option<(u16, Vec<u64>)> {
@@ -234,6 +281,113 @@ impl Directory {
     }
 }
 
+impl Tiff<'_> {
+    fn entry_tag(&self, entry: &[u8]) -> Option<(u16, TagValue)> {
+        let tag = self.endian.u16(entry);
+        let kind = self.endian.u16(&entry[2..]);
+        let count = if self.big {
+            self.endian.u64(&entry[4..])
+        } else {
+            u64::from(self.endian.u32(&entry[4..]))
+        };
+        let size = Self::type_size(kind)?;
+        let total = usize::try_from(count).ok()?.checked_mul(size)?;
+        let inline = self.inline_bytes();
+        let raw = if total <= inline {
+            inline_start(entry, self.big)
+        } else {
+            let start = if self.big {
+                usize::try_from(self.endian.u64(&entry[4 + 8..])).ok()?
+            } else {
+                usize::try_from(self.endian.u32(&entry[4 + 4..])).ok()?
+            };
+            self.data.get(start..start.checked_add(total)?)?
+        };
+        let unsigned = self.unsigned_values(kind, count, raw)?;
+        let signed = self.signed_values(kind, count, raw);
+        let floats = match kind {
+            5 | 10 => {
+                let values = raw.chunks_exact(8).take(usize::try_from(count).ok()?);
+                Some(
+                    values
+                        .map(|v| {
+                            let numerator = if kind == 5 {
+                                i64::from(self.endian.u32(v))
+                            } else {
+                                i64::from(self.endian.u32(v) as i32)
+                            };
+                            let denominator = if kind == 5 {
+                                i64::from(self.endian.u32(&v[4..]))
+                            } else {
+                                i64::from(self.endian.u32(&v[4..]) as i32)
+                            };
+                            numerator as f64 / denominator as f64
+                        })
+                        .collect(),
+                )
+            }
+            11 => Some(
+                raw.chunks_exact(4)
+                    .take(usize::try_from(count).ok()?)
+                    .map(|v| f64::from(f32::from_bits(self.endian.u32(v))))
+                    .collect(),
+            ),
+            12 => Some(
+                raw.chunks_exact(8)
+                    .take(usize::try_from(count).ok()?)
+                    .map(|v| f64::from_bits(self.endian.u64(v)))
+                    .collect(),
+            ),
+            _ => None,
+        };
+        Some((
+            tag,
+            TagValue {
+                kind,
+                count,
+                unsigned,
+                signed,
+                floats,
+                bytes: raw.to_vec(),
+            },
+        ))
+    }
+
+    fn directory_tags(&self, offset: u64) -> Option<DirectoryTags> {
+        let start = usize::try_from(offset).ok()?;
+        let count = self.count_at(start)?;
+        let mut tags = std::collections::HashMap::new();
+        for index in 0..usize::try_from(count).ok()? {
+            let at = start
+                .checked_add(if self.big { 8 } else { 2 })?
+                .checked_add(index.checked_mul(self.entry_size())?)?;
+            let entry = self.data.get(at..at.checked_add(self.entry_size())?)?;
+            if let Some((tag, value)) = self.entry_tag(entry) {
+                tags.insert(tag, value);
+            }
+        }
+        let width = tags.get(&256)?.unsigned.first().copied()?;
+        let height = tags.get(&257)?.unsigned.first().copied()?;
+        Some(DirectoryTags {
+            width: u32::try_from(width).ok()?,
+            height: u32::try_from(height).ok()?,
+            samples_per_pixel: u16::try_from(
+                tags.get(&277)
+                    .and_then(|tag| tag.unsigned.first().copied())
+                    .unwrap_or(1),
+            )
+            .ok()?,
+            photometric: u16::try_from(
+                tags.get(&262)
+                    .and_then(|tag| tag.unsigned.first().copied())
+                    .unwrap_or(0),
+            )
+            .ok()?,
+            tags,
+        })
+    }
+}
+
 fn info(directory: &Directory, offset: u64, is_subifd: bool) -> Option<IfdInfo> {
     Some(IfdInfo {
         offset,
@@ -291,4 +445,43 @@ pub fn read_ifds(path: &Path) -> Option<Vec<IfdInfo>> {
 #[must_use]
 pub fn first_ifd(path: &Path) -> Option<IfdInfo> {
     read_ifds(path)?.into_iter().find(|info| !info.is_subifd)
+}
+
+/// The largest RAW image plane's tags, for lens metadata without a pixel decode.
+#[must_use]
+pub fn read_raw_directory(path: &Path) -> Option<DirectoryTags> {
+    let data = std::fs::read(path).ok()?;
+    let tiff = Tiff::new(&data)?;
+    let mut seen = HashSet::new();
+    let mut queue = VecDeque::from([(tiff.first_ifd()?, false)]);
+    let mut best: Option<DirectoryTags> = None;
+    while let Some((offset, _is_subifd)) = queue.pop_front() {
+        if !seen.insert(offset) {
+            continue;
+        }
+        let Some(directory) = tiff.directory(offset) else {
+            continue;
+        };
+        if let Some(tags) = tiff.directory_tags(offset)
+            && matches!(tags.photometric, 32803 | 34892)
+            && matches!(tags.samples_per_pixel, 1 | 3)
+        {
+            let larger = best.as_ref().is_none_or(|current| {
+                u64::from(tags.width) * u64::from(tags.height)
+                    > u64::from(current.width) * u64::from(current.height)
+            });
+            if larger {
+                best = Some(tags);
+            }
+        }
+        if let Some(children) = directory.values(330) {
+            for child in children {
+                queue.push_back((*child, true));
+            }
+        }
+        if let Some(next) = directory.next {
+            queue.push_back((next, false));
+        }
+    }
+    best
 }
