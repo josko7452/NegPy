@@ -7,13 +7,25 @@
 use std::path::{Path, PathBuf};
 
 use crate::services::capture::blend::{CAPTURE_ORDER, CaptureError, Channel, verify_raw_size};
-use crate::services::capture::hardware::{Camera, CaptureResult, CaptureSettings, LightSource};
+use crate::services::capture::hardware::{
+    BulbCamera, BulbRelease, Camera, CaptureResult, CaptureSettings, LightSource, ShutterRelease,
+};
 
 pub type ProgressCb<'a> = &'a mut dyn FnMut(f64);
 pub type ChannelCb<'a> = &'a mut dyn FnMut(&str);
 
 /// The raw suffix the camera writes.
 pub const RAW_SUFFIX: &str = ".raw";
+
+/// Dark time inside the Bulb exposure before the first LED, so the shutter's lag after the
+/// press never shortens the first channel.
+pub const BULB_LEAD_S: f64 = 0.35;
+/// Dark time after the last LED, by cable only: the light's timer ends the pulse, so the
+/// host's latency must fit inside it.
+pub const BULB_TAIL_S: f64 = 0.2;
+/// The firmware counts the pulse in 10 ms units, so a 3.5 mm jack holds at most 2.55 s.
+pub const SHUTTER_PULSE_UNIT_S: f64 = 0.01;
+pub const MAX_SHUTTER_PULSE_S: f64 = 255.0 * SHUTTER_PULSE_UNIT_S;
 
 /// Promote a frame's three channel files as one recoverable operation.
 ///
@@ -322,6 +334,82 @@ impl<'a> CaptureService<'a> {
             _ => self.light.off(),
         }
     }
+
+    /// One Bulb exposure with red, green and blue lit in turn.
+    ///
+    /// `keep_bulb` leaves the camera in Bulb for the next frame of a strip. `seconds` is
+    /// the Trichrome shutter's true time; see `blend_plan`. The shutter opens and closes in
+    /// the dark, and a cancel between channels ends the light and discards the file.
+    #[allow(clippy::too_many_arguments)]
+    pub fn capture_blend(
+        &mut self,
+        bulb: &mut dyn BulbCamera,
+        settings: &CaptureSettings,
+        seconds: f64,
+        release: BulbRelease,
+        cancel: Option<&dyn Fn() -> bool>,
+        on_channel: Option<ChannelCb<'_>>,
+        end_light: Option<[u32; 4]>,
+        keep_bulb: bool,
+        cable_release: Option<&mut dyn ShutterRelease>,
+    ) -> Result<PathBuf, CaptureError> {
+        let cable = release == BulbRelease::Cable;
+        if cable && cable_release.is_none() {
+            return Err(CaptureError(
+                "this light has no shutter release output for a cable".to_string(),
+            ));
+        }
+        let mut pulse = cable_release;
+        let budget = cable.then(|| MAX_SHUTTER_PULSE_S - BULB_LEAD_S - BULB_TAIL_S);
+        let plan = crate::services::capture::blend::blend_plan(settings.levels, seconds, budget)?;
+        let light_s: f64 = plan.iter().map(|step| step.seconds).sum();
+        std::fs::create_dir_all(&settings.output_folder)
+            .map_err(|error| CaptureError(format!("cannot create the capture folder: {error}")))?;
+        let stem = settings.output_folder.join(settings.frame_name());
+        let mut on_channel = on_channel;
+        let result = crate::services::capture::blend::capture_validated_single(
+            &stem.with_extension("raw"),
+            |staged| {
+                let mut expose = || {
+                    self.light.off();
+                    if let Some(pulse) = pulse.as_deref_mut() {
+                        pulse.shutter_pulse(BULB_LEAD_S + light_s + BULB_TAIL_S);
+                    }
+                    (self.sleep)(BULB_LEAD_S);
+                    for step in &plan {
+                        if cancel.is_some_and(|cancel| cancel()) {
+                            break;
+                        }
+                        if let Some(callback) = on_channel.as_mut() {
+                            callback(step.channel.letter());
+                        }
+                        match step.channel.rgb(step.level) {
+                            Some([r, g, b]) => self.light.set_color_now(r, g, b, 0, 0),
+                            None => self.light.set_color_now(0, 0, 0, 0, step.level),
+                        }
+                        (self.sleep)(step.seconds);
+                    }
+                    self.light.off();
+                    if pulse.is_some() {
+                        (self.sleep)(BULB_TAIL_S);
+                    }
+                };
+                bulb.capture_bulb(
+                    staged,
+                    &mut expose,
+                    !cable,
+                    settings.iso.as_deref(),
+                    settings.aperture.as_deref(),
+                    keep_bulb,
+                )
+                .map_err(CaptureError)
+            },
+            settings.min_raw_bytes,
+            settings.max_raw_bytes,
+        );
+        self.release_light(result.is_ok(), end_light);
+        result
+    }
 }
 
 #[cfg(test)]
@@ -496,5 +584,293 @@ mod tests {
                 .unwrap();
         }
         assert_eq!(light.calls.last(), Some(&[10, 20, 30, 40, 0]));
+    }
+
+    struct SharedBulb {
+        log: std::sync::Arc<std::sync::Mutex<Vec<[u32; 5]>>>,
+        bulbs: std::sync::Arc<std::sync::Mutex<Vec<(bool, Option<String>, Option<String>)>>>,
+        bytes: u64,
+    }
+
+    impl Camera for SharedBulb {
+        fn capture(
+            &mut self,
+            _out_path: &Path,
+            _shutter: Option<&str>,
+            _iso: Option<&str>,
+            _aperture: Option<&str>,
+        ) -> Result<PathBuf, String> {
+            Err("this camera takes only Bulb exposures".to_string())
+        }
+        fn close(&mut self) {}
+    }
+
+    impl BulbCamera for SharedBulb {
+        fn capture_bulb(
+            &mut self,
+            out_path: &Path,
+            expose: &mut dyn FnMut(),
+            usb_release: bool,
+            iso: Option<&str>,
+            aperture: Option<&str>,
+            _keep_bulb: bool,
+        ) -> Result<PathBuf, String> {
+            expose();
+            std::fs::write(out_path, vec![0u8; self.bytes as usize]).map_err(|e| e.to_string())?;
+            self.bulbs.lock().unwrap().push((
+                usb_release,
+                iso.map(str::to_string),
+                aperture.map(str::to_string),
+            ));
+            Ok(out_path.to_path_buf())
+        }
+    }
+
+    struct SharedLight {
+        log: std::sync::Arc<std::sync::Mutex<Vec<[u32; 5]>>>,
+    }
+
+    impl LightSource for SharedLight {
+        fn set_color(&mut self, r: u32, g: u32, b: u32, w: u32, ir: u32) {
+            self.log.lock().unwrap().push([r, g, b, w, ir]);
+        }
+        fn off(&mut self) {
+            self.log.lock().unwrap().push([0, 0, 0, 0, 0]);
+        }
+        fn close(&mut self) {}
+    }
+
+    #[test]
+    fn a_blend_lights_each_channel_alone_in_one_bulb_exposure() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let bulbs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut light = SharedLight {
+            log: std::sync::Arc::clone(&log),
+        };
+        let mut camera = SharedBulb {
+            log: std::sync::Arc::clone(&log),
+            bulbs: std::sync::Arc::clone(&bulbs),
+            bytes: 64,
+        };
+        let mut waits = Vec::new();
+        let mut settings = settings(dir.path());
+        settings.levels = [200, 180, 255];
+        settings.iso = Some("100".to_string());
+        settings.aperture = Some("8".to_string());
+        {
+            let mut service = CaptureService::new(&mut light, &mut camera, |seconds| {
+                waits.push(seconds);
+            });
+            service
+                .capture_blend(
+                    &mut SharedBulb {
+                        log: std::sync::Arc::clone(&log),
+                        bulbs: std::sync::Arc::clone(&bulbs),
+                        bytes: 64,
+                    },
+                    &settings,
+                    0.5,
+                    BulbRelease::Usb,
+                    None,
+                    None,
+                    None,
+                    false,
+                    None,
+                )
+                .unwrap();
+        }
+        let lit: Vec<[u32; 5]> = log.lock().unwrap().clone();
+        assert_eq!(lit[0], [0, 0, 0, 0, 0]);
+        assert_eq!(lit[1], [200, 0, 0, 0, 0]);
+        assert_eq!(lit[2], [0, 180, 0, 0, 0]);
+        assert_eq!(lit[3], [0, 0, 255, 0, 0]);
+        assert_eq!(lit[4], [0, 0, 0, 0, 0]);
+        assert_eq!(waits, vec![0.35, 0.5, 0.5, 0.5]);
+        let bulbs = bulbs.lock().unwrap();
+        assert!(bulbs[0].0, "USB release");
+        assert_eq!(bulbs[0].1.as_deref(), Some("100"));
+        assert_eq!(bulbs[0].2.as_deref(), Some("8"));
+    }
+
+    struct CableLight {
+        log: std::sync::Arc<std::sync::Mutex<Vec<[u32; 5]>>>,
+        pulses: std::sync::Arc<std::sync::Mutex<Vec<f64>>>,
+    }
+
+    impl LightSource for CableLight {
+        fn set_color(&mut self, r: u32, g: u32, b: u32, w: u32, ir: u32) {
+            self.log.lock().unwrap().push([r, g, b, w, ir]);
+        }
+        fn off(&mut self) {
+            self.log.lock().unwrap().push([0, 0, 0, 0, 0]);
+        }
+        fn close(&mut self) {}
+    }
+
+    impl ShutterRelease for CableLight {
+        fn shutter_pulse(&mut self, seconds: f64) {
+            self.pulses.lock().unwrap().push(seconds);
+        }
+    }
+
+    #[test]
+    fn a_cable_release_pulses_the_shutter_and_waits_for_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let bulbs = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pulses = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut light = CableLight {
+            log: std::sync::Arc::clone(&log),
+            pulses: std::sync::Arc::clone(&pulses),
+        };
+        let mut camera = SharedBulb {
+            log: std::sync::Arc::clone(&log),
+            bulbs: std::sync::Arc::clone(&bulbs),
+            bytes: 64,
+        };
+        let mut waits = Vec::new();
+        let mut settings = settings(dir.path());
+        settings.levels = [200, 180, 255];
+        let mut pulse = CableLight {
+            log: std::sync::Arc::clone(&log),
+            pulses: std::sync::Arc::clone(&pulses),
+        };
+        {
+            let mut service = CaptureService::new(&mut light, &mut camera, |seconds| {
+                waits.push(seconds);
+            });
+            service
+                .capture_blend(
+                    &mut SharedBulb {
+                        log: std::sync::Arc::clone(&log),
+                        bulbs: std::sync::Arc::clone(&bulbs),
+                        bytes: 64,
+                    },
+                    &settings,
+                    0.4,
+                    BulbRelease::Cable,
+                    None,
+                    None,
+                    None,
+                    false,
+                    Some(&mut pulse),
+                )
+                .unwrap();
+        }
+        assert!(!bulbs.lock().unwrap()[0].0, "camera waits for the cable");
+        assert_eq!(pulses.lock().unwrap()[0], 0.35 + 3.0 * 0.4 + 0.2);
+        assert_eq!(waits[0], 0.35);
+        assert_eq!(&waits[1..4], &[0.4, 0.4, 0.4]);
+        assert_eq!(waits[4], 0.2);
+    }
+
+    struct RecordingLight {
+        calls: Vec<[u32; 5]>,
+        bulbs: Vec<Vec<[u32; 5]>>,
+    }
+
+    impl LightSource for RecordingLight {
+        fn set_color(&mut self, r: u32, g: u32, b: u32, w: u32, ir: u32) {
+            self.calls.push([r, g, b, w, ir]);
+        }
+        fn off(&mut self) {
+            self.calls.push([0, 0, 0, 0, 0]);
+        }
+        fn close(&mut self) {}
+    }
+
+    struct FakeBulb;
+
+    impl Camera for FakeBulb {
+        fn capture(
+            &mut self,
+            _out_path: &Path,
+            _shutter: Option<&str>,
+            _iso: Option<&str>,
+            _aperture: Option<&str>,
+        ) -> Result<PathBuf, String> {
+            Err("this camera takes only Bulb exposures".to_string())
+        }
+        fn close(&mut self) {}
+    }
+
+    impl BulbCamera for FakeBulb {
+        fn capture_bulb(
+            &mut self,
+            _out_path: &Path,
+            _expose: &mut dyn FnMut(),
+            _usb_release: bool,
+            _iso: Option<&str>,
+            _aperture: Option<&str>,
+            _keep_bulb: bool,
+        ) -> Result<PathBuf, String> {
+            Err("not used".to_string())
+        }
+    }
+
+    #[test]
+    fn a_cable_release_needs_a_shutter_output() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut light = RecordingLight {
+            calls: Vec::new(),
+            bulbs: Vec::new(),
+        };
+        let mut camera = FakeBulb;
+        let mut service = CaptureService::new(&mut light, &mut camera, |_| {});
+        let error = service
+            .capture_blend(
+                &mut FakeBulb,
+                &settings(dir.path()),
+                0.5,
+                BulbRelease::Cable,
+                None,
+                None,
+                None,
+                false,
+                None,
+            )
+            .unwrap_err();
+        assert!(error.0.contains("shutter release"));
+    }
+
+    #[test]
+    fn a_cable_release_refuses_an_exposure_longer_than_the_pulse() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let pulses = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let mut light = CableLight {
+            log: std::sync::Arc::clone(&log),
+            pulses: std::sync::Arc::clone(&pulses),
+        };
+        let mut camera = SharedBulb {
+            log: std::sync::Arc::clone(&log),
+            bulbs: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+            bytes: 64,
+        };
+        let mut pulse = CableLight {
+            log: std::sync::Arc::clone(&log),
+            pulses: std::sync::Arc::clone(&pulses),
+        };
+        let mut service = CaptureService::new(&mut light, &mut camera, |_| {});
+        let error = service
+            .capture_blend(
+                &mut SharedBulb {
+                    log: std::sync::Arc::clone(&log),
+                    bulbs: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
+                    bytes: 64,
+                },
+                &settings(dir.path()),
+                2.0,
+                BulbRelease::Cable,
+                None,
+                None,
+                None,
+                false,
+                Some(&mut pulse),
+            )
+            .unwrap_err();
+        assert!(error.0.contains("release cable"));
+        assert!(pulses.lock().unwrap().is_empty());
     }
 }

@@ -82,6 +82,11 @@ pub trait LightSource: Send {
     fn set_color(&mut self, r: u32, g: u32, b: u32, w: u32, ir: u32);
     fn off(&mut self);
     fn close(&mut self);
+
+    /// `set_color` that returns once the light switched, for a timed Blend channel.
+    fn set_color_now(&mut self, r: u32, g: u32, b: u32, w: u32, ir: u32) {
+        self.set_color(r, g, b, w, ir);
+    }
 }
 
 /// The minimal camera interface: download one RAW to `out_path`, return its path.
