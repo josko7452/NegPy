@@ -5,3 +5,4 @@ pub mod exif_read;
 pub mod gear;
 pub mod gear_logic;
 pub mod payload;
+pub mod xmp;
