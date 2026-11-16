@@ -554,6 +554,7 @@ mod tests {
                 make: "Olympus".into(),
                 model: "PEN F".into(),
                 display_name: "PEN F".into(),
+                ..Camera::default()
             }],
             film_stocks: vec![FilmStock {
                 id: "hp5".into(),

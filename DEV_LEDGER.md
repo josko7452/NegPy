@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `68eb5f34` backend: apply print dye separation and damping
+**Last Updated:** 2026-11-16 | **Last Commit:** `48d01258` backend: write the user gear library to JSON
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -9,6 +9,8 @@ This session runs 10 backend commits, then the workspace test and a gap audit.
 ## Completed (This Session)
 - `3ffd3dc5` kernel: add the shared image conversion helpers.
 - `68eb5f34` backend: apply print dye separation and damping.
+- `6bda398d` backend: apply print per-layer curve trims.
+- `48d01258` backend: write the user gear library to JSON.
 
 ## Verification (After Commit 10)
 - Prior session: 131 test binaries passed.
