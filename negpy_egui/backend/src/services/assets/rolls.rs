@@ -505,6 +505,105 @@ pub fn remove_members(
     forked
 }
 
+/// Give `new_path` the membership, card locks, scene and forks of the file it replaces.
+///
+/// Paths in `dropped_paths` leave every roll. The old hash keeps its records, for a
+/// restore. `keep_source` keeps the old path a member too. The returned ids name the
+/// rolls whose fork of `old_hash` the caller must copy.
+pub fn adopt_replacement(
+    repo: &mut StorageRepository,
+    old_hash: &str,
+    new_hash: &str,
+    old_path: &str,
+    new_path: &str,
+    dropped_paths: &[String],
+    keep_source: bool,
+) -> Vec<String> {
+    let mut store = read(repo);
+    let mut forked_in = Vec::new();
+    for (roll_id, entry) in store.iter_mut() {
+        let Some(record) = entry.as_object_mut() else {
+            continue;
+        };
+        if record.contains_key("member_paths") {
+            let members: Vec<String> = string_list(&Value::Object(record.clone()), "member_paths")
+                .into_iter()
+                .filter(|path| !dropped_paths.contains(path))
+                .map(|path| {
+                    if path == old_path && !keep_source {
+                        new_path.to_string()
+                    } else {
+                        path
+                    }
+                })
+                .collect();
+            let mut members = members;
+            if keep_source && members.iter().any(|path| path == old_path) {
+                members.push(new_path.to_string());
+            }
+            let mut unique: Vec<String> = Vec::new();
+            for path in members {
+                if !unique.contains(&path) {
+                    unique.push(path);
+                }
+            }
+            record.insert("member_paths".into(), json!(unique));
+        }
+        let mut overrides = record
+            .get("frame_overrides")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(cards) = overrides.get(old_hash).cloned() {
+            if !overrides.contains_key(new_hash) {
+                overrides.insert(new_hash.to_string(), cards);
+            }
+        }
+        let mut baselines = record
+            .get("frame_baselines")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        if let Some(frames) = baselines.get(old_hash).cloned() {
+            if !baselines.contains_key(new_hash) {
+                baselines.insert(new_hash.to_string(), frames);
+            }
+        }
+        if !overrides.is_empty() {
+            record.insert("frame_overrides".into(), Value::Object(overrides));
+        }
+        if !baselines.is_empty() {
+            record.insert("frame_baselines".into(), Value::Object(baselines));
+        }
+        if let Some(scenes) = record.get_mut("scenes").and_then(Value::as_object_mut) {
+            for scene in scenes.values_mut() {
+                let Some(scene) = scene.as_object_mut() else {
+                    continue;
+                };
+                let mut members = string_list(&Value::Object(scene.clone()), "member_hashes");
+                if members.iter().any(|hash| hash == old_hash)
+                    && !members.iter().any(|hash| hash == new_hash)
+                {
+                    members.push(new_hash.to_string());
+                    scene.insert("member_hashes".into(), json!(members));
+                }
+            }
+        }
+        let mut forked = string_list(&Value::Object(record.clone()), "forked_hashes");
+        if forked.iter().any(|hash| hash == old_hash) {
+            forked_in.push(roll_id.clone());
+            if !forked.iter().any(|hash| hash == new_hash) {
+                forked.push(new_hash.to_string());
+            }
+        }
+        if !forked.is_empty() {
+            record.insert("forked_hashes".into(), json!(forked));
+        }
+    }
+    write(repo, store);
+    forked_in
+}
+
 /// Every roll `path` belongs to: directly in a folder roll's folder and not removed,
 /// or listed in a virtual roll's members.
 #[must_use]

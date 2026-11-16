@@ -557,6 +557,107 @@ impl StorageRepository {
         Ok(())
     }
 
+    /// Copy a frame's edit, history, work prints and triage mark to another hash.
+    ///
+    /// Each edit passes through `transform`. The old rows stay, for a restore. Nothing
+    /// is copied, and `false` returns, when the new hash already holds an edit or the
+    /// two hashes are equal.
+    pub fn copy_file_edits(
+        &self,
+        old_hash: &str,
+        new_hash: &str,
+        file_path: &str,
+        transform: &dyn Fn(&WorkspaceConfig) -> WorkspaceConfig,
+    ) -> rusqlite::Result<bool> {
+        if old_hash == new_hash {
+            return Ok(false);
+        }
+        let connection = self.connect(&self.edits_db_path)?;
+        let exists: Option<i64> = connection
+            .query_row(
+                "SELECT 1 FROM file_settings WHERE file_hash = ?1",
+                [new_hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if exists.is_some() {
+            return Ok(false);
+        }
+        let rewrite = |json: &str| -> Option<String> {
+            let flat: Map<String, Value> = serde_json::from_str(json).ok()?;
+            let config = WorkspaceConfig::from_flat_dict(&flat);
+            serde_json::to_string(&transform(&config).to_dict()).ok()
+        };
+        let transaction = connection.unchecked_transaction()?;
+        if let Some(json) = transaction
+            .query_row(
+                "SELECT settings_json FROM file_settings WHERE file_hash = ?1",
+                [old_hash],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+        {
+            if let Some(rewritten) = rewrite(&json) {
+                transaction.execute(
+                    "INSERT INTO file_settings (file_hash, settings_json, file_path)
+                     VALUES (?1, ?2, ?3)",
+                    params![new_hash, rewritten, file_path],
+                )?;
+            }
+        }
+        transaction.execute("DELETE FROM edit_history WHERE file_hash = ?1", [new_hash])?;
+        let history: Vec<(i64, String)> = {
+            let mut statement = transaction.prepare(
+                "SELECT step_index, settings_json FROM edit_history WHERE file_hash = ?1",
+            )?;
+            let rows = statement.query_map([old_hash], |row| Ok((row.get(0)?, row.get(1)?)))?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for (step, json) in history {
+            if let Some(rewritten) = rewrite(&json) {
+                transaction.execute(
+                    "INSERT INTO edit_history (file_hash, step_index, settings_json)
+                     VALUES (?1, ?2, ?3)",
+                    params![new_hash, step, rewritten],
+                )?;
+            }
+        }
+        let prints: Vec<(String, f64, String)> = {
+            let mut statement = transaction.prepare(
+                "SELECT name, created_at, settings_json FROM work_prints WHERE file_hash = ?1",
+            )?;
+            let rows = statement.query_map([old_hash], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            })?;
+            rows.collect::<rusqlite::Result<Vec<_>>>()?
+        };
+        for (name, created_at, json) in prints {
+            if let Some(rewritten) = rewrite(&json) {
+                transaction.execute(
+                    "INSERT OR REPLACE INTO work_prints
+                     (file_hash, name, created_at, settings_json) VALUES (?1, ?2, ?3, ?4)",
+                    params![new_hash, name, created_at, rewritten],
+                )?;
+            }
+        }
+        let mark: Option<String> = transaction
+            .query_row(
+                "SELECT mark FROM file_marks WHERE file_hash = ?1",
+                [old_hash],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if let Some(mark) = mark {
+            transaction.execute(
+                "INSERT OR REPLACE INTO file_marks (file_hash, mark, file_path)
+                 VALUES (?1, ?2, ?3)",
+                params![new_hash, mark, file_path],
+            )?;
+        }
+        transaction.commit()?;
+        Ok(true)
+    }
+
     /// Base names of edited files saved directly under `folder`.
     pub fn edited_file_names_under(&self, folder: &str) -> rusqlite::Result<Vec<String>> {
         let separator = std::path::MAIN_SEPARATOR;
