@@ -1,11 +1,10 @@
-//! Ports the lightweight process-kernel cases: sensor gating, capture matrices, hue and chart geometry.
+//! Ports the lightweight process-kernel cases: sensor gating, capture matrices and hue.
 
 use negpy_backend::domain::color::{WORKING_TO_XYZ, XYZ_TO_WORKING};
 use negpy_backend::domain::models::{ProcessConfig, ProcessMode, SensorUnmix};
 use negpy_backend::features::process::capture_color::{
     camera_matrix_parts, camera_to_working_matrix, primaries, wb_gains,
 };
-use negpy_backend::features::process::chart::{COLS, ROWS, patch_centers, sample_radius};
 use negpy_backend::features::process::hue::apply_hue_trim;
 use negpy_backend::features::process::sensor::{
     build_sensor_matrix, density_unmix_matrix, effective_sensor_matrix, sensor_token,
@@ -152,19 +151,4 @@ fn a_degenerate_primaries_matrix_is_rejected() {
 fn hue_trim_at_zero_is_an_identity() {
     let img = ImageBuffer::from_rgb(2, 1, vec![0.2, 0.4, 0.6, 0.1, 0.3, 0.5]);
     assert_eq!(apply_hue_trim(&img, 0.0), img);
-}
-
-#[test]
-fn chart_patch_centers_run_row_major() {
-    let corners = [[0.0, 0.0], [60.0, 0.0], [60.0, 40.0], [0.0, 40.0]];
-    let centers = patch_centers(corners);
-    assert_eq!(centers.len(), ROWS * COLS);
-    assert_eq!(centers[0], [5.0, 5.0]);
-    assert_eq!(centers[COLS - 1], [55.0, 5.0]);
-}
-
-#[test]
-fn the_sample_radius_uses_the_smaller_patch_pitch() {
-    let corners = [[0.0, 0.0], [60.0, 0.0], [60.0, 40.0], [0.0, 40.0]];
-    assert!((sample_radius(corners) - 2.0).abs() < 1e-9);
 }

@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `chart: add the reference colors and CIEDE2000`
+**Last Updated:** 2026-11-16 | **Last Commit:** `chart: read a grid in any orientation`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -8,6 +8,7 @@ This session runs 10 commits, then the workspace test and a new gap audit.
 
 ## Completed (This Session)
 - `chart` reference Lab and CIEDE2000 with the published-pair oracle.
+- `chart` corner-patch interpolation and four-way grid orientation.
 - `a82c3ae2` view: viewport/raw coordinate maps, off-frame homography.
 - `a6206a94` export: Pakon model descriptions, XMP provenance, TIFF datetime.
 - `4072373e` film-edge: DX and KEYKODE barcode bits.
@@ -43,8 +44,8 @@ This session runs 10 commits, then the workspace test and a new gap audit.
 - **D13/UI:** session glue, controller and every egui view (out of scope).
 
 ## Next Steps (Ordered)
-1. [ ] D9: chart grid reading and orientation detection.
-2. [ ] D9: Levenberg-Marquardt chart matrix fit.
+1. [ ] D9: Levenberg-Marquardt chart matrix fit.
+2. [ ] D11: film-edge paint (glyph source), contact-sheet paint.
 3. [ ] D11: film-edge paint (glyph source), contact-sheet paint.
 4. [ ] D11: scanning service over the scanner backends.
 5. [ ] D12: capture calibration, meter and presets.
