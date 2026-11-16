@@ -44,6 +44,8 @@ pub const TAG_GPS_LATITUDE: u16 = 2;
 pub const TAG_GPS_LONGITUDE_REF: u16 = 3;
 pub const TAG_GPS_LONGITUDE: u16 = 4;
 pub const TAG_GPS_MAP_DATUM: u16 = 18;
+pub const APP1_EXIF_LIMIT: usize = 65533;
+const XMP_APP1_HEADER: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
 
 pub const TAG_FOCAL_LENGTH_35MM: u16 = 41989;
 pub const TAG_LENS_SERIAL: u16 = 42037;
@@ -347,6 +349,316 @@ pub fn strip_scan_exif_for_capture(data: &mut ExifData) {
         TAG_ISO,
     ] {
         data.exif.remove(&tag);
+    }
+}
+
+struct EncodedValue {
+    tag: u16,
+    kind: u16,
+    count: u32,
+    bytes: Vec<u8>,
+    inline: bool,
+}
+
+fn encoded_values(tags: &ExifTags, name: &str) -> Vec<EncodedValue> {
+    let mut values = Vec::new();
+    for (tag, value) in tags {
+        let Some(kind) = tiff_type(name, *tag) else {
+            continue;
+        };
+        let Some((count, bytes)) = encode_value(kind, value) else {
+            continue;
+        };
+        values.push(EncodedValue {
+            tag: *tag,
+            kind,
+            count,
+            bytes,
+            inline: false,
+        });
+    }
+    values.sort_by_key(|entry| entry.tag);
+    values
+}
+
+fn encode_value(kind: u16, value: &ExifValue) -> Option<(u32, Vec<u8>)> {
+    match (kind, value) {
+        (TIFF_ASCII, ExifValue::Text(text)) => {
+            let mut bytes = text.as_bytes().to_vec();
+            bytes.push(0);
+            Some((bytes.len() as u32, bytes))
+        }
+        (TIFF_ASCII, ExifValue::Bytes(bytes)) => {
+            let mut bytes = bytes.clone();
+            if !bytes.ends_with(&[0]) {
+                bytes.push(0);
+            }
+            Some((bytes.len() as u32, bytes))
+        }
+        (TIFF_BYTE | TIFF_UNDEFINED, ExifValue::Bytes(bytes)) => {
+            Some((bytes.len() as u32, bytes.clone()))
+        }
+        (TIFF_SHORT, ExifValue::UInt(value)) => {
+            let value = u16::try_from(*value).ok()?;
+            Some((1, value.to_le_bytes().to_vec()))
+        }
+        (TIFF_LONG, ExifValue::UInt(value)) => {
+            let value = u32::try_from(*value).ok()?;
+            Some((1, value.to_le_bytes().to_vec()))
+        }
+        (TIFF_SRATIONAL, ExifValue::Rational(num, den)) => {
+            let mut bytes = Vec::with_capacity(8);
+            bytes.extend_from_slice(&(*num as i32).to_le_bytes());
+            bytes.extend_from_slice(&(*den as i32).to_le_bytes());
+            Some((1, bytes))
+        }
+        (TIFF_RATIONAL, ExifValue::Rational(num, den)) => {
+            let mut bytes = Vec::with_capacity(8);
+            bytes.extend_from_slice(&u32::try_from(*num).ok()?.to_le_bytes());
+            bytes.extend_from_slice(&u32::try_from(*den).ok()?.to_le_bytes());
+            Some((1, bytes))
+        }
+        (TIFF_RATIONAL, ExifValue::Rationals(values)) => {
+            let mut bytes = Vec::with_capacity(values.len() * 8);
+            for (num, den) in values {
+                bytes.extend_from_slice(&u32::try_from(*num).ok()?.to_le_bytes());
+                bytes.extend_from_slice(&u32::try_from(*den).ok()?.to_le_bytes());
+            }
+            Some((values.len() as u32, bytes))
+        }
+        _ => None,
+    }
+}
+
+fn encode_directory(values: &mut [EncodedValue], extra_at: usize, next: u32) -> (Vec<u8>, Vec<u8>) {
+    let mut directory = Vec::with_capacity(2 + values.len() * 12 + 4);
+    directory.extend_from_slice(&(values.len() as u16).to_le_bytes());
+    let mut extra = Vec::new();
+    for entry in values {
+        directory.extend_from_slice(&entry.tag.to_le_bytes());
+        directory.extend_from_slice(&entry.kind.to_le_bytes());
+        directory.extend_from_slice(&entry.count.to_le_bytes());
+        if entry.bytes.len() <= 4 || entry.inline {
+            directory.extend_from_slice(&entry.bytes);
+            directory.resize(directory.len() + 4 - entry.bytes.len(), 0);
+        } else {
+            let place = extra_at + extra.len();
+            directory.extend_from_slice(&(place as u32).to_le_bytes());
+            extra.extend_from_slice(&entry.bytes);
+        }
+    }
+    directory.extend_from_slice(&next.to_le_bytes());
+    (directory, extra)
+}
+
+/// `piexif.dump`: a little-endian TIFF block with its IFD0, Exif and GPS directories.
+#[must_use]
+pub fn dump_exif(data: &ExifData) -> Vec<u8> {
+    dump_exif_with_pixels(data, 0)
+}
+
+/// The same block with the image data after it, so a reader can resolve strip offsets.
+#[must_use]
+pub fn dump_exif_with_pixels(data: &ExifData, pixels: usize) -> Vec<u8> {
+    let mut zeroth = encoded_values(&data.zeroth, "0th");
+    let mut exif = encoded_values(&data.exif, "Exif");
+    let mut gps = encoded_values(&data.gps, "GPS");
+    if !exif.is_empty() {
+        zeroth.push(EncodedValue {
+            tag: TAG_EXIF_IFD,
+            kind: TIFF_LONG,
+            count: 1,
+            bytes: vec![0; 4],
+            inline: true,
+        });
+    }
+    if !gps.is_empty() {
+        zeroth.push(EncodedValue {
+            tag: TAG_GPS_IFD,
+            kind: TIFF_LONG,
+            count: 1,
+            bytes: vec![0; 4],
+            inline: true,
+        });
+    }
+    zeroth.sort_by_key(|entry| entry.tag);
+    let zeroth_size = 2 + zeroth.len() * 12 + 4;
+    let exif_size = 2 + exif.len() * 12 + 4;
+    let gps_size = 2 + gps.len() * 12 + 4;
+    let exif_at = 8 + zeroth_size;
+    let gps_at = exif_at + if exif.is_empty() { 0 } else { exif_size };
+    let mut extra_at = gps_at + if gps.is_empty() { 0 } else { gps_size };
+    for entry in &mut zeroth {
+        if entry.tag == TAG_EXIF_IFD {
+            entry.bytes = (exif_at as u32).to_le_bytes().to_vec();
+        } else if entry.tag == TAG_GPS_IFD {
+            entry.bytes = (gps_at as u32).to_le_bytes().to_vec();
+        }
+    }
+    let (zeroth_dir, mut zeroth_extra) = encode_directory(&mut zeroth, extra_at, 0);
+    extra_at += zeroth_extra.len();
+    let (exif_dir, mut exif_extra) = encode_directory(&mut exif, extra_at, 0);
+    extra_at += exif_extra.len();
+    let (gps_dir, gps_extra) = encode_directory(&mut gps, extra_at, 0);
+    zeroth_extra.extend_from_slice(&exif_extra);
+    exif_extra.clear();
+    let mut out = Vec::new();
+    out.extend_from_slice(b"II*\0");
+    out.extend_from_slice(&8u32.to_le_bytes());
+    out.extend_from_slice(&zeroth_dir);
+    out.extend_from_slice(&exif_dir);
+    out.extend_from_slice(&gps_dir);
+    out.extend_from_slice(&zeroth_extra);
+    out.extend_from_slice(&gps_extra);
+    out.resize(out.len() + pixels, 0);
+    out
+}
+
+/// `_strip_jpeg_xmp_segments`: remove Adobe XMP APP1 segments.
+#[must_use]
+pub fn strip_jpeg_xmp_segments(data: &[u8]) -> Vec<u8> {
+    let mut out = data.get(..2).unwrap_or(data).to_vec();
+    let mut at = 2usize;
+    while at < data.len() {
+        if data[at] != 0xFF {
+            out.extend_from_slice(&data[at..]);
+            break;
+        }
+        let marker = data[at + 1];
+        if marker == 0xD9 {
+            out.extend_from_slice(&data[at..]);
+            break;
+        }
+        if (0xD0..0xD8).contains(&marker) {
+            out.extend_from_slice(&data[at..at + 2]);
+            at += 2;
+            continue;
+        }
+        if at + 4 > data.len() {
+            out.extend_from_slice(&data[at..]);
+            break;
+        }
+        let length = u16::from_be_bytes([data[at + 2], data[at + 3]]) as usize;
+        let end = at + 2 + length;
+        if marker == 0xE1 && end <= data.len() {
+            let payload = at + 4;
+            if data.get(payload..payload + XMP_APP1_HEADER.len()) == Some(XMP_APP1_HEADER) {
+                at = end;
+                continue;
+            }
+        }
+        if end > data.len() {
+            out.extend_from_slice(&data[at..]);
+            break;
+        }
+        out.extend_from_slice(&data[at..end]);
+        at = end;
+    }
+    out
+}
+
+/// `_inject_jpeg_xmp`: put the packet after the leading application segments.
+#[must_use]
+pub fn inject_jpeg_xmp(jpeg: &[u8], xmp: &[u8]) -> Vec<u8> {
+    if xmp.is_empty() {
+        return jpeg.to_vec();
+    }
+    let cleaned = strip_jpeg_xmp_segments(jpeg);
+    let payload_len = XMP_APP1_HEADER.len() + xmp.len();
+    if payload_len + 2 > u16::MAX as usize {
+        return jpeg.to_vec();
+    }
+    let mut segment = Vec::with_capacity(payload_len + 4);
+    segment.extend_from_slice(&[0xFF, 0xE1]);
+    segment.extend_from_slice(&((payload_len + 2) as u16).to_be_bytes());
+    segment.extend_from_slice(XMP_APP1_HEADER);
+    segment.extend_from_slice(xmp);
+    let mut insert_at = 2usize;
+    let mut at = 2usize;
+    while at < cleaned.len() && cleaned[at] == 0xFF {
+        let marker = cleaned[at + 1];
+        if (0xD0..0xD8).contains(&marker) {
+            at += 2;
+            continue;
+        }
+        if at + 4 > cleaned.len() {
+            break;
+        }
+        let length = u16::from_be_bytes([cleaned[at + 2], cleaned[at + 3]]) as usize;
+        let end = at + 2 + length;
+        if matches!(marker, 0xE0 | 0xE1 | 0xED | 0xFE) {
+            insert_at = end;
+            at = end;
+            continue;
+        }
+        break;
+    }
+    let mut out = Vec::with_capacity(cleaned.len() + segment.len());
+    out.extend_from_slice(&cleaned[..insert_at]);
+    out.extend_from_slice(&segment);
+    out.extend_from_slice(&cleaned[insert_at..]);
+    out
+}
+
+/// Remove an existing Exif APP1 segment and insert a fresh one after APP0.
+#[must_use]
+pub fn inject_jpeg_exif(jpeg: &[u8], exif: &[u8]) -> Vec<u8> {
+    let cleaned = strip_jpeg_exif_segment(jpeg);
+    if exif.is_empty() || exif.len() + 8 > u16::MAX as usize {
+        return cleaned;
+    }
+    let mut segment = Vec::with_capacity(exif.len() + 10);
+    segment.extend_from_slice(&[0xFF, 0xE1]);
+    segment.extend_from_slice(&((exif.len() + 8) as u16).to_be_bytes());
+    segment.extend_from_slice(b"Exif\0\0");
+    segment.extend_from_slice(exif);
+    let insert_at = after_app0(&cleaned);
+    let mut out = Vec::with_capacity(cleaned.len() + segment.len());
+    out.extend_from_slice(&cleaned[..insert_at]);
+    out.extend_from_slice(&segment);
+    out.extend_from_slice(&cleaned[insert_at..]);
+    out
+}
+
+fn strip_jpeg_exif_segment(data: &[u8]) -> Vec<u8> {
+    let mut out = data.get(..2).unwrap_or(data).to_vec();
+    let mut at = 2usize;
+    while at + 4 <= data.len() && data[at] == 0xFF {
+        let marker = data[at + 1];
+        if marker == 0xD9 || marker == 0xDA {
+            out.extend_from_slice(&data[at..]);
+            return out;
+        }
+        if (0xD0..0xD8).contains(&marker) {
+            out.extend_from_slice(&data[at..at + 2]);
+            at += 2;
+            continue;
+        }
+        let length = u16::from_be_bytes([data[at + 2], data[at + 3]]) as usize;
+        let end = at + 2 + length;
+        if end > data.len() {
+            out.extend_from_slice(&data[at..]);
+            return out;
+        }
+        if marker == 0xE1 && data.get(at + 4..at + 10) == Some(b"Exif\0\0") {
+            at = end;
+            continue;
+        }
+        out.extend_from_slice(&data[at..end]);
+        at = end;
+    }
+    if at < data.len() {
+        out.extend_from_slice(&data[at..]);
+    }
+    out
+}
+
+fn after_app0(data: &[u8]) -> usize {
+    if data.len() >= 6 && data[2] == 0xFF && data[3] == 0xE0 {
+        let length = u16::from_be_bytes([data[4], data[5]]) as usize;
+        (4 + length).min(data.len())
+    } else {
+        2
     }
 }
 
