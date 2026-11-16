@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::services::capture::blend::capture_validated_single;
 use crate::services::capture::blend::{CAPTURE_ORDER, CaptureError, Channel, verify_raw_size};
 use crate::services::capture::hardware::{
     BulbCamera, BulbRelease, Camera, CaptureResult, CaptureSettings, LightSource, ShutterRelease,
@@ -26,6 +27,38 @@ pub const BULB_TAIL_S: f64 = 0.2;
 /// The firmware counts the pulse in 10 ms units, so a 3.5 mm jack holds at most 2.55 s.
 pub const SHUTTER_PULSE_UNIT_S: f64 = 0.01;
 pub const MAX_SHUTTER_PULSE_S: f64 = 255.0 * SHUTTER_PULSE_UNIT_S;
+
+/// One camera exposure with no light control, for white-light scanning without the
+/// Scanlight. One file, no R/G/B split.
+pub fn capture_single(
+    camera: &mut dyn Camera,
+    roll_name: &str,
+    frame_number: u32,
+    output_folder: &Path,
+    shutter: Option<&str>,
+    min_raw_bytes: u64,
+    max_raw_bytes: u64,
+    cancel: Option<&dyn Fn() -> bool>,
+) -> Result<PathBuf, CaptureError> {
+    std::fs::create_dir_all(output_folder)
+        .map_err(|error| CaptureError(format!("cannot create the capture folder: {error}")))?;
+    let stem = output_folder.join(format!("{roll_name}_Frame{frame_number:03}"));
+    let result = capture_validated_single(
+        &stem.with_extension("raw"),
+        |staged| {
+            let path = camera
+                .capture(staged, shutter, None, None)
+                .map_err(CaptureError)?;
+            if cancel.is_some_and(|cancel| cancel()) {
+                return Err(CaptureError("capture cancelled".to_string()));
+            }
+            Ok(path)
+        },
+        min_raw_bytes,
+        max_raw_bytes,
+    );
+    result
+}
 
 /// Promote a frame's three channel files as one recoverable operation.
 ///
@@ -462,6 +495,41 @@ mod tests {
             max_raw_bytes: 4096,
             ..CaptureSettings::default()
         }
+    }
+
+    #[test]
+    fn a_plain_single_writes_one_file_and_never_touches_the_light() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut camera = FakeCamera {
+            bytes: 64,
+            count: 0,
+        };
+        let path = capture_single(&mut camera, "R1", 4, dir.path(), None, 12, 4096, None).unwrap();
+        assert_eq!(camera.count, 1);
+        assert_eq!(path.file_name().unwrap(), "R1_Frame004.raw");
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn a_cancelled_single_never_reaches_its_final_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut camera = FakeCamera {
+            bytes: 64,
+            count: 0,
+        };
+        let error = capture_single(
+            &mut camera,
+            "R1",
+            5,
+            dir.path(),
+            None,
+            12,
+            4096,
+            Some(&|| true),
+        )
+        .unwrap_err();
+        assert!(error.0.contains("capture cancelled"));
+        assert!(!dir.path().join("R1_Frame005.raw").exists());
     }
 
     #[test]
