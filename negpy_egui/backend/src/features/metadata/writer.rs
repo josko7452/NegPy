@@ -4,6 +4,9 @@ use crate::features::metadata::capture::dms;
 use crate::features::metadata::exif_read::{ExifTags, ExifValue, SourceExif};
 use crate::features::metadata::payload::{MetadataPayload, NEGPY_SOFTWARE};
 use crate::features::metadata::resolution::{Resolution, to_rational};
+use crate::infrastructure::loaders::jxl_boxes::{
+    JXL_CODESTREAM, JXL_EXIF_BOX, JXL_SIGNATURE, JXL_XMP_BOX, jxl_boxes,
+};
 
 pub const TAG_IMAGE_DESCRIPTION: u16 = 270;
 pub const TAG_MAKE: u16 = 271;
@@ -597,6 +600,273 @@ pub fn inject_jpeg_xmp(jpeg: &[u8], xmp: &[u8]) -> Vec<u8> {
     out.extend_from_slice(&cleaned[..insert_at]);
     out.extend_from_slice(&segment);
     out.extend_from_slice(&cleaned[insert_at..]);
+    out
+}
+
+/// A PNG with fresh eXIf and iTXt XMP chunks ahead of its image data.
+#[must_use]
+pub fn rewrite_png_metadata(png: &[u8], exif: Option<&[u8]>, xmp: Option<&[u8]>) -> Vec<u8> {
+    if !png.starts_with(b"\x89PNG\r\n\x1a\n") {
+        return png.to_vec();
+    }
+    let Some(first_idat) = png.windows(4).position(|window| window == b"IDAT") else {
+        return png.to_vec();
+    };
+    let cut = first_idat.saturating_sub(4);
+    let mut kept = png[..8].to_vec();
+    let mut at = 8usize;
+    while at + 12 <= png.len() {
+        let length = u32::from_be_bytes(png[at..at + 4].try_into().unwrap()) as usize;
+        let end = at + 12 + length;
+        if end > png.len() {
+            return png.to_vec();
+        }
+        let kind = &png[at + 4..at + 8];
+        if kind != b"eXIf" && kind != b"iTXt" {
+            kept.extend_from_slice(&png[at..end]);
+        }
+        at = end;
+    }
+    if at < png.len() {
+        kept.extend_from_slice(&png[at..]);
+    }
+    let mut chunks = Vec::new();
+    if let Some(exif) = exif.filter(|value| !value.is_empty()) {
+        let body = exif.strip_prefix(b"Exif\0\0").unwrap_or(exif);
+        chunks.extend_from_slice(&png_chunk(b"eXIf", body));
+    }
+    if let Some(xmp) = xmp.filter(|value| !value.is_empty()) {
+        let mut body = b"XML:com.adobe.xmp\0\0\0\0\0".to_vec();
+        body.extend_from_slice(xmp);
+        chunks.extend_from_slice(&png_chunk(b"iTXt", &body));
+    }
+    let cut_in_kept = kept
+        .windows(4)
+        .position(|window| window == b"IDAT")
+        .map_or(cut.min(kept.len()), |at| at.saturating_sub(4));
+    let mut out = Vec::with_capacity(kept.len() + chunks.len());
+    out.extend_from_slice(&kept[..cut_in_kept]);
+    out.extend_from_slice(&chunks);
+    out.extend_from_slice(&kept[cut_in_kept..]);
+    out
+}
+
+fn png_chunk(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(body.len() + 12);
+    out.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    out.extend_from_slice(kind);
+    out.extend_from_slice(body);
+    let mut crc = Vec::with_capacity(4 + body.len());
+    crc.extend_from_slice(kind);
+    crc.extend_from_slice(body);
+    out.extend_from_slice(&crc32fast::hash(&crc).to_be_bytes());
+    out
+}
+
+/// A WebP rebuilt in extended form with EXIF and XMP chunks in spec order.
+#[must_use]
+pub fn rewrite_webp_metadata(webp: &[u8], exif: Option<&[u8]>, xmp: Option<&[u8]>) -> Vec<u8> {
+    let Some(chunks) = webp_chunks(webp) else {
+        return webp.to_vec();
+    };
+    let mut header = None;
+    let mut width = 0u32;
+    let mut height = 0u32;
+    let mut kept = Vec::new();
+    for (kind, start, end) in &chunks {
+        let payload = &webp[*start..*end];
+        if *kind == *b"VP8X" {
+            header = Some(payload.to_vec());
+            if payload.len() >= 10 {
+                width = 1 + u32::from_le_bytes([payload[4], payload[5], payload[6], 0]);
+                height = 1 + u32::from_le_bytes([payload[7], payload[8], payload[9], 0]);
+            }
+        } else if *kind != *b"EXIF" && *kind != *b"XMP " {
+            kept.push((*kind, payload.to_vec()));
+        }
+    }
+    let mut vp8x = header.unwrap_or_else(|| vec![0; 10]);
+    if vp8x.len() < 10 {
+        vp8x.resize(10, 0);
+    }
+    if width == 0 || height == 0 {
+        if let Some((_, size)) = kept.iter().find(|(kind, _)| *kind == *b"VP8 ") {
+            if size.len() >= 10 {
+                width = u32::from_le_bytes([size[6], size[7], 0, 0]) & 0x3fff;
+                height = u32::from_le_bytes([size[8], size[9], 0, 0]) & 0x3fff;
+            }
+        }
+    }
+    if width == 0 || height == 0 {
+        return webp.to_vec();
+    }
+    let exif_payload = exif
+        .filter(|value| !value.is_empty())
+        .map(|value| value.strip_prefix(b"Exif\0\0").unwrap_or(value).to_vec());
+    let mut flags = vp8x[0] & !0x0c;
+    if kept.iter().any(|(kind, _)| *kind == *b"ICCP") {
+        flags |= 0x20;
+    }
+    if exif_payload.is_some() {
+        flags |= 0x08;
+    }
+    if xmp.is_some_and(|value| !value.is_empty()) {
+        flags |= 0x04;
+    }
+    vp8x[0] = flags;
+    vp8x[4..7].copy_from_slice(&(width - 1).to_le_bytes()[..3]);
+    vp8x[7..10].copy_from_slice(&(height - 1).to_le_bytes()[..3]);
+    let mut parts = Vec::new();
+    parts.extend_from_slice(&webp_chunk(b"VP8X", &vp8x));
+    for (kind, payload) in kept.iter().filter(|(kind, _)| *kind == *b"ICCP") {
+        parts.extend_from_slice(&webp_chunk(kind, payload));
+    }
+    for (kind, payload) in kept.iter().filter(|(kind, _)| *kind != *b"ICCP") {
+        parts.extend_from_slice(&webp_chunk(kind, payload));
+    }
+    if let Some(exif) = exif_payload {
+        parts.extend_from_slice(&webp_chunk(b"EXIF", &exif));
+    }
+    if let Some(xmp) = xmp.filter(|value| !value.is_empty()) {
+        parts.extend_from_slice(&webp_chunk(b"XMP ", xmp));
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(b"RIFF");
+    out.extend_from_slice(&((parts.len() + 4) as u32).to_le_bytes());
+    out.extend_from_slice(b"WEBP");
+    out.extend_from_slice(&parts);
+    out
+}
+
+fn webp_chunks(data: &[u8]) -> Option<Vec<([u8; 4], usize, usize)>> {
+    if data.get(..4) != Some(b"RIFF") || data.get(8..12) != Some(b"WEBP") {
+        return None;
+    }
+    let riff_end =
+        (8 + u32::from_le_bytes(data.get(4..8)?.try_into().ok()?) as usize).min(data.len());
+    let mut chunks = Vec::new();
+    let mut at = 12usize;
+    while at + 8 <= riff_end {
+        let size = u32::from_le_bytes(data[at + 4..at + 8].try_into().ok()?) as usize;
+        let start = at + 8;
+        let end = start.checked_add(size)?;
+        if end > riff_end {
+            return None;
+        }
+        chunks.push((data[at..at + 4].try_into().ok()?, start, end));
+        at = end + (size & 1);
+    }
+    (!chunks.is_empty()).then_some(chunks)
+}
+
+fn webp_chunk(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + body.len() + 1);
+    out.extend_from_slice(kind);
+    out.extend_from_slice(&(body.len() as u32).to_le_bytes());
+    out.extend_from_slice(body);
+    if body.len() & 1 == 1 {
+        out.push(0);
+    }
+    out
+}
+
+/// A JPEG XL container with fresh Exif and XMP boxes before its codestream.
+#[must_use]
+pub fn rewrite_jxl_metadata(jxl: &[u8], exif: Option<&[u8]>, xmp: Option<&[u8]>) -> Vec<u8> {
+    let container = if jxl.starts_with(JXL_CODESTREAM) {
+        let mut data = JXL_SIGNATURE.to_vec();
+        data.extend_from_slice(&jxl_box(b"ftyp", b"jxl \0\0\0\0jxl "));
+        data.extend_from_slice(&jxl_box(b"jxlc", jxl));
+        data
+    } else {
+        jxl.to_vec()
+    };
+    let Ok(boxes) = jxl_boxes(&container) else {
+        return jxl.to_vec();
+    };
+    let mut metadata = Vec::new();
+    if let Some(exif) = exif.filter(|value| !value.is_empty()) {
+        let tiff = exif.strip_prefix(b"Exif\0\0").unwrap_or(exif);
+        let mut payload = vec![0, 0, 0, 0];
+        payload.extend_from_slice(tiff);
+        metadata.extend_from_slice(&jxl_box(JXL_EXIF_BOX, &payload));
+    }
+    if let Some(xmp) = xmp.filter(|value| !value.is_empty()) {
+        metadata.extend_from_slice(&jxl_box(JXL_XMP_BOX, xmp));
+    }
+    let mut out = Vec::new();
+    let mut inserted = false;
+    for entry in boxes {
+        let kind = &container[entry.start - 4..entry.start];
+        let is_metadata = entry.kind == *JXL_EXIF_BOX
+            || entry.kind == *JXL_XMP_BOX
+            || (entry.kind == *b"brob"
+                && &container[entry.start..entry.start + 4] == JXL_EXIF_BOX.as_slice())
+            || (entry.kind == *b"brob"
+                && &container[entry.start..entry.start + 4] == JXL_XMP_BOX.as_slice());
+        if is_metadata {
+            continue;
+        }
+        if !inserted && (entry.kind == *b"jxlc" || entry.kind == *b"jxlp") {
+            out.extend_from_slice(&metadata);
+            inserted = true;
+        }
+        let size = (entry.end - (entry.start - 8)) as u32;
+        out.extend_from_slice(&size.to_be_bytes());
+        out.extend_from_slice(kind);
+        out.extend_from_slice(&container[entry.start..entry.end]);
+    }
+    if !inserted {
+        return jxl.to_vec();
+    }
+    out
+}
+
+/// `embed_metadata`: attach EXIF and XMP to an encoded export in its own container.
+#[must_use]
+pub fn embed_metadata(
+    image: &[u8],
+    payload: &MetadataPayload,
+    source: Option<&SourceExif>,
+    resolution: Option<&Resolution>,
+) -> Vec<u8> {
+    let merged = with_resolution(
+        merge_exif(source.map(ExifData::from).as_ref(), payload),
+        resolution,
+    );
+    let exif = sanitize_exif(&merged);
+    let xmp = payload
+        .has_any_data()
+        .then(|| crate::features::metadata::xmp::build_xmp_bytes(payload, true));
+    if image.starts_with(&[0xFF, 0xD8]) {
+        let exif = prepare_jpeg_exif(&with_resolution(exif, None));
+        let bytes = dump_exif(&exif);
+        let with_exif = inject_jpeg_exif(image, &bytes);
+        return match xmp {
+            Some(xmp) => inject_jpeg_xmp(&with_exif, &xmp),
+            None => with_exif,
+        };
+    }
+    if image.starts_with(b"\x89PNG\r\n\x1a\n") {
+        let exif = dump_exif(&exif);
+        return rewrite_png_metadata(image, Some(&exif), xmp.as_deref());
+    }
+    if image.starts_with(b"RIFF") {
+        let exif = dump_exif(&exif);
+        return rewrite_webp_metadata(image, Some(&exif), xmp.as_deref());
+    }
+    if image.starts_with(JXL_SIGNATURE) || image.starts_with(JXL_CODESTREAM) {
+        let exif = dump_exif(&exif);
+        return rewrite_jxl_metadata(image, Some(&exif), xmp.as_deref());
+    }
+    image.to_vec()
+}
+
+fn jxl_box(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(8 + payload.len());
+    out.extend_from_slice(&((payload.len() + 8) as u32).to_be_bytes());
+    out.extend_from_slice(kind);
+    out.extend_from_slice(payload);
     out
 }
 
