@@ -33,6 +33,32 @@ pub struct Lens {
     pub max_aperture: Option<f64>,
 }
 
+/// A colored line printed on the film edge, `at` mm in from the edge.
+#[derive(Clone, Debug, PartialEq)]
+pub struct EdgeColorLine {
+    pub at: f64,
+    pub color: String,
+    /// The line's height in mm; `None` takes the shared default.
+    pub thickness: Option<f64>,
+    pub dashed: bool,
+}
+
+/// What a stock prints on its rebate; an empty field falls back to the stock's name.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct FilmEdge {
+    /// A film edge layout key.
+    pub style: String,
+    pub maker: String,
+    pub text: String,
+    pub code: String,
+    /// `part1-part2` of the DX number.
+    pub dx: String,
+    /// The stock whose edge print this film carries, a respooled cine stock.
+    pub prints_as: String,
+    pub source: String,
+    pub color_lines: Vec<EdgeColorLine>,
+}
+
 /// A film stock.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct FilmStock {
@@ -43,6 +69,8 @@ pub struct FilmStock {
     pub iso: i64,
     pub format: String,
     pub color_type: String,
+    pub edge: Option<FilmEdge>,
+    pub is_bundled: bool,
 }
 
 /// A development recipe.
@@ -91,6 +119,16 @@ impl GearLibrary {
         self.film_stocks.iter().find(|item| item.id == id)
     }
 
+    /// A stock by the name its maker uses, as `prints_as` names one.
+    #[must_use]
+    pub fn get_film_stock(&self, name: &str) -> Option<&FilmStock> {
+        let wanted = name.trim().to_lowercase();
+        self.film_stocks.iter().find(|stock| {
+            stock.stock_name.trim().to_lowercase() == wanted
+                || stock.full_film_label().trim().to_lowercase() == wanted
+        })
+    }
+
     /// Read the bundled and user gear files into one library.
     #[must_use]
     pub fn load(gear_dir: &Path, bundled_dir: &Path) -> Self {
@@ -100,11 +138,23 @@ impl GearLibrary {
         let processes = load_merged(PROCESSES_FILE, gear_dir, bundled_dir);
         let scan_setups = load_merged(SCAN_SETUPS_FILE, gear_dir, bundled_dir);
         Self {
-            cameras: cameras.iter().map(camera_from).collect(),
-            lenses: lenses.iter().map(lens_from).collect(),
-            film_stocks: film_stocks.iter().map(film_stock_from).collect(),
-            processes: processes.iter().map(process_from).collect(),
-            scan_setups: scan_setups.iter().map(scan_setup_from).collect(),
+            cameras: cameras.iter().map(|(item, _)| camera_from(item)).collect(),
+            lenses: lenses.iter().map(|(item, _)| lens_from(item)).collect(),
+            film_stocks: film_stocks
+                .iter()
+                .map(|(item, bundled)| FilmStock {
+                    is_bundled: *bundled,
+                    ..film_stock_from(item)
+                })
+                .collect(),
+            processes: processes
+                .iter()
+                .map(|(item, _)| process_from(item))
+                .collect(),
+            scan_setups: scan_setups
+                .iter()
+                .map(|(item, _)| scan_setup_from(item))
+                .collect(),
         }
     }
 }
@@ -206,11 +256,30 @@ fn merge(
     merged
 }
 
-fn load_merged(filename: &str, gear_dir: &Path, bundled_dir: &Path) -> Vec<Map<String, Value>> {
-    merge(
-        read_list(&bundled_dir.join(filename)),
-        read_list(&gear_dir.join(filename)),
-    )
+/// A merged record and whether it came from the bundled file.
+fn load_merged(
+    filename: &str,
+    gear_dir: &Path,
+    bundled_dir: &Path,
+) -> Vec<(Map<String, Value>, bool)> {
+    let bundled = read_list(&bundled_dir.join(filename));
+    let ids: Vec<String> = bundled
+        .iter()
+        .filter_map(|item| item.get("id").and_then(Value::as_str).map(str::to_string))
+        .collect();
+    let user = read_list(&gear_dir.join(filename))
+        .into_iter()
+        .filter(|item| {
+            item.get("id")
+                .and_then(Value::as_str)
+                .is_none_or(|id| !ids.iter().any(|known| known == id))
+        })
+        .map(|item| (item, false));
+    bundled
+        .into_iter()
+        .map(|item| (item, true))
+        .chain(user)
+        .collect()
 }
 
 fn camera_from(data: &Map<String, Value>) -> Camera {
@@ -270,6 +339,43 @@ fn color_type_from_storage(value: &str) -> String {
     .to_string()
 }
 
+/// `FilmEdge.from_dict`: an absent or non-object edge prints nothing.
+#[must_use]
+pub fn film_edge_from(value: Option<&Value>) -> Option<FilmEdge> {
+    let data = value?.as_object()?;
+    let color_lines = data
+        .get("colorLines")
+        .and_then(Value::as_array)
+        .map(|lines| {
+            lines
+                .iter()
+                .filter_map(Value::as_object)
+                .filter(|line| line.contains_key("at") && line.contains_key("color"))
+                .map(|line| EdgeColorLine {
+                    at: line.get("at").and_then(Value::as_f64).unwrap_or(0.0),
+                    color: line
+                        .get("color")
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_string(),
+                    thickness: line.get("thickness").and_then(Value::as_f64),
+                    dashed: line.get("dashed").and_then(Value::as_bool).unwrap_or(false),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    Some(FilmEdge {
+        style: text(data, &["style"]),
+        maker: text(data, &["maker"]),
+        text: text(data, &["text"]),
+        code: text(data, &["code"]),
+        dx: text(data, &["dx"]),
+        prints_as: text(data, &["printsAs", "prints_as"]),
+        source: text(data, &["source"]),
+        color_lines,
+    })
+}
+
 fn film_stock_from(data: &Map<String, Value>) -> FilmStock {
     let format = text(data, &["format"]);
     let color_type = text(data, &["colorType", "color_type"]);
@@ -281,6 +387,8 @@ fn film_stock_from(data: &Map<String, Value>) -> FilmStock {
         iso: optional_int(data, &["iso"]).unwrap_or(100),
         format: format_from_storage(&format),
         color_type: color_type_from_storage(&color_type),
+        edge: film_edge_from(data.get("edge")),
+        is_bundled: false,
     }
 }
 
