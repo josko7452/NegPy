@@ -148,7 +148,7 @@ pub fn tables_u16(source: &[u8], dest: &[u8]) -> Option<MatrixTrcTables> {
     let (matrix, decode) = matrix_and_decode(source, dest, &codes)?;
     let dense_grid = linspace(0.0, 1.0, DEC_DENSE);
     let dense_dest = extract_trc_decode_samples(dest, &dense_grid)?;
-    let t = linspace(0.0, 1.0, ENC16_SIZE);
+    let grid = linspace(0.0, 1.0, ENC16_SIZE);
     let encode: Vec<Vec<f64>> = dense_dest
         .iter()
         .map(|row| {
@@ -156,7 +156,7 @@ pub fn tables_u16(source: &[u8], dest: &[u8]) -> Option<MatrixTrcTables> {
             for index in 1..rising.len() {
                 rising[index] = rising[index].max(rising[index - 1]);
             }
-            t.iter()
+            grid.iter()
                 .map(|value| interp(value * value, &rising, &dense_grid))
                 .collect()
         })

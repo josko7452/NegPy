@@ -60,12 +60,25 @@ pub fn build_3d_lut(
     intent: u8,
     size: usize,
 ) -> Option<Lut3Data> {
+    let source = Profile::new_from_slice(source_icc, false)?;
+    let dest = Profile::new_from_slice(dest_icc, false)?;
+    sample_lut(&source, &dest, intent, size)
+}
+
+/// Build the LUT with the built-in sRGB profile as the destination, which is what the
+/// Python display path uses when no monitor profile is set.
+#[must_use]
+pub fn build_3d_lut_to_srgb(source_icc: &[u8], intent: u8, size: usize) -> Option<Lut3Data> {
+    let source = Profile::new_from_slice(source_icc, false)?;
+    let dest = Profile::new_sRGB();
+    sample_lut(&source, &dest, intent, size)
+}
+
+fn sample_lut(source: &Profile, dest: &Profile, intent: u8, size: usize) -> Option<Lut3Data> {
     if size < 2 {
         return None;
     }
-    let source = Profile::new_from_slice(source_icc, false)?;
-    let dest = Profile::new_from_slice(dest_icc, false)?;
-    let transform = Transform::new(&source, &dest, DataType::RGB8, intent_from(intent))?;
+    let transform = Transform::new(source, dest, DataType::RGB8, intent_from(intent))?;
 
     let codes = grid_codes(size);
     let mut grid = Vec::with_capacity(size * size * size * 3);

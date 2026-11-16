@@ -29,7 +29,9 @@ fn tag_table(icc: &[u8]) -> Vec<([u8; 4], usize, usize)> {
         .collect()
 }
 
-fn profile_description(icc: &[u8]) -> Option<String> {
+/// The profile's `desc` tag as text. `None` when the tag is absent or unreadable.
+#[must_use]
+pub fn profile_description(icc: &[u8]) -> Option<String> {
     let (_, offset, size) = tag_table(icc)
         .into_iter()
         .find(|(kind, _, _)| kind == b"desc")?;
