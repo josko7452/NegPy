@@ -2,6 +2,7 @@
 
 pub mod capture_color;
 pub mod chart;
+pub mod chart_ref;
 pub mod detect;
 pub mod fade;
 pub mod fade_auto_red;
