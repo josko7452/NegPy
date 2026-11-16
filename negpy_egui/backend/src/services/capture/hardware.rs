@@ -6,13 +6,35 @@
 use std::path::Path;
 
 /// What holds a Blend exposure's shutter open.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum BulbRelease {
     /// The camera's own bulb control over USB.
     #[default]
     Usb,
     /// A release cable on the Scanlight's 3.5 mm jack.
     Cable,
+}
+
+impl BulbRelease {
+    /// The saved spelling.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Usb => "usb",
+            Self::Cable => "cable",
+        }
+    }
+
+    /// The release for a saved value; anything else reads as USB, as the Python
+    /// `_missing_` does.
+    #[must_use]
+    pub fn coerce(value: &str) -> Self {
+        match value.to_ascii_lowercase().as_str() {
+            "cable" => Self::Cable,
+            _ => Self::Usb,
+        }
+    }
 }
 
 /// Everything needed to capture one R/G/B triplet.
