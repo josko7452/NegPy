@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `77114769` backend: port scanner params and settings
+**Last Updated:** 2026-11-16 | **Last Commit:** `50fab013` backend: define the scanner transport contract
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session runs 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
+- `50fab013` backend: define the scanner transport contract.
 - `77114769` backend: port scanner params and settings.
 - `72702035` backend: carry mask and diffusion planes to print.
 - `9439885e` backend: expose the crosstalk and sensor library API.

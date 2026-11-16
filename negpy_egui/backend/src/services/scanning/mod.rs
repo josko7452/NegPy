@@ -2,6 +2,7 @@
 
 pub mod params;
 pub mod settings;
+pub mod simulated;
 pub mod templating;
 pub mod transport;
 pub mod writer;
