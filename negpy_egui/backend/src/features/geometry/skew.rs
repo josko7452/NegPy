@@ -694,3 +694,42 @@ pub fn trusted_frame_skew(img: &ImageBuffer, fit_keystone: bool) -> Option<Frame
     }
     (skew.confidence >= SKEW_TRUSTED_CONFIDENCE).then_some(skew)
 }
+
+/// The geometry with Fine Rotation, and Tilt and Swing where measured, read off the frame's
+/// own edges, and the fit itself. `None` when the edges are not trusted. The fit runs on the
+/// frame with its skew zeroed, so the values are absolute.
+#[must_use]
+pub fn squared_geometry(
+    source: &ImageBuffer,
+    geometry: &crate::domain::models::GeometryConfig,
+    _process_mode: crate::domain::models::ProcessMode,
+) -> Option<(crate::domain::models::GeometryConfig, FrameSkew)> {
+    let (small, _) = crate::features::geometry::processor::normalize_detection_input(
+        source,
+        AUTOCROP_DETECT_RES as u32,
+    );
+    let base = crate::domain::models::GeometryConfig {
+        fine_rotation: 0.0,
+        converge_v: 0.0,
+        converge_h: 0.0,
+        crop_rect: None,
+        crop_from_auto: false,
+        autocrop_offset: 0,
+        ..geometry.clone()
+    };
+    let processed = crate::features::geometry::processor::process(
+        &small,
+        &base,
+        crate::features::geometry::processor::GeometryContext { scale_factor: 1.0 },
+    );
+    let skew = trusted_frame_skew(&processed.image, true)?;
+    let squared = crate::domain::models::GeometryConfig {
+        fine_rotation: skew
+            .fine_rotation
+            .clamp(-FINE_ROTATION_LIMIT, FINE_ROTATION_LIMIT),
+        converge_v: skew.converge_v.unwrap_or(geometry.converge_v),
+        converge_h: skew.converge_h.unwrap_or(geometry.converge_h),
+        ..geometry.clone()
+    };
+    Some((squared, skew))
+}
