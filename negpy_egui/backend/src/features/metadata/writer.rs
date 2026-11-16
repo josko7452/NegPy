@@ -1252,16 +1252,26 @@ fn exposure_bias(text: &str) -> Option<(i64, i64)> {
             end -= 1;
         }
         for start in 0..end {
-            let Some((sum, at)) = parse_terms(&text[start..end]) else {
-                continue;
-            };
-            if at != end - start {
+            let candidate = &text[start..end];
+            if candidate.starts_with(' ') {
                 continue;
             }
-            if start >= 2
-                && matches!(bytes[start - 2], b'+' | b'-' | 0xe2)
-                && bytes[start - 1] == b' '
+            if candidate.contains(" + ")
+                || candidate.contains(" - ")
+                || candidate.contains(" \u{2212} ")
             {
+                return None;
+            }
+            if start >= 2
+                && bytes[start - 1] == b' '
+                && matches!(bytes[start - 2], b'+' | b'-' | 0xe2)
+            {
+                continue;
+            }
+            let Some((sum, at)) = parse_terms(candidate) else {
+                continue;
+            };
+            if at != candidate.len() {
                 continue;
             }
             return Some(reduce(sum));
@@ -1291,7 +1301,7 @@ fn parse_terms(text: &str) -> Option<((i64, i64), usize)> {
         while at < bytes.len() && (bytes[at].is_ascii_digit() || bytes[at] == b'.') {
             at += 1;
         }
-        if start == at {
+        if start == at || (start + 1 == at && bytes[start] == b'.') {
             return None;
         }
         let (mut num, mut den) = decimal_fraction(&text[start..at])?;
@@ -1388,9 +1398,9 @@ mod tests {
 
     #[test]
     fn an_ev_sum_keeps_its_exact_fraction() {
-        assert_eq!(exposure_bias("1+2/3ev"), Some((5, 3)));
-        assert_eq!(exposure_bias("-1-2/3ev"), Some((-5, 3)));
-        assert_eq!(exposure_bias(".25ev"), Some((1, 4)));
-        assert_eq!(exposure_bias("1 + 2/3 ev"), None);
+        assert_eq!(exposure_bias("1+2/3ev"), Some((5, 3)), "1+2/3");
+        assert_eq!(exposure_bias("-1-2/3ev"), Some((-5, 3)), "-1-2/3");
+        assert_eq!(exposure_bias(".25ev"), Some((1, 4)), ".25");
+        assert_eq!(exposure_bias("1 + 2/3 ev"), None, "1 + 2/3");
     }
 }

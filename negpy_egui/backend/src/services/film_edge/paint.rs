@@ -632,6 +632,6 @@ mod tests {
             None,
         );
         assert!(canvas.pixels.chunks(3).any(|pixel| pixel == [255; 3]));
-        assert!(canvas.pixels.chunks(3).any(|pixel| pixel == [10; 10; 10]));
+        assert!(canvas.pixels.chunks(3).any(|pixel| pixel == [10, 10, 10]));
     }
 }
