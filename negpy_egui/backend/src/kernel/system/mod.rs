@@ -7,5 +7,6 @@ pub mod memory;
 pub mod override_config;
 pub mod paths;
 pub mod text;
+pub mod timing;
 pub mod user_directory;
 pub mod version;
