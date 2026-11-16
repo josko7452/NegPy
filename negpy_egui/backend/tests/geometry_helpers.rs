@@ -2,10 +2,10 @@
 
 use negpy_backend::domain::models::{AspectRatio, GeometryConfig};
 use negpy_backend::features::geometry::logic::{
-    FINE_ROTATION_LIMIT, autocrop_detection_key, flip_geometry_and_analysis, has_manual_crop,
-    meter_detection_key, mirror_normalized_rect, rotate_geometry_and_analysis,
-    rotate_normalized_rect, rotation_drag_angle, straighten_delta_degrees, toggle_flip,
-    translate_normalized_rect,
+    FINE_ROTATION_LIMIT, autocrop_detection_key, crops_frame, flip_geometry_and_analysis,
+    has_manual_crop, holds_own_skew, meter_detection_key, mirror_normalized_rect,
+    rotate_geometry_and_analysis, rotate_normalized_rect, rotation_drag_angle, squares_on_arm,
+    straighten_delta_degrees, toggle_flip, translate_normalized_rect,
 };
 
 fn close(actual: [f64; 4], expected: [f64; 4]) {
@@ -100,6 +100,72 @@ fn manual_crop_means_a_rect_not_from_auto() {
         ..auto
     };
     assert!(has_manual_crop(&manual));
+}
+
+#[test]
+fn cropping_states_follow_the_three_roi_branches() {
+    let base = GeometryConfig::default();
+    assert!(!crops_frame(&base));
+    assert!(crops_frame(&GeometryConfig {
+        crop_rect: Some(vec![0.1, 0.1, 0.9, 0.9]),
+        ..base.clone()
+    }));
+    assert!(crops_frame(&GeometryConfig {
+        crop_to_valid: true,
+        ..base.clone()
+    }));
+    assert!(!crops_frame(&GeometryConfig {
+        crop_to_valid: true,
+        crop_from_auto: true,
+        ..base.clone()
+    }));
+    assert!(crops_frame(&GeometryConfig {
+        autocrop_offset: 4,
+        ..base
+    }));
+}
+
+#[test]
+fn a_frame_holds_its_own_skew_when_any_of_the_three_is_set() {
+    let base = GeometryConfig::default();
+    assert!(!holds_own_skew(&base));
+    for geometry in [
+        GeometryConfig {
+            fine_rotation: 0.2,
+            ..base.clone()
+        },
+        GeometryConfig {
+            converge_v: 0.2,
+            ..base.clone()
+        },
+        GeometryConfig {
+            converge_h: 0.2,
+            ..base.clone()
+        },
+    ] {
+        assert!(holds_own_skew(&geometry));
+    }
+}
+
+#[test]
+fn squaring_waits_for_a_fresh_arm_without_its_own_skew() {
+    let square = GeometryConfig {
+        autocrop_square: true,
+        ..GeometryConfig::default()
+    };
+    assert!(squares_on_arm(&square));
+    assert!(!squares_on_arm(&GeometryConfig {
+        autocrop_squared: true,
+        ..square.clone()
+    }));
+    assert!(!squares_on_arm(&GeometryConfig {
+        fine_rotation: 0.2,
+        ..square.clone()
+    }));
+    assert!(!squares_on_arm(&GeometryConfig {
+        autocrop_square: false,
+        ..square
+    }));
 }
 
 #[test]

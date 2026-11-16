@@ -460,6 +460,29 @@ pub fn has_manual_crop(geometry: &crate::domain::models::GeometryConfig) -> bool
     geometry.crop_rect.is_some() && !geometry.crop_from_auto
 }
 
+/// Whether the frame has a crop ROI: a rect, Crop by Default's void-free rect, or a Crop
+/// Offset margin. Mirrors `crops_frame`.
+#[must_use]
+pub fn crops_frame(geometry: &crate::domain::models::GeometryConfig) -> bool {
+    geometry.crop_rect.is_some()
+        || (geometry.crop_to_valid && !geometry.crop_from_auto)
+        || geometry.autocrop_offset > 0
+}
+
+/// Whether the frame already has its own Fine Rotation, Tilt or Swing, set by hand or by an
+/// earlier squaring. Auto Crop's squaring leaves these as they are.
+#[must_use]
+pub fn holds_own_skew(geometry: &crate::domain::models::GeometryConfig) -> bool {
+    geometry.fine_rotation != 0.0 || geometry.converge_v != 0.0 || geometry.converge_h != 0.0
+}
+
+/// Whether Square Before Crop squares this frame before its next crop detection: on, not yet
+/// run for this arm, and no skew of the frame's own.
+#[must_use]
+pub fn squares_on_arm(geometry: &crate::domain::models::GeometryConfig) -> bool {
+    geometry.autocrop_square && !geometry.autocrop_squared && !holds_own_skew(geometry)
+}
+
 /// Everything border detection reads, as one comparable string.
 #[must_use]
 pub fn autocrop_detection_key(geometry: &crate::domain::models::GeometryConfig) -> String {
