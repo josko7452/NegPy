@@ -12,6 +12,7 @@ This session adds 10 backend commits, then runs the workspace test and a gap aud
 - `pending` metadata: capture merge over source EXIF.
 - `pending` metadata: JPEG EXIF and XMP segments.
 - `pending` metadata: PNG, WebP and JXL metadata rewrite.
+- `pending` film-edge: fixed face and measured text runs.
 
 ## Verification (After Commit 10)
 - `cargo fmt --check` clean. Targeted tests passed per commit.
