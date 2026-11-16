@@ -1,9 +1,9 @@
 //! Mirrors the EXIF half of `negpy/features/metadata/writer.py`: the tags a file carries.
 
 use crate::features::metadata::capture::dms;
-use crate::features::metadata::exif_read::{ExifTags, ExifValue};
+use crate::features::metadata::exif_read::{ExifTags, ExifValue, SourceExif};
 use crate::features::metadata::payload::{MetadataPayload, NEGPY_SOFTWARE};
-use crate::features::metadata::resolution::to_rational;
+use crate::features::metadata::resolution::{Resolution, to_rational};
 
 pub const TAG_IMAGE_DESCRIPTION: u16 = 270;
 pub const TAG_MAKE: u16 = 271;
@@ -44,6 +44,13 @@ pub const TAG_GPS_LATITUDE: u16 = 2;
 pub const TAG_GPS_LONGITUDE_REF: u16 = 3;
 pub const TAG_GPS_LONGITUDE: u16 = 4;
 pub const TAG_GPS_MAP_DATUM: u16 = 18;
+
+pub const TAG_FOCAL_LENGTH_35MM: u16 = 41989;
+pub const TAG_LENS_SERIAL: u16 = 42037;
+pub const TAG_BODY_SERIAL: u16 = 42033;
+pub const TAG_LENS_SPECIFICATION: u16 = 42034;
+pub const TAG_SUBJECT_DISTANCE: u16 = 37382;
+pub const TAG_DIGITAL_ZOOM: u16 = 41988;
 
 /// The five IFDs piexif-shaped EXIF carries.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -257,6 +264,89 @@ pub fn demote_scan_datetime(data: &mut ExifData) {
         && !data.exif.contains_key(&TAG_DATE_TIME_DIGITIZED)
     {
         data.exif.insert(TAG_DATE_TIME_DIGITIZED, source);
+    }
+}
+
+impl From<&SourceExif> for ExifData {
+    fn from(source: &SourceExif) -> Self {
+        Self {
+            zeroth: source.zeroth.clone(),
+            exif: source.exif.clone(),
+            gps: source.gps.clone(),
+            interop: ExifTags::new(),
+            first: ExifTags::new(),
+        }
+    }
+}
+
+/// `_with_resolution`: replace the EXIF resolution record, when one was chosen.
+#[must_use]
+pub fn with_resolution(mut data: ExifData, resolution: Option<&Resolution>) -> ExifData {
+    let Some(resolution) = resolution else {
+        return data;
+    };
+    data.zeroth.insert(
+        TAG_X_RESOLUTION,
+        ExifValue::Rational(resolution.x.0, resolution.x.1),
+    );
+    data.zeroth.insert(
+        TAG_Y_RESOLUTION,
+        ExifValue::Rational(resolution.y.0, resolution.y.1),
+    );
+    data.zeroth.insert(
+        TAG_RESOLUTION_UNIT,
+        ExifValue::UInt(u64::from(resolution.unit)),
+    );
+    data
+}
+
+/// `_merged_exif_and_payload`: source EXIF plus the capture fields the config sets.
+#[must_use]
+pub fn merge_exif(source: Option<&ExifData>, payload: &MetadataPayload) -> ExifData {
+    let mut merged = source.cloned().unwrap_or_default();
+    let custom = build_custom_exif(payload);
+    if payload.exif_flags.strip_scan_residuals() {
+        strip_scan_exif_for_capture(&mut merged);
+    }
+    if payload.capture_date.is_some() {
+        demote_scan_datetime(&mut merged);
+    }
+    if payload.gps_latitude.is_some() && payload.gps_longitude.is_some() {
+        merged.gps.clear();
+    }
+    for (name, tags) in [
+        ("0th", custom.zeroth),
+        ("Exif", custom.exif),
+        ("GPS", custom.gps),
+        ("Interop", custom.interop),
+        ("1st", custom.first),
+    ] {
+        if tags.is_empty() {
+            continue;
+        }
+        if let Some(target) = merged.ifd_mut(name) {
+            target.extend(tags);
+        }
+    }
+    merged.zeroth.insert(TAG_ORIENTATION, ExifValue::UInt(1));
+    merged.first.remove(&TAG_ORIENTATION);
+    merged
+}
+
+/// `strip_scan_exif_for_capture`: remove the rig's lens and body fields.
+pub fn strip_scan_exif_for_capture(data: &mut ExifData) {
+    for tag in [
+        TAG_FOCAL_LENGTH_35MM,
+        TAG_LENS_SERIAL,
+        TAG_BODY_SERIAL,
+        TAG_LENS_SPECIFICATION,
+        TAG_SUBJECT_DISTANCE,
+        TAG_DIGITAL_ZOOM,
+        TAG_EXPOSURE_TIME,
+        TAG_F_NUMBER,
+        TAG_ISO,
+    ] {
+        data.exif.remove(&tag);
     }
 }
 
