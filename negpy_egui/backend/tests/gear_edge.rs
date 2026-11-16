@@ -1,6 +1,8 @@
 //! The film-edge block of a gear stock, as `gear/film_stocks.json` stores it.
 
-use negpy_backend::features::metadata::gear::GearLibrary;
+use negpy_backend::features::metadata::gear::{
+    Camera, DevelopmentProcess, FilmStock, GearLibrary, Lens, ScanSetup,
+};
 use serde_json::json;
 use std::fs;
 
@@ -109,6 +111,87 @@ fn prints_as_finds_a_stock_by_its_catalog_name() {
         "k5219"
     );
     assert!(library.get_film_stock("5219").is_none());
+}
+
+#[test]
+fn a_saved_library_round_trips_every_user_record() {
+    let user = tempfile::tempdir().unwrap();
+    let bundled = tempfile::tempdir().unwrap();
+    fs::write(bundled.path().join("film_stocks.json"), "[]").unwrap();
+    let library = GearLibrary {
+        cameras: vec![Camera {
+            id: "mine".into(),
+            make: "Olympus".into(),
+            model: "PEN F".into(),
+            serial_number: "123".into(),
+            notes: "Half frame".into(),
+            ..Camera::default()
+        }],
+        lenses: vec![Lens {
+            id: "lens".into(),
+            lens_model: "Zuiko 38".into(),
+            focal_length_mm: Some(38.0),
+            max_aperture: Some(1.8),
+            ..Lens::default()
+        }],
+        film_stocks: vec![FilmStock {
+            id: "stock".into(),
+            manufacturer: "Ilford".into(),
+            stock_name: "HP5 Plus".into(),
+            iso: 400,
+            format: "35mm".into(),
+            color_type: "B&W Negative".into(),
+            ..FilmStock::default()
+        }],
+        processes: vec![DevelopmentProcess {
+            id: "process".into(),
+            display_name: "D-76 stock".into(),
+            developer: "D-76".into(),
+            push_pull: 1,
+            time_seconds: Some(660),
+            temperature_c: Some(20.0),
+            ..DevelopmentProcess::default()
+        }],
+        scan_setups: vec![ScanSetup {
+            id: "setup".into(),
+            display_name: "Camera scan".into(),
+            scanning: "Nikon Z6".into(),
+            ..ScanSetup::default()
+        }],
+    };
+    library.save(user.path()).unwrap();
+
+    let saved: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(user.path().join("cameras.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved[0]["serialNumber"], "123");
+    assert_eq!(saved[0]["notes"], "Half frame");
+    assert!(saved[0].get("isBundled").is_none());
+
+    let reloaded = GearLibrary::load(user.path(), bundled.path());
+    assert_eq!(reloaded.cameras[0], library.cameras[0]);
+    assert_eq!(reloaded.lenses[0], library.lenses[0]);
+    assert_eq!(reloaded.film_stocks[0], library.film_stocks[0]);
+    assert_eq!(reloaded.processes[0], library.processes[0]);
+    assert_eq!(reloaded.scan_setups[0], library.scan_setups[0]);
+}
+
+#[test]
+fn saving_drops_bundled_records() {
+    let user = tempfile::tempdir().unwrap();
+    let bundled = tempfile::tempdir().unwrap();
+    let stock = json!([{"id": "hp5", "manufacturer": "Ilford", "stockName": "HP5 Plus"}]);
+    fs::write(
+        bundled.path().join("film_stocks.json"),
+        serde_json::to_string(&stock).unwrap(),
+    )
+    .unwrap();
+    let library = GearLibrary::load(user.path(), bundled.path());
+    library.save(user.path()).unwrap();
+    let saved: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(user.path().join("film_stocks.json")).unwrap())
+            .unwrap();
+    assert_eq!(saved, json!([]));
 }
 
 #[test]

@@ -20,6 +20,9 @@ pub struct Camera {
     pub make: String,
     pub model: String,
     pub display_name: String,
+    pub serial_number: String,
+    pub notes: String,
+    pub is_bundled: bool,
 }
 
 /// A lens.
@@ -31,6 +34,9 @@ pub struct Lens {
     pub display_name: String,
     pub focal_length_mm: Option<f64>,
     pub max_aperture: Option<f64>,
+    pub serial_number: String,
+    pub notes: String,
+    pub is_bundled: bool,
 }
 
 /// A colored line printed on the film edge, `at` mm in from the edge.
@@ -69,6 +75,7 @@ pub struct FilmStock {
     pub iso: i64,
     pub format: String,
     pub color_type: String,
+    pub notes: String,
     pub edge: Option<FilmEdge>,
     pub is_bundled: bool,
 }
@@ -83,6 +90,8 @@ pub struct DevelopmentProcess {
     pub push_pull: i64,
     pub time_seconds: Option<i64>,
     pub temperature_c: Option<f64>,
+    pub notes: String,
+    pub is_bundled: bool,
 }
 
 /// A digitizing setup.
@@ -91,6 +100,8 @@ pub struct ScanSetup {
     pub id: String,
     pub display_name: String,
     pub scanning: String,
+    pub notes: String,
+    pub is_bundled: bool,
 }
 
 /// Every gear collection, merged from bundled and user files.
@@ -138,8 +149,20 @@ impl GearLibrary {
         let processes = load_merged(PROCESSES_FILE, gear_dir, bundled_dir);
         let scan_setups = load_merged(SCAN_SETUPS_FILE, gear_dir, bundled_dir);
         Self {
-            cameras: cameras.iter().map(|(item, _)| camera_from(item)).collect(),
-            lenses: lenses.iter().map(|(item, _)| lens_from(item)).collect(),
+            cameras: cameras
+                .iter()
+                .map(|(item, bundled)| Camera {
+                    is_bundled: *bundled,
+                    ..camera_from(item)
+                })
+                .collect(),
+            lenses: lenses
+                .iter()
+                .map(|(item, bundled)| Lens {
+                    is_bundled: *bundled,
+                    ..lens_from(item)
+                })
+                .collect(),
             film_stocks: film_stocks
                 .iter()
                 .map(|(item, bundled)| FilmStock {
@@ -149,11 +172,17 @@ impl GearLibrary {
                 .collect(),
             processes: processes
                 .iter()
-                .map(|(item, _)| process_from(item))
+                .map(|(item, bundled)| DevelopmentProcess {
+                    is_bundled: *bundled,
+                    ..process_from(item)
+                })
                 .collect(),
             scan_setups: scan_setups
                 .iter()
-                .map(|(item, _)| scan_setup_from(item))
+                .map(|(item, bundled)| ScanSetup {
+                    is_bundled: *bundled,
+                    ..scan_setup_from(item)
+                })
                 .collect(),
         }
     }
@@ -271,6 +300,9 @@ fn camera_from(data: &Map<String, Value>) -> Camera {
         make: text(data, &["make"]),
         model: text(data, &["model"]),
         display_name: text(data, &["displayName", "display_name"]),
+        serial_number: text(data, &["serialNumber", "serial_number"]),
+        notes: text(data, &["notes"]),
+        is_bundled: false,
     }
 }
 
@@ -282,6 +314,9 @@ fn lens_from(data: &Map<String, Value>) -> Lens {
         display_name: text(data, &["displayName", "display_name"]),
         focal_length_mm: optional_number(data, &["focalLength", "focal_length_mm"]),
         max_aperture: optional_number(data, &["maxAperture", "max_aperture"]),
+        serial_number: text(data, &["serialNumber", "serial_number"]),
+        notes: text(data, &["notes"]),
+        is_bundled: false,
     }
 }
 
@@ -370,6 +405,7 @@ fn film_stock_from(data: &Map<String, Value>) -> FilmStock {
         iso: optional_int(data, &["iso"]).unwrap_or(100),
         format: format_from_storage(&format),
         color_type: color_type_from_storage(&color_type),
+        notes: text(data, &["notes"]),
         edge: film_edge_from(data.get("edge")),
         is_bundled: false,
     }
@@ -384,6 +420,8 @@ fn process_from(data: &Map<String, Value>) -> DevelopmentProcess {
         push_pull: optional_int(data, &["pushPull", "push_pull"]).unwrap_or(0),
         time_seconds: optional_int(data, &["timeSeconds", "time_seconds"]),
         temperature_c: optional_number(data, &["temperatureC", "temperature_c"]),
+        notes: text(data, &["notes"]),
+        is_bundled: false,
     }
 }
 
@@ -392,5 +430,172 @@ fn scan_setup_from(data: &Map<String, Value>) -> ScanSetup {
         id: text(data, &["id"]),
         display_name: text(data, &["displayName", "display_name"]),
         scanning: text(data, &["scanning"]),
+        notes: text(data, &["notes"]),
+        is_bundled: false,
+    }
+}
+
+fn put_text(value: &mut Map<String, Value>, key: &str, text: &str) {
+    value.insert(key.to_string(), Value::String(text.to_string()));
+}
+
+fn put_optional_text(value: &mut Map<String, Value>, key: &str, text: &str) {
+    let text = if text.is_empty() {
+        Value::Null
+    } else {
+        Value::String(text.to_string())
+    };
+    value.insert(key.to_string(), text);
+}
+
+fn camera_to_value(camera: &Camera) -> Value {
+    let mut value = Map::new();
+    put_text(&mut value, "id", &camera.id);
+    put_text(&mut value, "make", &camera.make);
+    put_text(&mut value, "model", &camera.model);
+    put_text(&mut value, "displayName", &camera.display_name);
+    put_optional_text(&mut value, "serialNumber", &camera.serial_number);
+    put_optional_text(&mut value, "notes", &camera.notes);
+    Value::Object(value)
+}
+
+fn lens_to_value(lens: &Lens) -> Value {
+    let mut value = Map::new();
+    put_text(&mut value, "id", &lens.id);
+    put_text(&mut value, "lensModel", &lens.lens_model);
+    put_optional_text(&mut value, "make", &lens.make);
+    put_text(&mut value, "displayName", &lens.display_name);
+    put_optional_text(&mut value, "serialNumber", &lens.serial_number);
+    put_optional_text(&mut value, "notes", &lens.notes);
+    if let Some(focal) = lens.focal_length_mm {
+        value.insert("focalLength".to_string(), Value::from(focal));
+    }
+    if let Some(aperture) = lens.max_aperture {
+        value.insert("maxAperture".to_string(), Value::from(aperture));
+    }
+    Value::Object(value)
+}
+
+fn edge_to_value(edge: &FilmEdge) -> Value {
+    let mut value = Map::new();
+    put_optional_text(&mut value, "style", &edge.style);
+    put_optional_text(&mut value, "maker", &edge.maker);
+    put_optional_text(&mut value, "text", &edge.text);
+    put_optional_text(&mut value, "code", &edge.code);
+    put_optional_text(&mut value, "dx", &edge.dx);
+    put_optional_text(&mut value, "printsAs", &edge.prints_as);
+    put_optional_text(&mut value, "source", &edge.source);
+    if !edge.color_lines.is_empty() {
+        let lines = edge
+            .color_lines
+            .iter()
+            .map(|line| {
+                let mut entry = Map::new();
+                entry.insert("at".to_string(), Value::from(line.at));
+                put_text(&mut entry, "color", &line.color);
+                if let Some(thickness) = line.thickness {
+                    entry.insert("thickness".to_string(), Value::from(thickness));
+                }
+                if line.dashed {
+                    entry.insert("dashed".to_string(), Value::Bool(true));
+                }
+                Value::Object(entry)
+            })
+            .collect();
+        value.insert("colorLines".to_string(), Value::Array(lines));
+    }
+    Value::Object(value)
+}
+
+fn film_stock_to_value(stock: &FilmStock) -> Value {
+    let mut value = Map::new();
+    put_text(&mut value, "id", &stock.id);
+    put_text(&mut value, "displayName", &stock.display_name);
+    put_text(&mut value, "manufacturer", &stock.manufacturer);
+    put_text(&mut value, "stockName", &stock.stock_name);
+    value.insert("iso".to_string(), Value::from(stock.iso));
+    put_text(&mut value, "format", &stock.format);
+    put_text(&mut value, "colorType", &stock.color_type);
+    put_optional_text(&mut value, "notes", &stock.notes);
+    if let Some(edge) = &stock.edge {
+        value.insert("edge".to_string(), edge_to_value(edge));
+    }
+    Value::Object(value)
+}
+
+fn process_to_value(process: &DevelopmentProcess) -> Value {
+    let mut value = Map::new();
+    put_text(&mut value, "id", &process.id);
+    put_text(&mut value, "displayName", &process.display_name);
+    put_text(&mut value, "developer", &process.developer);
+    put_text(&mut value, "dilution", &process.dilution);
+    value.insert("pushPull".to_string(), Value::from(process.push_pull));
+    if let Some(seconds) = process.time_seconds {
+        value.insert("timeSeconds".to_string(), Value::from(seconds));
+    }
+    if let Some(temperature) = process.temperature_c {
+        value.insert("temperatureC".to_string(), Value::from(temperature));
+    }
+    put_optional_text(&mut value, "notes", &process.notes);
+    Value::Object(value)
+}
+
+fn scan_setup_to_value(setup: &ScanSetup) -> Value {
+    let mut value = Map::new();
+    put_text(&mut value, "id", &setup.id);
+    put_text(&mut value, "displayName", &setup.display_name);
+    put_text(&mut value, "scanning", &setup.scanning);
+    put_optional_text(&mut value, "notes", &setup.notes);
+    Value::Object(value)
+}
+
+fn write_list(path: &Path, items: Vec<Value>) -> Result<(), String> {
+    let text = serde_json::to_string_pretty(&items).map_err(|error| error.to_string())?;
+    let temporary = path.with_extension("json.tmp");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    fs::write(&temporary, text + "\n").map_err(|error| error.to_string())?;
+    fs::rename(&temporary, path).map_err(|error| error.to_string())
+}
+
+impl GearLibrary {
+    /// Write the user-owned records, leaving bundled records to their files.
+    pub fn save(&self, gear_dir: &Path) -> Result<(), String> {
+        let cameras = self
+            .cameras
+            .iter()
+            .filter(|item| !item.is_bundled)
+            .map(camera_to_value)
+            .collect();
+        let lenses = self
+            .lenses
+            .iter()
+            .filter(|item| !item.is_bundled)
+            .map(lens_to_value)
+            .collect();
+        let film_stocks = self
+            .film_stocks
+            .iter()
+            .filter(|item| !item.is_bundled)
+            .map(film_stock_to_value)
+            .collect();
+        let processes = self
+            .processes
+            .iter()
+            .filter(|item| !item.is_bundled)
+            .map(process_to_value)
+            .collect();
+        let scan_setups = self
+            .scan_setups
+            .iter()
+            .filter(|item| !item.is_bundled)
+            .map(scan_setup_to_value)
+            .collect();
+        write_list(&gear_dir.join(CAMERAS_FILE), cameras)?;
+        write_list(&gear_dir.join(LENSES_FILE), lenses)?;
+        write_list(&gear_dir.join(FILM_STOCKS_FILE), film_stocks)?;
+        write_list(&gear_dir.join(PROCESSES_FILE), processes)?;
+        write_list(&gear_dir.join(SCAN_SETUPS_FILE), scan_setups)
     }
 }
