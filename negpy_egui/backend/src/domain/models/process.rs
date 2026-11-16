@@ -42,6 +42,9 @@ string_enum! {
     default Auto
 }
 
+/// Display keys for the source encodings, in enum order.
+pub const SOURCE_ENCODING_LABELS: [&str; 3] = ["Auto", "Linear", "2.2"];
+
 string_enum! {
     /// How a Positive TIFF's samples encode light.
     pub enum SourceEncoding {
@@ -249,7 +252,8 @@ pub fn auto_meter_for_mode(mode: ProcessMode, current: bool) -> bool {
     }
 }
 
-pub(crate) fn invalidate_local_bounds(process: &ProcessConfig) -> (bool, [f64; 3], [f64; 3]) {
+/// Whether a changed meter input clears the frame's measured bounds.
+pub fn invalidate_local_bounds(process: &ProcessConfig) -> (bool, [f64; 3], [f64; 3]) {
     if process.lock_bounds {
         (false, process.local_floors, process.local_ceils)
     } else {

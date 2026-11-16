@@ -2,3 +2,4 @@
 
 pub mod prefetch_logic;
 pub mod render_memo;
+pub mod settings_catalog;

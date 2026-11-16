@@ -35,7 +35,9 @@ pub use export::{
 pub use exposure::{BwFilter, ExposureConfig, RenderIntent};
 pub use finish::FinishConfig;
 pub use flatfield::FlatFieldConfig;
-pub use geometry::{AspectRatio, AutocropMode, GeometryConfig};
+pub use geometry::{
+    AspectRatio, AutocropMode, GeometryConfig, with_auto_crop, with_auto_crop_field,
+};
 pub use hdr::{HdrConfig, hdr_active, hdr_merge_token, hdr_name, hdr_stem, hdr_token};
 pub use lab::{LabConfig, SharpenMethod};
 pub use lens::{IDENTITY, LensCorrections, LensMetadata, LensWarp};

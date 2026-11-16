@@ -132,6 +132,21 @@ pub fn with_auto_crop(
     config
 }
 
+/// Apply a requested Auto Crop state while keeping the other catalog fields.
+#[must_use]
+pub fn with_auto_crop_field(
+    mut config: crate::domain::models::workspace::WorkspaceConfig,
+    fields: &serde_json::Map<String, serde_json::Value>,
+) -> crate::domain::models::workspace::WorkspaceConfig {
+    if let Some(on) = fields
+        .get("crop_from_auto")
+        .and_then(serde_json::Value::as_bool)
+    {
+        config = with_auto_crop(config, on);
+    }
+    config
+}
+
 const fn default_one() -> f64 {
     1.0
 }
