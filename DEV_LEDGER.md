@@ -1,52 +1,50 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `e6b22b28` library: walk and search the roots
+**Last Updated:** 2026-11-17 | **Last Commit:** `1e973914` display: bake soft-proof and gamut tables
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session ran 10 backend commits, then the workspace test and a gap audit.
+This session ran the requested 10 backend commits, then the audit and workspace test.
 
 ## Completed (This Session)
-- `2c1ac2f9` geometry: expose the crop-state predicates.
-- `e665cb7c` render: resolve arming crop and meter box before the engine.
-- `df9b4cfb` retouch: add the detection-plane helpers.
-- `f2986308` scanner: add the scan service and per-frame roll.
-- `5a3984e5` scanner: write a result through the service.
-- `8059307a` capture: orchestrate a triplet over injected hardware.
-- `6523c1af` capture: shoot a Blend exposure in one Bulb release.
-- `26b5a846` capture: add the plain white-light single.
-- `26be165d` capture: add the Scanlight wire codec and settings.
-- `e6b22b28` library: walk and search the roots.
+- `6da70651` session: memo the last render per frame.
+- `05c0f9f6` session: select the neighboring strip frames.
+- `c2df6270` session: catalogue copyable settings rows.
+- `ada50a63` session: carry chosen settings to new frames.
+- `df7bdcac` session: hold power for unattended work.
+- `d1a9d28a` session: recover an unwritable data folder.
+- `62b60a8e` loaders: read embedded lens correction metadata.
+- `549c58f3` kernel: find and stage application updates.
+- `7c7bc908` render: manage decoded previews in one place.
+- `1e973914` display: bake soft-proof and gamut tables.
 
 ## Verification (After Commit 10)
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- `cargo test --workspace --no-fail-fast -j 4` finished; one target failed.
-- `base_read::tests::the_oldest_source_is_evicted_first` is a pre-existing
-  test-isolation race: its sibling tests share the process-wide cache and a
-  parallel `clear()` makes it flake. Reproduced 3/8 on an untouched file.
-- Every other target, and the lib alone (`252 passed`), is green.
+- The audit below was rerun after commit 10.
+- `cargo test --workspace --no-fail-fast -j 4` passed on the final rerun.
+- One earlier workspace run reported only the known `base_read` shared-cache race;
+  its lib target passed standalone.
 
 ## Audit (After Commit 10)
-- Closed: armed-crop and meter resolution, detection planes, scanner service
-  retries and result writing, per-frame roll preview, triplet/Blend/single
-  capture, Scanlight protocol and settings, library walk and search.
-- **Remaining backend gaps, in order:**
-  - D13: `desktop/render_memo.py`, `prefetch_logic.py`, `settings_catalog.py`,
-    `sticky.py`, `power_assertion.py`, `startup.py`.
-  - D10: `services.rendering.{image_processor,preview_manager,gpu_engine}` ports;
-    soft-proof and gamut LUTs; `infrastructure.loaders.lens_metadata` (only the
-    warp math is ported, in `features/rgbscan.rs`).
-  - D12: `services.assets.semantic_model` download/CLIP glue; scanner hardware
-    transports (`sane`, Plustek, pieusb, nkscan).
-  - D12: `kernel.system.updater`.
-- D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
-- `base_read` lib tests flake under parallel `clear()`; serialize that suite
-  or give each test its own key space.
+- Closed: session render memo, strip neighbors, settings catalog, sticky store and
+  migrations, power assertion, startup preflight, lens metadata readers, updater,
+  preview-manager cache/prefetch/detection helpers, proof and gamut LUTs.
+- **D10:** `services.rendering.gpu_engine` and all WGSL shaders remain unported.
+- **D10:** `ImageProcessor` remains partial: full export render/encode path, source
+  correction caches, CMYK per-pixel proof flags, and u16 color management remain.
+- **D10:** preview manager remains partial: splash and one-open paths, RGB/HDR/stitch
+  merges, and camera-WB/lens-correction decode glue remain.
+- **D12:** `services.assets.semantic_model` download glue remains; CLIP inference itself
+  is ported behind `tract-onnx`.
+- **D12:** scanner hardware transports remain (`sane`, Plustek, pieusb, nkscan).
+- **D6:** `fff_loader` returns None for SGI LogLuv until RLE/tables land.
+- GUI work remains out of scope.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
 - Fingerprints and export bytes are pinned to Python.
-- `ScanResult` now lives in `services::scanning::transport`; `writer` re-exports it.
-- `ScanError` carries the transient classification; the service retries only that.
-- `negpy_egui/target` is large. Prune with `cargo clean --profile dev`.
-- Run `cargo test --workspace` only on an idle host.
+- The 10-commit request supersedes the 5-commit checkpoint in `negpy_egui/AGENTS.md`.
+- Headless desktop helpers live under `session/`, not as 1:1 module filenames.
+- `c2df6270` added the catalog; `ada50a63` completed missing Paper Response, Retouch
+  and Finishing rows needed by the sticky migrations.
+- `negpy_egui/Cargo.lock` gained `objc2-foundation` for the macOS power assertion.
