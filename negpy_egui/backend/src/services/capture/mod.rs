@@ -5,7 +5,9 @@
 pub mod blend;
 pub mod calibration;
 pub mod focus;
+pub mod hardware;
 pub mod live_stats;
 pub mod meter;
 pub mod presets;
+pub mod service;
 pub mod shutter;

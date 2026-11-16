@@ -11,12 +11,40 @@ use super::calibration::{PWM_MAX, PWM_MIN};
 /// The shortest channel the host can time; a shorter one takes a few percent of error.
 pub const BLEND_MIN_CHANNEL_S: f64 = 0.2;
 
-/// The three lit channels, in capture order.
+/// Capture order: red first, blue last, matching TriRGB and NegPy RGB-scan.
+pub const CAPTURE_ORDER: [Channel; 3] = [Channel::Red, Channel::Green, Channel::Blue];
+
+/// One narrowband exposure of a trichromatic capture, or the infrared exposure beside it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Channel {
     Red,
     Green,
     Blue,
+    Ir,
+}
+
+impl Channel {
+    /// The file suffix a channel's exposure carries.
+    #[must_use]
+    pub fn letter(self) -> &'static str {
+        match self {
+            Self::Red => "R",
+            Self::Green => "G",
+            Self::Blue => "B",
+            Self::Ir => "IR",
+        }
+    }
+
+    /// The `(r, g, b)` Scanlight tuple that lights only this channel. R, G and B only.
+    #[must_use]
+    pub fn rgb(self, level: u32) -> Option<[u32; 3]> {
+        match self {
+            Self::Red => Some([level, 0, 0]),
+            Self::Green => Some([0, level, 0]),
+            Self::Blue => Some([0, 0, level]),
+            Self::Ir => None,
+        }
+    }
 }
 
 /// One channel of a Blend exposure: its LED level and how long it stays lit.
@@ -49,8 +77,7 @@ pub fn blend_plan(
     seconds: f64,
     max_light_s: Option<f64>,
 ) -> Result<Vec<BlendStep>, CaptureError> {
-    let channels = [Channel::Red, Channel::Green, Channel::Blue];
-    let lit: Vec<(Channel, u32)> = channels
+    let lit: Vec<(Channel, u32)> = CAPTURE_ORDER
         .into_iter()
         .zip(levels)
         .filter(|(_, level)| *level > 0)
