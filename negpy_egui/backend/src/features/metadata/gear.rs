@@ -239,23 +239,6 @@ fn read_list(path: &Path) -> Vec<Map<String, Value>> {
     items.iter().filter_map(record).cloned().collect()
 }
 
-fn merge(
-    bundled: Vec<Map<String, Value>>,
-    user: Vec<Map<String, Value>>,
-) -> Vec<Map<String, Value>> {
-    let ids: Vec<String> = bundled
-        .iter()
-        .filter_map(|item| item.get("id").and_then(Value::as_str).map(str::to_string))
-        .collect();
-    let mut merged = bundled;
-    merged.extend(user.into_iter().filter(|item| {
-        item.get("id")
-            .and_then(Value::as_str)
-            .is_none_or(|id| !ids.iter().any(|known| known == id))
-    }));
-    merged
-}
-
 /// A merged record and whether it came from the bundled file.
 fn load_merged(
     filename: &str,
