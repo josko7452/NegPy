@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `4fb5d762` metadata: reject a spaced EV sum
+**Last Updated:** 2026-11-16 | **Last Commit:** `3ffd3dc5` kernel: add the shared image conversion helpers
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,50 +7,55 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session ran 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
-- `63609792` metadata: custom EXIF tags and exposure parsing.
-- `54fbbdf7` metadata: source EXIF cleanup and thumbnail removal.
-- `8244431f` metadata: capture merge over source EXIF.
-- `6eca2b74` metadata: JPEG EXIF and XMP segments.
-- `94e80e16` metadata: PNG, WebP and JXL metadata rewrite.
-- `a2151c03` film-edge: fixed face and measured text runs.
-- `2a3e7543` film-edge: strip rebate, marks and perforations.
-- `1fc03b35` contact-sheet: tile, strip, row and label rendering.
-- `d7aa35ec` capture: linear probe meter and shutter recommendation.
-- `a6ee0fb4` scanning: name, collision and write policy.
-- `4fb5d762` metadata: reject a spaced EV sum (post-10 test fix).
+- `889169b8` display: build and apply the 3D ICC LUT (qcms).
+- `7401abfe` display: build matrix/TRC transform tables (8- and 16-bit).
+- `8c47f220` display: resolve profiles and transform a preview.
+- `c5cdf056` assets: implement the CLIP byte-level BPE tokenizer.
+- `fce606fd` assets: rank and persist semantic-search vectors.
+- `314acf89` assets: carry an assembled frame's edit to its merge.
+- `8209186b` system: collect per-step wall time into one line.
+- `9d04b3f9` filesystem: scan a watched folder for new sources.
+- `5f1de1d2` capture: plan a blend exposure and stage a capture.
+- `3ffd3dc5` kernel: add the shared image conversion helpers (10 total).
 
 ## Verification (After Commit 10)
 - Targeted tests passed per commit.
-- `cargo test --workspace --no-fail-fast` passed. First post-10 run exposed
-  one EV-parser unit failure; fixed in `4fb5d762`, then the rerun passed.
-- `cargo fmt --check` clean. Clippy is not part of this check.
+- `cargo test --workspace --no-fail-fast` passed: 131 test binaries, 0 failures.
+- `cargo fmt --all -- --check` clean. Clippy has 3 pre-existing errors and is not
+  part of the workspace gate: `stats.rs` LOG10_2, `logluv.rs` M_LN2, and an
+  `eq_op` in `tiff_loader.rs`.
 
 ## Audit (After Commit 10)
-- Closed this session: D8/D9 metadata writer, D11 film-edge paint,
-  contact-sheet paint, scanning write policy, D12 capture meter core.
-- Covered under another path: `altprocess` stages, feature logic in
-  `features/*/processor.rs`, render tail in `exposure_pipeline.rs`.
+- Covered under another path: `altprocess` stages; feature logic in
+  `features/*/processor.rs`; render tail in `exposure_pipeline.rs`.
+- **Gap found, not fixed:** `PrintSettings` hardcodes dye separation at identity
+  in `print.rs::print_curve`, and `render_negative` never fills it from
+  `ExposureConfig`. Python passes `dye_separation`, its trims and
+  `separation_damping`. This moves print pixels; fix with a bounds and
+  thumbnail version bump.
 - **D10:** render engine exists; `image_processor.py`, `preview_manager.py`
   and `gpu_engine.py` remain.
 - **D11:** scanner transports remain (`service.py` hardware loop); export
-  encoders and contact-sheet now have backend paint.
-- **D12:** embeddings/semantic/CLIP, monitor profile and ICC LUT application,
-  and capture transports remain.
+  encoders and contact-sheet have backend paint.
+- **D12:** monitor profile detection (colord/CoreGraphics), ONNX inference,
+  gear library save, and capture transports remain. `semantic_model.py` now
+  has ranking and preprocessing but no session runner.
 - **D13/UI:** session glue, controller and every egui view stay out of scope.
 
 ## Next Steps (Ordered)
-1. [ ] D12: ICC LUT application and monitor profile.
-2. [ ] D12: embeddings, semantic model and CLIP tokenizer.
-3. [ ] D10: image processor and preview manager (backend worker).
-4. [ ] D11: scanner transport adapters over the write policy.
-5. [ ] D10: GPU engine once a headless wgpu surface is in place.
+1. [ ] Print dye separation and its damping in `render_negative`, with a
+   `BOUNDS_VERSION` and `THUMBNAIL_RENDER_VERSION` bump.
+2. [ ] D12: monitor profile detection and gear library save.
+3. [ ] D12: ONNX session runner over the new CLIP tokenizer and ranking.
+4. [ ] D10: image processor and preview manager (backend worker).
+5. [ ] D11: scanner transport adapters over the write policy.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
 - Fingerprint and export bytes are pinned to Python.
-- `negpy-backend` gained `unicode-normalization` for the edge ASCII fold.
-- `negpy_egui/target` reached 157 GB and broke the linker. Prune it with
+- `negpy-backend` gained `qcms`, `html-escape` and `regex`.
+- `negpy_egui/target` reached 126 GB. Prune it with
   `cargo clean --profile dev` (keeps release) or `cargo clean -p <crate>`;
   do not wipe the whole directory.
-- Skew synthetic round-trip test still blocked on runtime.
+- The workspace test links 127 integration binaries; on a loaded host it is slow.
 - D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
