@@ -110,3 +110,32 @@ fn prints_as_finds_a_stock_by_its_catalog_name() {
     );
     assert!(library.get_film_stock("5219").is_none());
 }
+
+#[test]
+fn a_source_xmp_rating_is_read_as_written() {
+    use negpy_backend::features::metadata::exif_read::{
+        ExifTags, ExifValue, SourceExif, XMP_PACKET_TAG, source_xmp_rating,
+    };
+
+    let packet = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="4"/></rdf:RDF></x:xmpmeta>"#;
+    let mut zeroth = ExifTags::new();
+    zeroth.insert(XMP_PACKET_TAG, ExifValue::Bytes(packet.to_vec()));
+    let source = SourceExif {
+        zeroth,
+        ..SourceExif::default()
+    };
+    assert_eq!(source_xmp_rating(Some(&source)), "4");
+
+    let mut zeroth = ExifTags::new();
+    zeroth.insert(
+        XMP_PACKET_TAG,
+        ExifValue::Bytes(
+            br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/"><xmp:Rating>2</xmp:Rating></rdf:Description></rdf:RDF></x:xmpmeta>"#.to_vec(),
+        ),
+    );
+    let source = SourceExif {
+        zeroth,
+        ..SourceExif::default()
+    };
+    assert_eq!(source_xmp_rating(Some(&source)), "2");
+}
