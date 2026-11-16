@@ -227,13 +227,13 @@ pub fn extract_primaries_matrix(data: &[u8]) -> Option<[[f64; 3]; 3]> {
     let mut native_white = D50_XYZ;
     if let Some(entry) = tags.get(b"chad") {
         if let Some(chad) = read_chad_tag(data, *entry) {
-            if let Some(inverse) = invert_3x3(chad) {
-                native = mul(inverse, pcs);
+            if let Some(inverse) = invert(chad) {
+                native = multiply(inverse, pcs);
                 native_white = mul_vec(inverse, D50_XYZ);
             }
         }
     }
-    Some(mul(bradford(native_white, D65_XYZ), native))
+    Some(multiply(bradford(native_white, D65_XYZ), native))
 }
 
 fn bradford(source: [f64; 3], destination: [f64; 3]) -> [[f64; 3]; 3] {
@@ -243,13 +243,15 @@ fn bradford(source: [f64; 3], destination: [f64; 3]) -> [[f64; 3]; 3] {
     let diagonal: [[f64; 3]; 3] = std::array::from_fn(|row| {
         std::array::from_fn(|column| if row == column { scale[row] } else { 0.0 })
     });
-    mul(
-        invert_3x3(BRADFORD_CONE).unwrap_or(BRADFORD_CONE),
-        mul(diagonal, BRADFORD_CONE),
+    multiply(
+        invert(BRADFORD_CONE).unwrap_or(BRADFORD_CONE),
+        multiply(diagonal, BRADFORD_CONE),
     )
 }
 
-fn mul(left: [[f64; 3]; 3], right: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+/// Matrix product, row by column.
+#[must_use]
+pub fn multiply(left: [[f64; 3]; 3], right: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
     std::array::from_fn(|row| {
         std::array::from_fn(|column| {
             (0..3)
@@ -267,7 +269,9 @@ fn mul_vec(matrix: [[f64; 3]; 3], vector: [f64; 3]) -> [f64; 3] {
     })
 }
 
-fn invert_3x3(matrix: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
+/// The inverse, or `None` when the matrix is singular.
+#[must_use]
+pub fn invert(matrix: [[f64; 3]; 3]) -> Option<[[f64; 3]; 3]> {
     let determinant = matrix[0][0] * (matrix[1][1] * matrix[2][2] - matrix[1][2] * matrix[2][1])
         - matrix[0][1] * (matrix[1][0] * matrix[2][2] - matrix[1][2] * matrix[2][0])
         + matrix[0][2] * (matrix[1][0] * matrix[2][1] - matrix[1][1] * matrix[2][0]);
