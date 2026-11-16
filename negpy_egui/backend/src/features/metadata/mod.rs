@@ -6,4 +6,5 @@ pub mod fsdate;
 pub mod gear;
 pub mod gear_logic;
 pub mod payload;
+pub mod resolution;
 pub mod xmp;
