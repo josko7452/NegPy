@@ -1,51 +1,46 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `metadata: read the container resolution`
+**Last Updated:** 2026-11-16 | **Last Commit:** `a6ee0fb4` scanning: name and write captured TIFF scans
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session adds 10 backend commits, then runs the workspace test and a gap audit.
+This session ran 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
-- `pending` metadata: custom EXIF tags and exposure parsing.
-- `pending` metadata: source EXIF cleanup and thumbnail removal.
-- `pending` metadata: capture merge over source EXIF.
-- `pending` metadata: JPEG EXIF and XMP segments.
-- `pending` metadata: PNG, WebP and JXL metadata rewrite.
-- `pending` film-edge: fixed face and measured text runs.
-- `pending` film-edge: strip rebate, marks and perforations.
-- `pending` contact-sheet: tile, strip, row and label rendering.
-- `pending` capture: linear probe meter and shutter recommendation.
-- `pending` scanning: name, collision and write policy.
+- `63609792` metadata: custom EXIF tags and exposure parsing.
+- `54fbbdf7` metadata: source EXIF cleanup and thumbnail removal.
+- `8244431f` metadata: capture merge over source EXIF.
+- `6eca2b74` metadata: JPEG EXIF and XMP segments.
+- `94e80e16` metadata: PNG, WebP and JXL metadata rewrite.
+- `a2151c03` film-edge: fixed face and measured text runs.
+- `2a3e7543` film-edge: strip rebate, marks and perforations.
+- `1fc03b35` contact-sheet: tile, strip, row and label rendering.
+- `d7aa35ec` capture: linear probe meter and shutter recommendation.
+- `a6ee0fb4` scanning: name, collision and write policy.
 
 ## Verification (After Commit 10)
-- `cargo fmt --check` clean. Targeted tests passed per commit.
-- `cargo test --workspace --no-fail-fast` passed after commit 10.
-- Clippy remains red on pre-existing lints across `negpy-backend`; no lint
-  sweep was folded into these feature commits.
-- The full workspace build took 17m on first run because every integration
-  test linked in parallel. Disk is healthy after the earlier cleanup.
+- Targeted tests passed per commit.
+- Workspace tests: see the result appended here after the run.
 
 ## Audit (After Commit 10)
-- Closed this session: chart reference/ΔE/orientation/LM fit, shutter label
-  parsing and start point, capture presets, Pick Better, filesystem dates,
-  EXIF and container resolution, matrix/TRC ICC parsing.
-- **D11:** `film_edge/paint.py` still needs a glyph source; contact-sheet
-  painting and `scanning/service.py` remain.
-- **D12:** capture meter/service and transports, preview manager,
-  embeddings/semantic/CLIP, monitor profile and ICC LUT application remain.
-- **D10:** `rendering/image_processor.py` and `gpu_engine.py` remain.
-- **D8/D9:** `metadata/writer.py` remains the largest export gap;
-  `retouch/clone.py` delegates to the ported logic.
+- Closed this session: D8/D9 metadata writer, D11 film-edge paint,
+  contact-sheet paint, scanning write policy, D12 capture meter core.
+- Covered under another path: `altprocess` stages, feature logic in
+  `features/*/processor.rs`, render tail in `exposure_pipeline.rs`.
+- **D10:** render engine exists; `image_processor.py`, `preview_manager.py`
+  and `gpu_engine.py` remain.
+- **D11:** scanner transports remain (`service.py` hardware loop); export
+  encoders and contact-sheet now have backend paint.
+- **D12:** embeddings/semantic/CLIP, monitor profile and ICC LUT application,
+  and capture transports remain.
 - **D13/UI:** session glue, controller and every egui view stay out of scope.
 
 ## Next Steps (Ordered)
-1. [ ] D11: film-edge paint (glyph source), contact-sheet paint.
-2. [ ] D11: scanning service over the scanner backends.
-3. [ ] D12: capture meter/service and presets wiring.
-4. [ ] D12: preview manager, embeddings/semantic/CLIP.
-5. [ ] D8/D9: metadata writer.
-6. [ ] D10: image processor and GPU engine.
+1. [ ] D12: ICC LUT application and monitor profile.
+2. [ ] D12: embeddings, semantic model and CLIP tokenizer.
+3. [ ] D10: image processor and preview manager (backend worker).
+4. [ ] D11: scanner transport adapters over the write policy.
+5. [ ] D10: GPU engine once a headless wgpu surface is in place.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
