@@ -4,4 +4,5 @@ pub mod power_assertion;
 pub mod prefetch_logic;
 pub mod render_memo;
 pub mod settings_catalog;
+pub mod startup;
 pub mod sticky;
