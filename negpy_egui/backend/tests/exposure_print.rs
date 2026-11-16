@@ -98,6 +98,47 @@ fn black_density_follows_the_toe_sign() {
 }
 
 #[test]
+fn dye_separation_changes_a_colored_print() {
+    let image: Vec<f32> = (0..8 * 8)
+        .flat_map(|index| {
+            let value = 0.05 + 0.8 * index as f32 / 63.0;
+            [value, value * 0.8, value * 0.6]
+        })
+        .collect();
+    let neutral = PrintSettings::default();
+    let separated = PrintSettings {
+        dye_separation: [1.4, 0.8, 1.2],
+        ..PrintSettings::default()
+    };
+    assert_ne!(
+        render_print(&image, 8, &neutral, None),
+        render_print(&image, 8, &separated, None)
+    );
+}
+
+#[test]
+fn separation_damping_uses_the_per_pixel_chroma_path() {
+    let image: Vec<f32> = (0..8 * 8)
+        .flat_map(|index| {
+            let value = 0.05 + 0.8 * index as f32 / 63.0;
+            [value, value * 0.8, value * 0.6]
+        })
+        .collect();
+    let matrix = PrintSettings {
+        dye_separation: [1.4, 0.8, 1.2],
+        ..PrintSettings::default()
+    };
+    let damped = PrintSettings {
+        separation_damping: 0.8,
+        ..matrix
+    };
+    assert_ne!(
+        render_print(&image, 8, &matrix, None),
+        render_print(&image, 8, &damped, None)
+    );
+}
+
+#[test]
 fn the_flat_master_parameters_are_fixed() {
     assert_eq!(flat_curve_params(), (0.65, 0.10));
 }

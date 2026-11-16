@@ -120,6 +120,8 @@ pub struct PrintSettings {
     pub black_hold: f64,
     pub preflash: f64,
     pub grade: f64,
+    pub dye_separation: [f64; 3],
+    pub separation_damping: f64,
 }
 
 impl Default for PrintSettings {
@@ -144,6 +146,8 @@ impl Default for PrintSettings {
             black_hold: 0.0,
             preflash: 0.0,
             grade: 115.0,
+            dye_separation: [1.0; 3],
+            separation_damping: 0.0,
         }
     }
 }
@@ -246,12 +250,11 @@ pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> Pr
         [0.0; 3],
         [0.0; 3],
     );
-    let dye_separation = [1.0; 3];
-    let damping = 0.0;
-    let sat = if damping > 0.0 && dye_separation != [1.0; 3] {
+    let damping = settings.separation_damping;
+    let sat = if damping > 0.0 && settings.dye_separation != [1.0; 3] {
         None
     } else {
-        resolve_saturation_matrix(dye_separation)
+        resolve_saturation_matrix(settings.dye_separation)
     };
     let dye = resolve_print_color(paper).0;
     let composed = compose_density_matrices(dye, sat);
@@ -292,7 +295,11 @@ pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> Pr
         midtone_gamma: [settings.params.midtone_gamma; 3],
         gamma_width: tonal.paper_gamma_width,
         dye_mix: composed,
-        sep: None,
+        sep: (damping > 0.0 && settings.dye_separation != [1.0; 3]).then_some((
+            settings.dye_separation,
+            damping,
+            c::SEPARATION_DAMPING_REF_SPREAD,
+        )),
         ev: None,
         ev_scale: [0.0; 3],
         grade: None,
@@ -509,6 +516,21 @@ pub fn render_negative(
         image.to_vec()
     };
     let midtone_gamma = curve::effective_midtone_gamma(Some(paper), exposure.midtone_gamma);
+    let (dye_separation, separation_damping) = if is_bw {
+        ([1.0; 3], 0.0)
+    } else {
+        (
+            per_channel_dye_separation(
+                exposure.dye_separation,
+                [
+                    exposure.dye_separation_trim_red,
+                    exposure.dye_separation_trim_green,
+                    exposure.dye_separation_trim_blue,
+                ],
+            ),
+            exposure.separation_damping,
+        )
+    };
     let settings_out = PrintSettings {
         params: PrintParams {
             slope: solved.slopes[1],
@@ -529,6 +551,8 @@ pub fn render_negative(
         black_hold: settings.base_black_hold,
         preflash: exposure.preflash,
         grade: exposure.grade,
+        dye_separation,
+        separation_damping,
     };
     let mut curve = print_curve(&settings_out, Some(paper));
     curve.pivots = solved.pivots.map(|value| value as f32);
