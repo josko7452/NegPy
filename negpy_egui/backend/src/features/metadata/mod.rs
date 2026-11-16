@@ -1,6 +1,7 @@
 //! Mirrors `negpy/features/metadata/`: gear library records and resolved metadata.
 
 pub mod capture;
+pub mod container_resolution;
 pub mod exif_read;
 pub mod fsdate;
 pub mod gear;

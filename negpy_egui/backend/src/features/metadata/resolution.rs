@@ -8,6 +8,8 @@ use crate::features::metadata::exif_read::{ExifTags, ExifValue};
 
 pub const INCH: u16 = 2;
 pub const CENTIMETRE: u16 = 3;
+/// A PNG pHYs density, in pixels per metre.
+pub const METRE: u16 = 0;
 const MAX_DENOMINATOR: u32 = 1000;
 pub const TAG_X_RESOLUTION: u16 = 282;
 pub const TAG_Y_RESOLUTION: u16 = 283;
@@ -47,6 +49,19 @@ impl Resolution {
     #[must_use]
     pub fn dpi(&self) -> i64 {
         (self.x_dpi().round() as i64).max(1)
+    }
+
+    /// This resolution expressed in centimetres, for a writer that needs absolute units.
+    #[must_use]
+    pub fn to_centimetres(&self) -> Self {
+        if self.unit == METRE {
+            return Self {
+                x: (self.x.0, self.x.1 * 100),
+                y: (self.y.0, self.y.1 * 100),
+                unit: CENTIMETRE,
+            };
+        }
+        *self
     }
 }
 
