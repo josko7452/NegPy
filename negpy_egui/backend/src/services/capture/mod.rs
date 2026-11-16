@@ -5,4 +5,5 @@
 pub mod calibration;
 pub mod focus;
 pub mod live_stats;
+pub mod presets;
 pub mod shutter;

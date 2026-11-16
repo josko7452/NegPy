@@ -14,6 +14,7 @@ use serde_json::{Map, Value};
 use crate::domain::models::workspace::WorkspaceConfig;
 
 /// The edits and settings databases, opened as one repository.
+#[derive(Clone, Debug)]
 pub struct StorageRepository {
     pub edits_db_path: String,
     pub settings_db_path: String,
@@ -748,6 +749,7 @@ fn wipe(path: &str, tables: &[&str]) -> Result<(), RepositoryError> {
 pub enum RepositoryError {
     Io(std::io::Error),
     Sqlite(rusqlite::Error),
+    Serialize(String),
 }
 
 impl std::fmt::Display for RepositoryError {
@@ -755,6 +757,7 @@ impl std::fmt::Display for RepositoryError {
         match self {
             Self::Io(err) => err.fmt(formatter),
             Self::Sqlite(err) => err.fmt(formatter),
+            Self::Serialize(err) => err.fmt(formatter),
         }
     }
 }
