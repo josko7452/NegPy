@@ -4,11 +4,22 @@ use negpy_backend::domain::models::{ProcessConfig, SensorUnmix};
 use negpy_backend::infrastructure::loaders::constants::SUPPORTED_TIFF_EXTENSIONS;
 use negpy_backend::services::export::encoders::{Resolution, TiffCompression};
 use negpy_backend::services::export::linear_output::{
-    CameraWb, LinearBakes, LinearRecord, SourceMeta, apply_white_balance, effective_expansion,
-    encode_linear_tiff, expand, is_linear_output_supported, linear_description,
-    linear_output_source_type, linearize, normalize_wb_rgb, to_uint16, wb_bake_block_reason,
+    CameraWb, LinearBakes, LinearRecord, SourceMeta, apply_white_balance, build_xmp,
+    effective_expansion, encode_linear_tiff, expand, is_linear_output_supported,
+    linear_description, linear_output_source_type, linearize, normalize_wb_rgb,
+    parse_tiff_datetime, source_format_label, to_uint16, wb_bake_block_reason,
 };
 use std::path::Path;
+
+fn write_pakon_header(path: &Path, width: u32, height: u32) {
+    let mut data = Vec::new();
+    data.extend_from_slice(&16u32.to_le_bytes());
+    data.extend_from_slice(&width.to_le_bytes());
+    data.extend_from_slice(&height.to_le_bytes());
+    data.extend_from_slice(&48u32.to_le_bytes());
+    data.extend(std::iter::repeat_n(0u8, (width * height * 6) as usize));
+    std::fs::write(path, data).unwrap();
+}
 
 fn close(a: f32, b: f32) -> bool {
     (a - b).abs() < 1e-6
@@ -156,4 +167,74 @@ fn the_linear_tiff_is_untagged_sixteen_bit() {
     .expect("tiff");
     assert!(bytes.starts_with(b"II"));
     assert_eq!(u16::from_le_bytes([bytes[2], bytes[3]]), 42);
+}
+
+#[test]
+fn the_tiff_datetime_accepts_the_writer_stamps() {
+    assert_eq!(
+        parse_tiff_datetime(Some("2025:01:15 12:00:00")).as_deref(),
+        Some("2025:01:15 12:00:00")
+    );
+    assert_eq!(
+        parse_tiff_datetime(Some("2025-01-15 12:00:00")).as_deref(),
+        Some("2025:01:15 12:00:00")
+    );
+    assert_eq!(
+        parse_tiff_datetime(Some("2025.01.15 12.00.00")).as_deref(),
+        Some("2025:01:15 12:00:00")
+    );
+    assert_eq!(
+        parse_tiff_datetime(Some("2025:01:15")).as_deref(),
+        Some("2025:01:15 00:00:00")
+    );
+    assert_eq!(parse_tiff_datetime(Some("not a date")), None);
+    assert_eq!(parse_tiff_datetime(None), None);
+}
+
+#[test]
+fn the_xmp_escapes_the_name_and_title() {
+    let xmp = build_xmp(
+        Path::new("/scans/Mom & Dad <1>.NEF"),
+        CameraWb {
+            as_shot: [398.0, 302.0, 873.0, 304.0],
+            daylight: [1.0; 4],
+        },
+        "A & B",
+        false,
+    );
+    let body = String::from_utf8(xmp).unwrap();
+    assert!(body.contains("Mom &amp; Dad &lt;1&gt;.NEF"));
+    assert!(body.contains("<dc:title>"));
+    assert!(body.contains("RAW-WB:"));
+    assert!(body.contains("crs:RawFileName"));
+    assert!(body.contains("dc:description"));
+    assert!(body.contains("1.000000"));
+}
+
+#[test]
+fn the_xmp_omits_the_gains_once_they_are_applied() {
+    let xmp = build_xmp(
+        Path::new("shot.nef"),
+        CameraWb {
+            as_shot: [2.0, 1.0, 0.5, 1.0],
+            daylight: [1.0; 4],
+        },
+        "",
+        true,
+    );
+    let body = String::from_utf8(xmp).unwrap();
+    assert!(!body.contains("dc:description"));
+}
+
+#[test]
+fn a_pakon_source_label_names_the_model() {
+    let folder = tempfile::tempdir().unwrap();
+    let f135 = folder.path().join("f135.raw");
+    let file = std::fs::File::create(&f135).unwrap();
+    file.set_len(36_000_000).unwrap();
+    assert_eq!(source_format_label(&f135), "Pakon F135 Plus High Res");
+
+    let header = folder.path().join("header.raw");
+    write_pakon_header(&header, 2500, 2000);
+    assert_eq!(source_format_label(&header), "Pakon 2500x2000");
 }

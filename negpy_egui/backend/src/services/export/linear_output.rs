@@ -209,22 +209,87 @@ pub fn source_format_label_for(
     {
         return "camera RAW (RGB triplet)".to_string();
     }
-    source_format_label(path).to_string()
+    source_format_label(path)
 }
 
 /// The source label stamped into the output description.
 #[must_use]
-pub fn source_format_label(path: &Path) -> &'static str {
+pub fn source_format_label(path: &Path) -> String {
     match linear_output_source_type(path) {
-        "pakon" | "pakon_f335" => "Pakon",
-        "dng" => "DNG LinearRaw",
-        "nef" => "Coolscan NEF",
-        "fff" => "Flextight FFF",
-        "noritsu" => "Noritsu RAW",
-        "camera" => "camera RAW",
-        "tiff" => "TIFF",
-        _ => "unknown",
+        "pakon" | "pakon_f335" => {
+            format!(
+                "Pakon {}",
+                crate::infrastructure::loaders::source_kind::pakon_spec_desc(path)
+            )
+        }
+        "dng" => "DNG LinearRaw".to_string(),
+        "nef" => "Coolscan NEF".to_string(),
+        "fff" => "Flextight FFF".to_string(),
+        "noritsu" => "Noritsu RAW".to_string(),
+        "camera" => "camera RAW".to_string(),
+        "tiff" => "TIFF".to_string(),
+        _ => "unknown".to_string(),
     }
+}
+
+/// `_parse_tiff_datetime`: accept the stamps writers emit, as `YYYY:MM:DD HH:MM:SS`.
+#[must_use]
+pub fn parse_tiff_datetime(value: Option<&str>) -> Option<String> {
+    use chrono::NaiveDateTime;
+
+    let value = value?.trim();
+    for format in [
+        "%Y:%m:%d %H:%M:%S",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y.%m.%d %H.%M.%S",
+    ] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(value, format) {
+            return Some(parsed.format("%Y:%m:%d %H:%M:%S").to_string());
+        }
+    }
+    for format in ["%Y:%m:%d", "%Y-%m-%d"] {
+        if let Ok(parsed) = chrono::NaiveDate::parse_from_str(value, format) {
+            return Some(parsed.format("%Y:%m:%d 00:00:00").to_string());
+        }
+    }
+    None
+}
+
+fn xml_escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// `_build_xmp`: the RAW white balance and source name as an XMP packet.
+#[must_use]
+pub fn build_xmp(source_path: &Path, wb: CameraWb, title: &str, wb_applied: bool) -> Vec<u8> {
+    let raw_name = xml_escape(
+        &source_path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default(),
+    );
+    let title = xml_escape(title);
+    let title_block = if title.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "  <dc:title>\n   <rdf:Alt>\n    <rdf:li xml:lang='x-default'>{title}</rdf:li>\n   </rdf:Alt>\n  </dc:title>\n"
+        )
+    };
+    let desc_block = if wb_applied {
+        String::new()
+    } else {
+        let [r, g, b] = normalize_wb_rgb(wb.as_shot);
+        format!(
+            "  <dc:description>\n   <rdf:Alt>\n    <rdf:li xml:lang='x-default'>RAW-WB: {r:.6} {g:.6} {b:.6}</rdf:li>\n   </rdf:Alt>\n  </dc:description>\n"
+        )
+    };
+    let packet = format!(
+        "<?xpacket begin='\u{feff}' id='W5M0MpCehiHzreSzNTczkc9d'?>\n<x:xmpmeta xmlns:x='adobe:ns:meta/'>\n<rdf:RDF xmlns:rdf='http://www.w3.org/1999/02/22-rdf-syntax-ns#'>\n <rdf:Description rdf:about=''\n  xmlns:crs='http://ns.adobe.com/camera-raw-settings/1.0/'>\n  <crs:RawFileName>{raw_name}</crs:RawFileName>\n </rdf:Description>\n <rdf:Description rdf:about=''\n  xmlns:dc='http://purl.org/dc/elements/1.1/'>\n{title_block}{desc_block} </rdf:Description>\n</rdf:RDF>\n</x:xmpmeta>\n<?xpacket end='w'?>"
+    );
+    packet.into_bytes()
 }
 
 /// Normalize RGGB multipliers to green = 1.

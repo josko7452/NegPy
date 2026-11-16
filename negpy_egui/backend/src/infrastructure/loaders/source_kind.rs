@@ -26,12 +26,13 @@ pub enum LoaderKind {
     CameraRaw,
 }
 
-const PAKON_SPECS: &[(u64, u64, u64)] = &[
-    (36_000_000, 2000, 3000),
-    (9_000_000, 1000, 1500),
-    (24_000_000, 2000, 2000),
-    (48_000_000, 2000, 4000),
-    (72_000_000, 4000, 3000),
+/// `(file size, height, width, the model name the Linear Output description prints)`.
+const PAKON_SPECS: &[(u64, u64, u64, &str)] = &[
+    (36_000_000, 2000, 3000, "F135 Plus High Res"),
+    (9_000_000, 1000, 1500, "F135 Plus Low Res"),
+    (24_000_000, 2000, 2000, "Pakon 2k Square"),
+    (48_000_000, 2000, 4000, "Pakon Panoram"),
+    (72_000_000, 4000, 3000, "F335 High Res"),
 ];
 const PAKON_HEADER_SIZE: u64 = 16;
 const PAKON_TRIMMED_HEIGHT: u64 = 2000;
@@ -65,15 +66,31 @@ pub fn pakon_layout(path: &Path) -> Option<(u64, u64)> {
         return Some(layout);
     }
     let size = std::fs::metadata(path).ok()?.len();
-    if let Some((_, height, width)) = PAKON_SPECS
+    if let Some((_, height, width, _)) = PAKON_SPECS
         .iter()
-        .find(|(spec, _, _)| size.abs_diff(*spec) < 1024)
+        .find(|(spec, _, _, _)| size.abs_diff(*spec) < 1024)
     {
         return Some((*height, *width));
     }
     let width = size / (PAKON_TRIMMED_HEIGHT * 6);
     (size % (PAKON_TRIMMED_HEIGHT * 6) == 0 && (1000..=6000).contains(&width))
         .then_some((PAKON_TRIMMED_HEIGHT, width))
+}
+
+/// `_pakon_spec_desc`: the model a known file size names, else its header dimensions.
+#[must_use]
+pub fn pakon_spec_desc(path: &Path) -> String {
+    let size = std::fs::metadata(path).map_or(0, |meta| meta.len());
+    if let Some((_, _, _, desc)) = PAKON_SPECS
+        .iter()
+        .find(|(spec, _, _, _)| size.abs_diff(*spec) < 1024)
+    {
+        return (*desc).to_string();
+    }
+    match pakon_header(path) {
+        Some((height, width)) => format!("{width}x{height}"),
+        None => "Unknown".to_string(),
+    }
 }
 
 /// Whether `path` selects the Pakon loader. A headerless file needs one of its extensions.
