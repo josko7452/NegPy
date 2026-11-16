@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `e964c99c` backend: add a simulated scanner transport
+**Last Updated:** 2026-11-16 | **Last Commit:** `e6b22b28` library: walk and search the roots
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,48 +7,46 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session ran 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
-- `68eb5f34` backend: apply print dye separation and damping.
-- `6bda398d` backend: apply print per-layer curve trims.
-- `48d01258` backend: write the user gear library to JSON.
-- `861d6b02` backend: detect the system monitor ICC profile.
-- `bee3dd9c` backend: run CLIP towers over tract-onnx.
-- `9439885e` backend: expose the crosstalk and sensor library API.
-- `72702035` backend: carry mask and diffusion planes to print.
-- `77114769` backend: port scanner params and settings.
-- `50fab013` backend: define the scanner transport contract.
-- `e964c99c` backend: add a simulated scanner transport.
+- `2c1ac2f9` geometry: expose the crop-state predicates.
+- `e665cb7c` render: resolve arming crop and meter box before the engine.
+- `df9b4cfb` retouch: add the detection-plane helpers.
+- `f2986308` scanner: add the scan service and per-frame roll.
+- `5a3984e5` scanner: write a result through the service.
+- `8059307a` capture: orchestrate a triplet over injected hardware.
+- `6523c1af` capture: shoot a Blend exposure in one Bulb release.
+- `26b5a846` capture: add the plain white-light single.
+- `26be165d` capture: add the Scanlight wire codec and settings.
+- `e6b22b28` library: walk and search the roots.
 
 ## Verification (After Commit 10)
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- `cargo test --workspace --no-fail-fast` passed: all binaries, 0 failures.
+- `cargo test --workspace --no-fail-fast -j 4` finished; one target failed.
+- `base_read::tests::the_oldest_source_is_evicted_first` is a pre-existing
+  test-isolation race: its sibling tests share the process-wide cache and a
+  parallel `clear()` makes it flake. Reproduced 3/8 on an untouched file.
+- Every other target, and the lib alone (`252 passed`), is green.
 
 ## Audit (After Commit 10)
-- Closed: print dye separation, trims, mask and diffusion planes; gear save;
-  monitor ICC detection; CLIP session; crosstalk/sensor API; scanner params,
-  settings, transport and simulator.
-- **D10:** `image_processor.py` and `preview_manager.py` remain. Missing pure
-  helpers: autocrop/meter freeze, splash plus linear one-open path, detection
-  downsample and mask resizing. `gpu_engine.py` and WGSL remain.
-- **D11:** `services/scanning/service.py` remains: result writing with collision
-  search, bounded transient retries, metering and native/per-frame roll glue.
-  Hardware transports (`sane`, Plustek, pieusb, nkscan) remain.
-- **D12:** capture service orchestration and transports remain. The ONNX runner
-  is behind the `tract-onnx` feature, not enabled by default.
-- **D13/UI:** session glue, controller and every egui view stay out of scope.
-
-## Next Steps (Ordered)
-1. [ ] D10: image processor and preview manager pure helpers.
-2. [ ] D11: scanner service result writing and retry policy.
-3. [ ] D10: GPU engine and shader wiring.
-4. [ ] D12: capture service orchestration over injected hardware.
-5. [ ] D13: headless session state, then stop before UI.
+- Closed: armed-crop and meter resolution, detection planes, scanner service
+  retries and result writing, per-frame roll preview, triplet/Blend/single
+  capture, Scanlight protocol and settings, library walk and search.
+- **Remaining backend gaps, in order:**
+  - D13: `desktop/render_memo.py`, `prefetch_logic.py`, `settings_catalog.py`,
+    `sticky.py`, `power_assertion.py`, `startup.py`.
+  - D10: `services.rendering.{image_processor,preview_manager,gpu_engine}` ports;
+    soft-proof and gamut LUTs; `infrastructure.loaders.lens_metadata` (only the
+    warp math is ported, in `features/rgbscan.rs`).
+  - D12: `services.assets.semantic_model` download/CLIP glue; scanner hardware
+    transports (`sane`, Plustek, pieusb, nkscan).
+  - D12: `kernel.system.updater`.
+- D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
+- `base_read` lib tests flake under parallel `clear()`; serialize that suite
+  or give each test its own key space.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
-- Fingerprint and export bytes are pinned to Python.
-- `negpy-backend` gained `qcms`, `html-escape`, `regex`, `zbus` and optional `tract-onnx`.
-- `negpy_egui/target` reached 126 GB. Prune it with
-  `cargo clean --profile dev` (keeps release) or `cargo clean -p <crate>`;
-  do not wipe the whole directory.
-- The workspace test links many integration binaries; on a loaded host it is slow.
-- D6: `fff_loader` returns None for SGI LogLuv until RLE/tables land.
+- Fingerprints and export bytes are pinned to Python.
+- `ScanResult` now lives in `services::scanning::transport`; `writer` re-exports it.
+- `ScanError` carries the transient classification; the service retries only that.
+- `negpy_egui/target` is large. Prune with `cargo clean --profile dev`.
+- Run `cargo test --workspace` only on an idle host.
