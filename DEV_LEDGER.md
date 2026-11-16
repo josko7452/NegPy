@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `48d01258` backend: write the user gear library to JSON
+**Last Updated:** 2026-11-16 | **Last Commit:** `861d6b02` backend: detect the system monitor ICC profile
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,6 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session runs 10 backend commits, then the workspace test and a gap audit.
 
 ## Completed (This Session)
+- `861d6b02` backend: detect the system monitor ICC profile.
 - `3ffd3dc5` kernel: add the shared image conversion helpers.
 - `68eb5f34` backend: apply print dye separation and damping.
 - `6bda398d` backend: apply print per-layer curve trims.

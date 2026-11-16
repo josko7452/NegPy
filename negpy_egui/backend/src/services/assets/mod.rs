@@ -1,6 +1,7 @@
 //! Mirrors `negpy/services/assets/`: asset discovery and persistence.
 
 pub mod capture_modes;
+pub mod clip_model;
 pub mod clip_tokenizer;
 pub mod composites;
 pub mod embeddings;
