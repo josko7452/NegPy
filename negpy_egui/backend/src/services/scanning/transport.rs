@@ -20,17 +20,36 @@ impl std::fmt::Display for ScannerUnavailable {
 
 impl std::error::Error for ScannerUnavailable {}
 
-/// A transport glitch worth retrying; a real error fails fast.
+/// A failed scan, with the backend's own transient classification.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TransientScanError(pub String);
+pub enum ScanError {
+    /// A transport glitch worth retrying.
+    Transient(String),
+    /// A real error, which fails fast.
+    Fatal(String),
+}
 
-impl std::fmt::Display for TransientScanError {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{}", self.0)
+impl ScanError {
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        matches!(self, Self::Transient(_))
+    }
+
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::Transient(message) | Self::Fatal(message) => message,
+        }
     }
 }
 
-impl std::error::Error for TransientScanError {}
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl std::error::Error for ScanError {}
 
 /// The unit returned a measured strip by itself, so its frame picks no longer line up.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -149,7 +168,7 @@ pub trait ScannerSession: Send {
         params: &ScanParams,
         progress: &Progress,
         cancel: &Cancel,
-    ) -> Result<ScanResult, String>;
+    ) -> Result<ScanResult, ScanError>;
 
     /// Return the transport to its idle state. False when the device has no eject action.
     fn eject(&mut self) -> Result<bool, String>;

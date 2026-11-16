@@ -5,7 +5,7 @@
 
 use crate::services::scanning::params::{FilmType, ScanMode, ScanParams};
 use crate::services::scanning::transport::{
-    Cancel, Progress, ScanResult, ScannerBackend, ScannerCapabilities, ScannerDevice,
+    Cancel, Progress, ScanError, ScanResult, ScannerBackend, ScannerCapabilities, ScannerDevice,
     ScannerSession, ScannerUnavailable,
 };
 
@@ -220,10 +220,10 @@ impl SimulatedBackend {
         params: &ScanParams,
         progress: &Progress,
         cancel: &Cancel,
-    ) -> Result<ScanResult, String> {
+    ) -> Result<ScanResult, ScanError> {
         for step in 0..PROGRESS_STEPS {
             if cancel() {
-                return Err("Scan cancelled".to_string());
+                return Err(ScanError::Fatal("Scan cancelled".to_string()));
             }
             progress(step as f64 / PROGRESS_STEPS as f64, None);
         }
@@ -265,7 +265,7 @@ impl ScannerSession for SimulatedSession {
         params: &ScanParams,
         progress: &Progress,
         cancel: &Cancel,
-    ) -> Result<ScanResult, String> {
+    ) -> Result<ScanResult, ScanError> {
         SimulatedBackend::scan_once(&self.device, params, progress, cancel)
     }
 
@@ -353,7 +353,10 @@ mod tests {
         };
         let cancel: Cancel = Arc::new(|| true);
         assert_eq!(
-            session.scan(&params, &no_progress(), &cancel).unwrap_err(),
+            session
+                .scan(&params, &no_progress(), &cancel)
+                .unwrap_err()
+                .message(),
             "Scan cancelled"
         );
     }

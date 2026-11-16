@@ -26,7 +26,7 @@ macro_rules! string_enum {
     };
     (@gen $(#[$meta:meta])* $name:ident, [$($variant:ident => $lit:literal),+], $default:ident, [$($alit:literal => $avariant:ident),*]) => {
         $(#[$meta])*
-        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+        #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
         pub enum $name { $($variant),+ }
 
         impl $name {
