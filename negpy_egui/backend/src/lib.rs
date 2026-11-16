@@ -10,3 +10,4 @@ pub mod kernel;
 pub mod render;
 pub mod render_engine;
 pub mod services;
+pub mod session;
