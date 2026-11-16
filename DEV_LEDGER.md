@@ -16,6 +16,7 @@ This session adds 10 backend commits, then runs the workspace test and a gap aud
 - `pending` film-edge: strip rebate, marks and perforations.
 - `pending` contact-sheet: tile, strip, row and label rendering.
 - `pending` capture: linear probe meter and shutter recommendation.
+- `pending` scanning: name, collision and write policy.
 
 ## Verification (After Commit 10)
 - `cargo fmt --check` clean. Targeted tests passed per commit.

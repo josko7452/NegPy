@@ -3,10 +3,15 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::infrastructure::loaders::constants::SUPPORTED_TIFF_EXTENSIONS;
 use crate::services::export::encoders::{Resolution, TiffCompression, encode_tiff};
+use crate::services::scanning::templating::{
+    render_scan_filename, require_sequence_varying_scan_filename,
+};
 
 /// The extension used while a scan is written, so a watched folder does not index it.
 pub const PART_SUFFIX: &str = ".part";
+pub const MONO_TIFF: &str = "TIFF (mono)";
 
 /// One scanner capture: 8- or 16-bit RGB, its IR plane and the IR validity mask.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -138,6 +143,63 @@ pub fn write_tiff_16bit(
         write_atomic(&valid_path(&path), &bytes).map_err(|error| error.to_string())?;
     }
     Ok(path)
+}
+
+fn sidecar_suffixes() -> Vec<String> {
+    let mut suffixes: Vec<String> = SUPPORTED_TIFF_EXTENSIONS
+        .iter()
+        .map(|extension| (*extension).to_string())
+        .collect();
+    for token in ["_ir", "_ir_valid"] {
+        for extension in SUPPORTED_TIFF_EXTENSIONS {
+            suffixes.push(format!("{token}{extension}"));
+        }
+    }
+    suffixes.sort();
+    suffixes
+}
+
+/// `write_result`: choose a free scan basename and write the capture there.
+pub fn write_scan(
+    result: &ScanResult,
+    output_folder: &Path,
+    filename_pattern: &str,
+    output_format: &str,
+    date: &str,
+    seq: Option<i64>,
+    width: usize,
+    height: usize,
+) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(output_folder).map_err(|error| error.to_string())?;
+    require_sequence_varying_scan_filename(filename_pattern, date, seq.unwrap_or(1))?;
+    let suffixes = sidecar_suffixes();
+    let mut current = seq.unwrap_or(1);
+    let basename = loop {
+        let basename = render_scan_filename(filename_pattern, date, current);
+        let path = output_folder.join(&basename);
+        let parent = path.parent().unwrap_or_else(|| Path::new(""));
+        let taken: Vec<String> = std::fs::read_dir(parent)
+            .map(|entries| {
+                entries
+                    .filter_map(Result::ok)
+                    .filter_map(|entry| entry.file_name().to_str().map(str::to_lowercase))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let stem = path
+            .file_name()
+            .map_or_else(String::new, |name| name.to_string_lossy().to_lowercase());
+        if !taken.iter().any(|name| {
+            suffixes
+                .iter()
+                .any(|suffix| name == &format!("{stem}{suffix}"))
+        }) {
+            break basename;
+        }
+        current += 1;
+    };
+    let mono = output_format.eq_ignore_ascii_case(MONO_TIFF);
+    write_tiff_16bit(result, &output_folder.join(basename), width, height, mono)
 }
 
 #[cfg(test)]
