@@ -6,7 +6,7 @@ use negpy_backend::features::exposure::papers::resolve_paper;
 use negpy_backend::features::exposure::print::{
     FlatRenderSettings, PrintParams, PrintSettings, black_density_rgb, flat_curve_params,
     paper_dmin_rgb, per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths,
-    render_flat, render_print,
+    print_curve, render_flat, render_print,
 };
 
 #[test]
@@ -136,6 +136,29 @@ fn separation_damping_uses_the_per_pixel_chroma_path() {
         render_print(&image, 8, &matrix, None),
         render_print(&image, 8, &damped, None)
     );
+}
+
+#[test]
+fn layer_trims_reach_the_curve() {
+    let plain = print_curve(&PrintSettings::default(), None);
+    let trimmed = print_curve(
+        &PrintSettings {
+            toe_trims: [0.4, 0.0, -0.4],
+            shoulder_trims: [0.2, 0.0, -0.2],
+            toe_width_trims: [1.0, 0.0, -1.0],
+            shoulder_width_trims: [-0.5, 0.0, 0.5],
+            midtone_gamma_trims: [0.1, 0.0, -0.1],
+            ..PrintSettings::default()
+        },
+        None,
+    );
+    assert!((trimmed.toe[0] - (plain.toe[0] + 0.4 * c::TOE_SHOULDER_STRENGTH)).abs() < 1e-12);
+    assert!(
+        (trimmed.shoulder[2] - (plain.shoulder[2] - 0.2 * c::TOE_SHOULDER_STRENGTH)).abs() < 1e-12
+    );
+    assert!((trimmed.toe_width[0] - (plain.toe_width[0] + 1.0)).abs() < 1e-12);
+    assert!((trimmed.shoulder_width[2] - (plain.shoulder_width[2] + 0.5)).abs() < 1e-12);
+    assert!((trimmed.midtone_gamma[0] - (plain.midtone_gamma[0] + 0.1)).abs() < 1e-12);
 }
 
 #[test]

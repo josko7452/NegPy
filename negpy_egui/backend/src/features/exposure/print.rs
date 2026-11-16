@@ -111,6 +111,11 @@ pub struct PrintSettings {
     pub toe_width: f64,
     pub shoulder: f64,
     pub shoulder_width: f64,
+    pub toe_trims: [f64; 3],
+    pub shoulder_trims: [f64; 3],
+    pub toe_width_trims: [f64; 3],
+    pub shoulder_width_trims: [f64; 3],
+    pub midtone_gamma_trims: [f64; 3],
     pub cmy_offsets: [f32; 3],
     pub shadow_cmy: [f32; 3],
     pub highlight_cmy: [f32; 3],
@@ -137,6 +142,11 @@ impl Default for PrintSettings {
             toe_width: 2.5,
             shoulder: 0.0,
             shoulder_width: 2.5,
+            toe_trims: [0.0; 3],
+            shoulder_trims: [0.0; 3],
+            toe_width_trims: [0.0; 3],
+            shoulder_width_trims: [0.0; 3],
+            midtone_gamma_trims: [0.0; 3],
             cmy_offsets: [0.0; 3],
             shadow_cmy: [0.0; 3],
             highlight_cmy: [0.0; 3],
@@ -242,13 +252,19 @@ pub fn lut_black_luminance(
 pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> PrintCurve<'static> {
     let tonal = effective_constants(paper);
     let strength = c::TOE_SHOULDER_STRENGTH;
-    let toe = [settings.toe * strength; 3];
-    let shoulder = [settings.shoulder * strength; 3];
+    let (toe, shoulder) = per_channel_toe_shoulder(
+        settings.toe,
+        settings.shoulder,
+        settings.toe_trims,
+        settings.shoulder_trims,
+    );
+    let toe = toe.map(|value| value * strength);
+    let shoulder = shoulder.map(|value| value * strength);
     let widths = per_channel_widths(
         settings.toe_width,
         settings.shoulder_width,
-        [0.0; 3],
-        [0.0; 3],
+        settings.toe_width_trims,
+        settings.shoulder_width_trims,
     );
     let damping = settings.separation_damping;
     let sat = if damping > 0.0 && settings.dye_separation != [1.0; 3] {
@@ -292,7 +308,9 @@ pub fn print_curve(settings: &PrintSettings, paper: Option<&PaperProfile>) -> Pr
         zone_hi_center: c::REFERENCE_PRINT_DENSITY + c::ZONE_DENSITY_HIGHLIGHT_OFFSET,
         zone_k: c::ZONE_DENSITY_SHARPNESS,
         v_star: reference_linear_value(settings.params.d_min, paper, None),
-        midtone_gamma: [settings.params.midtone_gamma; 3],
+        midtone_gamma: std::array::from_fn(|ch| {
+            settings.params.midtone_gamma + settings.midtone_gamma_trims[ch]
+        }),
         gamma_width: tonal.paper_gamma_width,
         dye_mix: composed,
         sep: (damping > 0.0 && settings.dye_separation != [1.0; 3]).then_some((
@@ -542,6 +560,31 @@ pub fn render_negative(
         toe_width: exposure.toe_width,
         shoulder: solved.shoulder,
         shoulder_width: exposure.shoulder_width,
+        toe_trims: [
+            exposure.toe_trim_red,
+            exposure.toe_trim_green,
+            exposure.toe_trim_blue,
+        ],
+        shoulder_trims: [
+            exposure.shoulder_trim_red,
+            exposure.shoulder_trim_green,
+            exposure.shoulder_trim_blue,
+        ],
+        toe_width_trims: [
+            exposure.toe_width_trim_red,
+            exposure.toe_width_trim_green,
+            exposure.toe_width_trim_blue,
+        ],
+        shoulder_width_trims: [
+            exposure.shoulder_width_trim_red,
+            exposure.shoulder_width_trim_green,
+            exposure.shoulder_width_trim_blue,
+        ],
+        midtone_gamma_trims: [
+            exposure.midtone_gamma_trim_red,
+            exposure.midtone_gamma_trim_green,
+            exposure.midtone_gamma_trim_blue,
+        ],
         cmy_offsets: cmy.map(|value| value as f32),
         shadow_cmy: shadow_cmy.map(|value| value as f32),
         highlight_cmy: highlight_cmy.map(|value| value as f32),
