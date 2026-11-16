@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `pickbetter: propose the A/B exposure pairs`
+**Last Updated:** 2026-11-16 | **Last Commit:** `metadata: mirror the source filesystem dates`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -13,6 +13,7 @@ This session runs 10 commits, then the workspace test and a new gap audit.
 - `capture` shutter labels, ladder spacing, display and start point.
 - `capture` scan presets and framing levels over the settings store.
 - `pickbetter` eleven controls, route, A/B pair and temperature.
+- `metadata` export filesystem dates from the source.
 - `a82c3ae2` view: viewport/raw coordinate maps, off-frame homography.
 - `a6206a94` export: Pakon model descriptions, XMP provenance, TIFF datetime.
 - `4072373e` film-edge: DX and KEYKODE barcode bits.

@@ -2,6 +2,7 @@
 
 pub mod capture;
 pub mod exif_read;
+pub mod fsdate;
 pub mod gear;
 pub mod gear_logic;
 pub mod payload;
