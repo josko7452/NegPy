@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `a6ee0fb4` scanning: name and write captured TIFF scans
+**Last Updated:** 2026-11-16 | **Last Commit:** `4fb5d762` metadata: reject a spaced EV sum
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -17,10 +17,13 @@ This session ran 10 backend commits, then the workspace test and a gap audit.
 - `1fc03b35` contact-sheet: tile, strip, row and label rendering.
 - `d7aa35ec` capture: linear probe meter and shutter recommendation.
 - `a6ee0fb4` scanning: name, collision and write policy.
+- `4fb5d762` metadata: reject a spaced EV sum (post-10 test fix).
 
 ## Verification (After Commit 10)
 - Targeted tests passed per commit.
-- Workspace tests: see the result appended here after the run.
+- `cargo test --workspace --no-fail-fast` passed. First post-10 run exposed
+  one EV-parser unit failure; fixed in `4fb5d762`, then the rerun passed.
+- `cargo fmt --check` clean. Clippy is not part of this check.
 
 ## Audit (After Commit 10)
 - Closed this session: D8/D9 metadata writer, D11 film-edge paint,
