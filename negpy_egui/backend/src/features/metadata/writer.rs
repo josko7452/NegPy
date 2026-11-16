@@ -82,6 +82,184 @@ impl ExifData {
     }
 }
 
+/// The TIFF field type piexif records for a tag, or None for a tag it does not know.
+#[must_use]
+pub fn tiff_type(ifd: &str, tag: u16) -> Option<u16> {
+    let table: &[(u16, u16)] = match ifd {
+        "0th" => &ZEROTH_TYPES,
+        "Exif" => &EXIF_TYPES,
+        "GPS" => &GPS_TYPES,
+        "Interop" => &INTEROP_TYPES,
+        _ => return None,
+    };
+    table
+        .iter()
+        .find(|(known, _)| *known == tag)
+        .map(|(_, kind)| *kind)
+}
+
+const TIFF_BYTE: u16 = 1;
+const TIFF_ASCII: u16 = 2;
+const TIFF_SHORT: u16 = 3;
+const TIFF_LONG: u16 = 4;
+const TIFF_RATIONAL: u16 = 5;
+const TIFF_UNDEFINED: u16 = 7;
+const TIFF_SRATIONAL: u16 = 10;
+
+const ZEROTH_TYPES: [(u16, u16); 23] = [
+    (254, TIFF_LONG),
+    (256, TIFF_LONG),
+    (257, TIFF_LONG),
+    (258, TIFF_SHORT),
+    (259, TIFF_SHORT),
+    (262, TIFF_SHORT),
+    (270, TIFF_ASCII),
+    (271, TIFF_ASCII),
+    (272, TIFF_ASCII),
+    (273, TIFF_LONG),
+    (274, TIFF_SHORT),
+    (277, TIFF_SHORT),
+    (278, TIFF_LONG),
+    (279, TIFF_LONG),
+    (282, TIFF_RATIONAL),
+    (283, TIFF_RATIONAL),
+    (284, TIFF_SHORT),
+    (296, TIFF_SHORT),
+    (305, TIFF_ASCII),
+    (330, TIFF_LONG),
+    (513, TIFF_LONG),
+    (514, TIFF_LONG),
+    (37398, TIFF_BYTE),
+];
+
+const EXIF_TYPES: [(u16, u16); 22] = [
+    (33434, TIFF_RATIONAL),
+    (33437, TIFF_RATIONAL),
+    (34855, TIFF_SHORT),
+    (36867, TIFF_ASCII),
+    (36868, TIFF_ASCII),
+    (36881, TIFF_ASCII),
+    (37380, TIFF_SRATIONAL),
+    (37381, TIFF_RATIONAL),
+    (37386, TIFF_RATIONAL),
+    (37500, TIFF_UNDEFINED),
+    (37510, TIFF_UNDEFINED),
+    (40961, TIFF_SHORT),
+    (40965, TIFF_LONG),
+    (41495, TIFF_SHORT),
+    (41728, TIFF_UNDEFINED),
+    (41729, TIFF_UNDEFINED),
+    (41730, TIFF_UNDEFINED),
+    (42035, TIFF_ASCII),
+    (42036, TIFF_ASCII),
+    (42033, TIFF_ASCII),
+    (42034, TIFF_RATIONAL),
+    (42037, TIFF_ASCII),
+];
+
+const GPS_TYPES: [(u16, u16); 8] = [
+    (0, TIFF_BYTE),
+    (1, TIFF_ASCII),
+    (2, TIFF_RATIONAL),
+    (3, TIFF_ASCII),
+    (4, TIFF_RATIONAL),
+    (5, TIFF_BYTE),
+    (6, TIFF_RATIONAL),
+    (18, TIFF_ASCII),
+];
+
+const INTEROP_TYPES: [(u16, u16); 1] = [(1, TIFF_ASCII)];
+
+const RAW_PREVIEW_0TH_TAGS: [u16; 17] = [
+    254, 256, 257, 258, 259, 262, 273, 277, 278, 279, 284, 330, 513, 514, 37398, 0xC4A5, 700,
+];
+const RAW_CAPTURE_EXIF_TAGS: [u16; 4] = [41730, 41495, 41728, 41729];
+const MAX_SAFE_0TH_TAG: u16 = TAG_GPS_IFD;
+
+/// `_sanitize_exif`: drop values the writer cannot encode and tags tied to the source.
+#[must_use]
+pub fn sanitize_exif(data: &ExifData) -> ExifData {
+    let mut result = ExifData::default();
+    for (name, tags) in [
+        ("0th", &data.zeroth),
+        ("Exif", &data.exif),
+        ("GPS", &data.gps),
+        ("Interop", &data.interop),
+        ("1st", &data.first),
+    ] {
+        let clean = sanitize_ifd(name, tags);
+        match name {
+            "0th" => result.zeroth = clean,
+            "Exif" => result.exif = clean,
+            "GPS" => result.gps = clean,
+            "Interop" => result.interop = clean,
+            "1st" => result.first = clean,
+            _ => {}
+        }
+    }
+    result
+}
+
+fn sanitize_ifd(name: &str, tags: &ExifTags) -> ExifTags {
+    let mut clean = ExifTags::new();
+    if name == "GPS"
+        && !(tags.contains_key(&TAG_GPS_LATITUDE) || tags.contains_key(&TAG_GPS_LONGITUDE))
+    {
+        return clean;
+    }
+    for (tag, value) in tags {
+        if name == "0th" && RAW_PREVIEW_0TH_TAGS.contains(tag) {
+            continue;
+        }
+        if name == "0th" && *tag > MAX_SAFE_0TH_TAG {
+            continue;
+        }
+        if name == "Exif" && RAW_CAPTURE_EXIF_TAGS.contains(tag) {
+            continue;
+        }
+        if name == "Exif" && matches!(*tag, TAG_COLOR_SPACE | TAG_MAKER_NOTE) {
+            continue;
+        }
+        let kind = tiff_type(name, *tag);
+        if matches!(*value, ExifValue::Bytes(_))
+            && matches!(kind, Some(TIFF_RATIONAL | TIFF_SRATIONAL))
+        {
+            continue;
+        }
+        if kind == Some(TIFF_SHORT) && short_overflows(value) {
+            continue;
+        }
+        clean.insert(*tag, value.clone());
+    }
+    clean
+}
+
+fn short_overflows(value: &ExifValue) -> bool {
+    match value {
+        ExifValue::UInt(value) => *value > u64::from(u16::MAX),
+        ExifValue::SInt(value) => !(0..=i64::from(u16::MAX)).contains(value),
+        ExifValue::Rationals(values) => values.iter().any(|(num, _)| !(0..=65535).contains(num)),
+        _ => false,
+    }
+}
+
+/// `_prepare_jpeg_exif`: sanitize and drop the thumbnail directory.
+#[must_use]
+pub fn prepare_jpeg_exif(data: &ExifData) -> ExifData {
+    let mut prepared = sanitize_exif(data);
+    prepared.first.clear();
+    prepared
+}
+
+/// `_demote_scan_datetime`: keep the source timestamp as the digitized time.
+pub fn demote_scan_datetime(data: &mut ExifData) {
+    if let Some(source) = data.exif.get(&TAG_DATE_TIME_ORIGINAL).cloned()
+        && !data.exif.contains_key(&TAG_DATE_TIME_DIGITIZED)
+    {
+        data.exif.insert(TAG_DATE_TIME_DIGITIZED, source);
+    }
+}
+
 /// `_exif_ascii`: 7-bit EXIF text with the punctuation NegPy writes transliterated.
 #[must_use]
 pub fn exif_ascii(text: &str) -> Vec<u8> {
