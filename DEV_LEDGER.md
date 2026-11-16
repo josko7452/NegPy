@@ -4,60 +4,39 @@
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session runs 10 commits, then the workspace test and a new gap audit.
+This session adds 10 backend commits, then runs the workspace test and a gap audit.
 
 ## Completed (This Session)
-- `chart` reference Lab and CIEDE2000 with the published-pair oracle.
-- `chart` corner-patch interpolation and four-way grid orientation.
-- `chart` Levenberg-Marquardt fit with the unit diagonal and ridge.
-- `capture` shutter labels, ladder spacing, display and start point.
-- `capture` scan presets and framing levels over the settings store.
-- `pickbetter` eleven controls, route, A/B pair and temperature.
-- `metadata` export filesystem dates from the source.
-- `metadata` EXIF IFD0 resolution as rationals and its native unit.
-- `display` matrix/TRC detection, D65 primaries and TRC sampling.
-- `metadata` JFIF and PNG container resolution, native unit.
-- `a82c3ae2` view: viewport/raw coordinate maps, off-frame homography.
-- `a6206a94` export: Pakon model descriptions, XMP provenance, TIFF datetime.
-- `4072373e` film-edge: DX and KEYKODE barcode bits.
-- `269eccba` film-edge: maker run layouts for 135 and 120.
-- `3969e0b0` gear: film edge block, `printsAs`, bundled flag.
-- `36e68768` film-edge: edge style and item generation.
-- `c6e2ec4a` export: contact-sheet palette, paper black and DX flag.
-- `74a01b4f` metadata: EXIF formatting, scan record, XMP rating.
-- `d819ae70` metadata: export payload with flags and preview rows.
-- `fce2f98d` metadata: XMP packet builder.
+- `pending` metadata: custom EXIF tags and exposure parsing.
 
 ## Verification (After Commit 10)
-- `cargo fmt --check` clean.
-- `CARGO_BUILD_JOBS=2 cargo test --workspace --no-fail-fast` passed.
-  First run failed to link (`ld` bus error) on a full disk; `cargo clean`
-  freed 159 GB and the rerun passed.
-- `cargo clippy -p negpy-backend --lib` still has 3 pre-existing errors:
-  `exposure/stats.rs` LOG10_2, `loaders/logluv.rs` M_LN2,
-  `loaders/tiff_loader.rs` `255.0 / 255.0`. Not touched this session.
+- `cargo fmt --check` clean. Targeted tests passed per commit.
+- `cargo test --workspace --no-fail-fast` passed after commit 10.
+- Clippy remains red on pre-existing lints across `negpy-backend`; no lint
+  sweep was folded into these feature commits.
+- The full workspace build took 17m on first run because every integration
+  test linked in parallel. Disk is healthy after the earlier cleanup.
 
 ## Audit (After Commit 10)
-- Closed this session: coordinate mapping, Linear Output descriptors/XMP,
-  film-edge barcodes/layouts/style/items, gear edge data, sheet look,
-  EXIF read, metadata payload, XMP write.
-- **D11:** film-edge painter (`services/film_edge/paint.py`) still absent:
-  it needs a text glyph source without a GUI dependency. Contact-sheet
-  painting and `services/scanning/service.py` remain.
-- **D12:** embeddings, semantic model, CLIP tokenizer, calibration/meter,
-  capture presets/service, preview manager, and `infrastructure/display/*`.
-- **D10:** GPU engine and `services/rendering/{engine,image_processor}` remain.
-- **D8/D9:** `features/process/chart.py` lacks ΔE00, orientation detection
-  and the matrix fit. `retouch/clone.py` delegates to the already-ported logic.
-- **D13/UI:** session glue, controller and every egui view (out of scope).
+- Closed this session: chart reference/ΔE/orientation/LM fit, shutter label
+  parsing and start point, capture presets, Pick Better, filesystem dates,
+  EXIF and container resolution, matrix/TRC ICC parsing.
+- **D11:** `film_edge/paint.py` still needs a glyph source; contact-sheet
+  painting and `scanning/service.py` remain.
+- **D12:** capture meter/service and transports, preview manager,
+  embeddings/semantic/CLIP, monitor profile and ICC LUT application remain.
+- **D10:** `rendering/image_processor.py` and `gpu_engine.py` remain.
+- **D8/D9:** `metadata/writer.py` remains the largest export gap;
+  `retouch/clone.py` delegates to the ported logic.
+- **D13/UI:** session glue, controller and every egui view stay out of scope.
 
 ## Next Steps (Ordered)
 1. [ ] D11: film-edge paint (glyph source), contact-sheet paint.
 2. [ ] D11: scanning service over the scanner backends.
-3. [ ] D11: film-edge paint (glyph source), contact-sheet paint.
-4. [ ] D11: scanning service over the scanner backends.
-5. [ ] D12: capture calibration, meter and presets.
-6. [ ] D10: image processor and GPU engine gaps.
+3. [ ] D12: capture meter/service and presets wiring.
+4. [ ] D12: preview manager, embeddings/semantic/CLIP.
+5. [ ] D8/D9: metadata writer.
+6. [ ] D10: image processor and GPU engine.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.

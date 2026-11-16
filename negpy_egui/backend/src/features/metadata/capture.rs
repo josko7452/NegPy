@@ -21,6 +21,13 @@ impl CaptureDate {
         let (year, month, day, _, _, _) = parts(&self.text);
         format!("{year:04}{month:02}{day:02}")
     }
+
+    /// The EXIF form, with the unknown parts padded.
+    #[must_use]
+    pub fn exif_text(&self) -> String {
+        let (year, month, day, hour, minute, second) = parts(&self.text);
+        format!("{year:04}:{month:02}:{day:02} {hour:02}:{minute:02}:{second:02}")
+    }
 }
 
 fn number(value: Option<&str>, default: i64) -> i64 {
@@ -43,9 +50,14 @@ fn parts(text: &str) -> (i64, i64, i64, i64, i64, i64) {
 /// A `CaptureDate` from a truncated ISO-8601 string, or `None` when it is not a real instant.
 #[must_use]
 pub fn parse_capture_date(text: &str) -> Option<CaptureDate> {
-    let cleaned = text.trim().replace('/', "-");
+    let mut cleaned = text.trim().replace('/', "-");
     if cleaned.is_empty() {
         return None;
+    }
+    let mut tz_offset = String::new();
+    if let Some((body, zone)) = split_timezone(&cleaned) {
+        cleaned = body;
+        tz_offset = zone;
     }
     let (year, month, day, hour, minute, second) = parts(&cleaned);
     if !(1800..=2999).contains(&year) {
@@ -77,8 +89,43 @@ pub fn parse_capture_date(text: &str) -> Option<CaptureDate> {
     Some(CaptureDate {
         text: normalized,
         precision,
-        tz_offset: String::new(),
+        tz_offset,
     })
+}
+
+fn split_timezone(text: &str) -> Option<(String, String)> {
+    if !text.contains(' ') {
+        return None;
+    }
+    let trimmed = text.trim_end();
+    if let Some(body) = trimmed.strip_suffix('Z') {
+        return Some((body.trim_end().to_string(), "+00:00".to_string()));
+    }
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 5 {
+        return None;
+    }
+    let sign_at = bytes.len().saturating_sub(6);
+    let (start, raw) = if bytes.len() >= 6
+        && matches!(bytes[sign_at], b'+' | b'-')
+        && bytes[sign_at + 3] == b':'
+    {
+        (sign_at, &trimmed[sign_at..])
+    } else {
+        let start = bytes.len().saturating_sub(5);
+        if matches!(bytes[start], b'+' | b'-') {
+            (start, &trimmed[start..])
+        } else {
+            return None;
+        }
+    };
+    let body = &trimmed[..start];
+    let digits: String = raw.chars().filter(char::is_ascii_digit).collect();
+    if digits.len() != 4 {
+        return None;
+    }
+    let zone = format!("{}{}:{}", &raw[..1], &digits[..2], &digits[2..]);
+    Some((body.trim_end().to_string(), zone))
 }
 
 /// Seconds as `mm:ss`; empty when unset.
