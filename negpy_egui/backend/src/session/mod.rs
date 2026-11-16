@@ -1,3 +1,4 @@
 //! Mirrors the headless `negpy/desktop/` helpers that carry session state.
 
+pub mod prefetch_logic;
 pub mod render_memo;
