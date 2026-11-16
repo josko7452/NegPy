@@ -142,6 +142,19 @@ fn scan_dir(folder: &Path, skip: &str) -> BTreeMap<String, MatrixProfile> {
     out
 }
 
+fn sensor_scan(folder: &Path) -> BTreeMap<String, MatrixProfile> {
+    let mut out = BTreeMap::new();
+    for path in list_toml(folder) {
+        let Some(profile) = parse(&path) else {
+            continue;
+        };
+        if profile.name != SENSOR_NONE {
+            out.insert(profile.name.clone(), profile);
+        }
+    }
+    out
+}
+
 /// Bundled and user profiles, with bundled entries winning by display name.
 #[must_use]
 pub fn scan_profiles(
@@ -158,6 +171,57 @@ pub fn scan_profiles(
 #[must_use]
 pub fn is_builtin(name: &str, default: &str) -> bool {
     name == default
+}
+
+/// Whether a crosstalk name is read-only: the built-in or any bundled profile.
+#[must_use]
+pub fn crosstalk_is_bundled(bundled_dir: &Path, name: &str) -> bool {
+    name == CROSSTALK_DEFAULT || scan_dir(bundled_dir, CROSSTALK_DEFAULT).contains_key(name)
+}
+
+/// Whether a sensor name is read-only: only the "None" entry is.
+#[must_use]
+pub fn sensor_is_bundled(name: &str) -> bool {
+    name == SENSOR_NONE
+}
+
+/// The film process a crosstalk profile describes; C-41 for the built-in or a missing name.
+#[must_use]
+pub fn crosstalk_process(user_dir: &Path, bundled_dir: &Path, name: &str) -> ProcessMode {
+    if name == CROSSTALK_DEFAULT {
+        return ProcessMode::C41;
+    }
+    scan_profiles(user_dir, bundled_dir, CROSSTALK_DEFAULT)
+        .get(name)
+        .map_or(ProcessMode::C41, |profile| profile.process)
+}
+
+/// A crosstalk profile's provenance; built-in for the default, Other for a missing name.
+#[must_use]
+pub fn crosstalk_type(user_dir: &Path, bundled_dir: &Path, name: &str) -> CrosstalkType {
+    if name == CROSSTALK_DEFAULT {
+        return CrosstalkType::Builtin;
+    }
+    scan_profiles(user_dir, bundled_dir, CROSSTALK_DEFAULT)
+        .get(name)
+        .map_or(CrosstalkType::Other, |profile| profile.profile_type)
+}
+
+/// The sensor names a picker lists, "None" first.
+#[must_use]
+pub fn list_sensor_profiles(folder: &Path) -> Vec<String> {
+    let mut names = vec![SENSOR_NONE.to_string()];
+    names.extend(sensor_scan(folder).into_keys());
+    names
+}
+
+/// A sensor profile's flat matrix, or `None` for "None", a missing name, or an invalid file.
+#[must_use]
+pub fn sensor_matrix(folder: &Path, name: &str) -> Option<[f64; 9]> {
+    if name == SENSOR_NONE {
+        return None;
+    }
+    sensor_scan(folder).get(name).map(|profile| profile.matrix)
 }
 
 /// The profile names a picker lists, built-in first.
@@ -243,7 +307,7 @@ pub fn path_for_name(folder: &Path, name: &str, fallback: &str) -> PathBuf {
             return candidate;
         }
     }
-    first
+    folder.join(format!("{base}_1000.toml"))
 }
 
 fn row(matrix: &[f64]) -> String {
@@ -296,6 +360,35 @@ pub fn delete(folder: &Path, name: &str) {
             return;
         }
     }
+}
+
+impl MatrixProfile {
+    /// The same profile under a new name, for a save that renames in place.
+    #[must_use]
+    pub fn renamed(&self, name: &str) -> Self {
+        Self {
+            name: name.to_string(),
+            ..self.clone()
+        }
+    }
+}
+
+/// Write a crosstalk profile and remove the old file when the name changed.
+///
+/// A rename keeps the profile's type and process: the numbers still describe one dye set.
+pub fn save_crosstalk_renamed(
+    folder: &Path,
+    old_name: &str,
+    name: &str,
+    matrix: &[f64; 9],
+    profile_type: CrosstalkType,
+    process: ProcessMode,
+) -> std::io::Result<PathBuf> {
+    let path = save_crosstalk(folder, name, matrix, profile_type, process)?;
+    if old_name != name {
+        delete(folder, old_name);
+    }
+    Ok(path)
 }
 
 #[cfg(test)]
