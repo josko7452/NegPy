@@ -4,10 +4,12 @@ use std::collections::HashMap;
 
 use crate::domain::models::{MetadataConfig, ProcessMode, WorkspaceConfig};
 use crate::features::metadata::gear::{FilmStock, GearLibrary};
+use crate::services::film_edge::edge::{EdgeStyle, edge_style};
 use crate::services::film_edge::geometry::{
     DEFAULT_FRAME_120, FRAME_SIZES_120, FilmGeometry, SheetFormat,
 };
 use crate::services::film_edge::layout::frame_turns;
+use crate::services::film_edge::layouts::layout;
 
 /// What the sheet reads from a frame's file headers.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -326,6 +328,114 @@ fn median(values: &[f64]) -> Option<f64> {
     } else {
         sorted[mid]
     })
+}
+
+/// The sheet's colors and the stock's edge print.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SheetLook {
+    pub palette: String,
+    pub black: i32,
+    pub edge: EdgeStyle,
+    pub label: String,
+    pub white_paper: bool,
+}
+
+impl Default for SheetLook {
+    fn default() -> Self {
+        Self {
+            palette: "bw".to_string(),
+            black: 0,
+            edge: EdgeStyle {
+                layout: crate::services::film_edge::edge::GENERIC.to_string(),
+                maker: String::new(),
+                text: String::new(),
+                code: String::new(),
+                dx: false,
+                dx_number: None,
+                printed: true,
+                color_lines: Vec::new(),
+            },
+            label: String::new(),
+            white_paper: false,
+        }
+    }
+}
+
+/// The paper black the sheet prints on: with Paper Black off it is pure black.
+#[must_use]
+pub fn sheet_black(paper_black: bool) -> i32 {
+    if !paper_black {
+        return 0;
+    }
+    let linear = 10.0f64.powf(-crate::features::exposure::constants::D_MAX);
+    let encoded = if linear <= 0.0031308 {
+        12.92 * linear
+    } else {
+        1.055 * linear.powf(1.0 / 2.4) - 0.055
+    };
+    encoded.mul_add(255.0, 0.5) as i32
+}
+
+fn palette_for(color_type: Option<&str>) -> &'static str {
+    match color_type {
+        Some("ColorNegative") => "color",
+        Some("ColorSlide" | "B&W Slide") => "slide",
+        _ => "bw",
+    }
+}
+
+/// `sheet_look`: the majority film's palette, paper black and edge print.
+#[must_use]
+pub fn sheet_look(
+    frames: &[SheetFrame],
+    format: SheetFormat,
+    label: &str,
+    library: Option<&GearLibrary>,
+) -> SheetLook {
+    let names: Vec<String> = frames
+        .iter()
+        .map(|frame| film_name(frame, library))
+        .filter(|name| !name.is_empty())
+        .collect();
+    let stock_name = majority(names.iter(), &String::new()).clone();
+    let manufacturer = majority(
+        frames
+            .iter()
+            .map(|frame| frame.config.metadata.film_manufacturer.clone())
+            .filter(|name| !name.is_empty()),
+        String::new(),
+    );
+    let color_type = majority(
+        frames
+            .iter()
+            .filter_map(|frame| film_color_type(frame, library)),
+        String::new(),
+    );
+    let palette = palette_for((!color_type.is_empty()).then_some(color_type.as_str()));
+    let stock_id = majority(
+        frames
+            .iter()
+            .map(|frame| frame.config.metadata.film_stock_id.clone())
+            .filter(|id| !id.is_empty()),
+        String::new(),
+    );
+    let stock = frames
+        .iter()
+        .filter(|frame| !stock_id.is_empty() && frame.config.metadata.film_stock_id == stock_id)
+        .find_map(|frame| gear_stock(frame, library));
+    let mut edge = edge_style(stock, library, &stock_name, &manufacturer);
+    edge.dx = format != SheetFormat::Medium && layout(&edge.layout).dx.contains(&palette);
+    let paper_black = majority(
+        frames.iter().map(|frame| frame.config.exposure.paper_black),
+        false,
+    );
+    SheetLook {
+        palette: palette.to_string(),
+        black: sheet_black(paper_black),
+        edge,
+        label: label.to_string(),
+        white_paper: false,
+    }
 }
 
 fn gear_stock<'a>(frame: &SheetFrame, library: Option<&'a GearLibrary>) -> Option<&'a FilmStock> {

@@ -5,7 +5,7 @@ use negpy_backend::features::metadata::gear::{FilmStock, GearLibrary};
 use negpy_backend::services::export::contact_sheet_roll::{
     FrameFacts, SheetFrame, asset_paths, creation_order, cropped_aspect, film_color_type,
     film_name, frame_order, infer_format, name_order, parse_frame_120, print_aspect,
-    roll_label_text, scan_exposure_offsets, turns_for, upright_aspect,
+    roll_label_text, scan_exposure_offsets, sheet_black, sheet_look, turns_for, upright_aspect,
 };
 use negpy_backend::services::film_edge::geometry::{SheetFormat, film_geometry};
 
@@ -322,4 +322,53 @@ fn scan_exposure_offsets_center_on_the_median() {
     assert!(close(offsets[1], 0.0));
     assert!(close(offsets[2], 2.0f64.log10()));
     assert_eq!(offsets[3], 0.0);
+}
+
+#[test]
+fn a_negative_sheet_prints_on_the_color_palette() {
+    let library = GearLibrary::default();
+    let mut config = WorkspaceConfig::default();
+    config.metadata.film_color_type = "ColorNegative".into();
+    let frame = SheetFrame::new("one", "/one.tif", config);
+    let look = sheet_look(&[frame], SheetFormat::FullFrame, "", Some(&library));
+    assert_eq!(look.palette, "color");
+    assert_eq!(look.black, 0);
+}
+
+#[test]
+fn a_slide_sheet_prints_on_the_slide_palette() {
+    let library = GearLibrary::default();
+    let mut config = WorkspaceConfig::default();
+    config.metadata.film_color_type = "ColorSlide".into();
+    let frame = SheetFrame::new("one", "/one.tif", config);
+    let look = sheet_look(&[frame], SheetFormat::FullFrame, "", Some(&library));
+    assert_eq!(look.palette, "slide");
+}
+
+#[test]
+fn paper_black_encodes_the_print_d_max() {
+    assert_eq!(sheet_black(false), 0);
+    let black = sheet_black(true);
+    assert!(black > 0 && black < 255);
+}
+
+#[test]
+fn dx_is_off_on_120_and_on_a_color_negative_135_strip() {
+    let library = GearLibrary::default();
+    let mut config = WorkspaceConfig::default();
+    config.metadata.film_color_type = "ColorNegative".into();
+    config.metadata.film = "Kodak Portra 400".into();
+    let frame = SheetFrame::new("one", "/one.tif", config);
+    let full = sheet_look(&[frame.clone()], SheetFormat::FullFrame, "", Some(&library));
+    assert!(full.edge.dx);
+    let medium = sheet_look(&[frame], SheetFormat::Medium, "", Some(&library));
+    assert!(!medium.edge.dx);
+}
+
+#[test]
+fn the_sheet_label_is_kept() {
+    let library = GearLibrary::default();
+    let frame = SheetFrame::new("one", "/one.tif", WorkspaceConfig::default());
+    let look = sheet_look(&[frame], SheetFormat::FullFrame, "Roll 1", Some(&library));
+    assert_eq!(look.label, "Roll 1");
 }
