@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-16 | **Last Commit:** `metadata: keep the declared resolution`
+**Last Updated:** 2026-11-16 | **Last Commit:** `display: parse matrix ICC profiles`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -15,6 +15,7 @@ This session runs 10 commits, then the workspace test and a new gap audit.
 - `pickbetter` eleven controls, route, A/B pair and temperature.
 - `metadata` export filesystem dates from the source.
 - `metadata` EXIF IFD0 resolution as rationals and its native unit.
+- `display` matrix/TRC detection, D65 primaries and TRC sampling.
 - `a82c3ae2` view: viewport/raw coordinate maps, off-frame homography.
 - `a6206a94` export: Pakon model descriptions, XMP provenance, TIFF datetime.
 - `4072373e` film-edge: DX and KEYKODE barcode bits.
