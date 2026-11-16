@@ -142,6 +142,16 @@ impl ExportConfig {
         self.export_fmt = ExportFormat::coerce(&migrate_export_fmt(self.export_fmt.as_str()));
         self
     }
+
+    /// Every stored field name, including the Python `userDir` spelling.
+    #[must_use]
+    pub fn field_names() -> Vec<String> {
+        serde_json::to_value(Self::default())
+            .ok()
+            .and_then(|value| value.as_object().cloned())
+            .map(|fields| fields.into_iter().map(|(key, _)| key).collect())
+            .unwrap_or_default()
+    }
 }
 
 impl Default for ExportConfig {

@@ -318,6 +318,96 @@ fn catalog() -> Vec<(&'static str, Vec<SettingRow>)> {
             ],
         ),
         (
+            mark("Paper Response"),
+            vec![
+                sticky(formatted(
+                    row(mark("Print Stock"), "exposure", &["paper_profile"]),
+                    RowFormat::PrintStock,
+                )),
+                sticky(row(mark("Paper Black"), "exposure", &["paper_black"])),
+                sticky(row(mark("Paper White"), "exposure", &["paper_dmin"])),
+                row(mark("Snap"), "exposure", &["midtone_gamma"]),
+                channels(
+                    row(
+                        mark("Snap Trim"),
+                        "exposure",
+                        &[
+                            "midtone_gamma_trim_red",
+                            "midtone_gamma_trim_green",
+                            "midtone_gamma_trim_blue",
+                        ],
+                    ),
+                    "RGB",
+                ),
+                row(mark("Toe"), "exposure", &["toe"]),
+                row(mark("Toe Width"), "exposure", &["toe_width"]),
+                channels(
+                    row(
+                        mark("Toe Trim"),
+                        "exposure",
+                        &["toe_trim_red", "toe_trim_green", "toe_trim_blue"],
+                    ),
+                    "RGB",
+                ),
+                channels(
+                    row(
+                        mark("Toe Width Trim"),
+                        "exposure",
+                        &[
+                            "toe_width_trim_red",
+                            "toe_width_trim_green",
+                            "toe_width_trim_blue",
+                        ],
+                    ),
+                    "RGB",
+                ),
+                row(mark("Shoulder"), "exposure", &["shoulder"]),
+                row(mark("Shoulder Width"), "exposure", &["shoulder_width"]),
+                channels(
+                    row(
+                        mark("Shoulder Trim"),
+                        "exposure",
+                        &[
+                            "shoulder_trim_red",
+                            "shoulder_trim_green",
+                            "shoulder_trim_blue",
+                        ],
+                    ),
+                    "RGB",
+                ),
+                channels(
+                    row(
+                        mark("Shoulder Width Trim"),
+                        "exposure",
+                        &[
+                            "shoulder_width_trim_red",
+                            "shoulder_width_trim_green",
+                            "shoulder_width_trim_blue",
+                        ],
+                    ),
+                    "RGB",
+                ),
+                row(mark("Dye Separation"), "exposure", &["dye_separation"]),
+                channels(
+                    row(
+                        mark("Dye Separation Trim"),
+                        "exposure",
+                        &[
+                            "dye_separation_trim_red",
+                            "dye_separation_trim_green",
+                            "dye_separation_trim_blue",
+                        ],
+                    ),
+                    "RGB",
+                ),
+                row(
+                    mark("Separation Damping"),
+                    "exposure",
+                    &["separation_damping"],
+                ),
+            ],
+        ),
+        (
             mark("Filtration"),
             vec![
                 row(mark("Cyan"), "exposure", &["wb_cyan"]),
@@ -390,46 +480,23 @@ fn catalog() -> Vec<(&'static str, Vec<SettingRow>)> {
                 row(mark("Selenium"), "toning", &["selenium_strength"]),
                 row(mark("Sepia"), "toning", &["sepia_strength"]),
                 row(mark("Gold"), "toning", &["gold_strength"]),
-                row(mark("Blue"), "toning", &["blue_strength"]),
+                row(mark("Iron Blue"), "toning", &["blue_strength"]),
                 row(mark("Copper"), "toning", &["copper_strength"]),
                 row(mark("Vanadium"), "toning", &["vanadium_strength"]),
-                row(mark("Shadow Tint Hue"), "toning", &["shadow_tint_hue"]),
+                row(mark("Shadow Hue"), "toning", &["shadow_tint_hue"]),
+                row(mark("Shadow Strength"), "toning", &["shadow_tint_strength"]),
+                row(mark("Highlight Hue"), "toning", &["highlight_tint_hue"]),
                 row(
-                    mark("Shadow Tint Strength"),
-                    "toning",
-                    &["shadow_tint_strength"],
-                ),
-                row(
-                    mark("Highlight Tint Hue"),
-                    "toning",
-                    &["highlight_tint_hue"],
-                ),
-                row(
-                    mark("Highlight Tint Strength"),
+                    mark("Highlight Strength"),
                     "toning",
                     &["highlight_tint_strength"],
                 ),
             ],
         ),
         (
-            mark("Retouch"),
+            mark("Finishing"),
             vec![
-                row(mark("Dust Removal"), "retouch", &["dust_remove"]),
-                row(mark("Dust Threshold"), "retouch", &["dust_threshold"]),
-                row(mark("Hair Threshold"), "retouch", &["dust_hair_threshold"]),
-                row(mark("Dust Size"), "retouch", &["dust_size"]),
-                row(mark("Scratch Threshold"), "retouch", &["scratch_threshold"]),
-                row(mark("Clone Strength"), "retouch", &["clone_strength"]),
-                row(mark("Clone Feather"), "retouch", &["clone_feather"]),
-                row(mark("Clone Match Tone"), "retouch", &["clone_match_tone"]),
-                row(mark("IR Removal"), "retouch", &["ir_dust_remove"]),
-                row(mark("IR Threshold"), "retouch", &["ir_threshold"]),
-            ],
-        ),
-        (
-            mark("Finish"),
-            vec![
-                row(mark("Vignette"), "finish", &["vignette_stops"]),
+                row(mark("Vignette Burn"), "finish", &["vignette_stops"]),
                 row(mark("Vignette Size"), "finish", &["vignette_size"]),
                 row(
                     mark("Vignette Roundness"),
@@ -438,9 +505,9 @@ fn catalog() -> Vec<(&'static str, Vec<SettingRow>)> {
                 ),
                 row(mark("Carrier Width"), "finish", &["carrier_width"]),
                 row(mark("Carrier Roughness"), "finish", &["carrier_rough"]),
-                row(mark("Carrier Corner"), "finish", &["carrier_corner"]),
                 row(mark("Carrier Flare"), "finish", &["carrier_flare"]),
-                row(mark("Border"), "finish", &["border_size"]),
+                row(mark("Carrier Corners"), "finish", &["carrier_corner"]),
+                row(mark("Border Width"), "finish", &["border_size"]),
                 row(mark("Border Color"), "finish", &["border_color"]),
                 row(
                     mark("Border Bottom Weight"),
@@ -448,10 +515,30 @@ fn catalog() -> Vec<(&'static str, Vec<SettingRow>)> {
                     &["border_bottom_weight"],
                 ),
                 row(
-                    mark("Border Match Paper"),
+                    mark("Border Paper White"),
                     "finish",
                     &["border_match_paper"],
                 ),
+            ],
+        ),
+        (
+            mark("Retouch"),
+            vec![
+                sticky(row(mark("Optical Removal"), "retouch", &["dust_remove"])),
+                row(
+                    mark("Optical Spot Threshold"),
+                    "retouch",
+                    &["dust_threshold"],
+                ),
+                row(
+                    mark("Optical Hair Threshold"),
+                    "retouch",
+                    &["dust_hair_threshold"],
+                ),
+                row(mark("Optical Size"), "retouch", &["dust_size"]),
+                row(mark("IR Removal"), "retouch", &["ir_dust_remove"]),
+                row(mark("IR Threshold"), "retouch", &["ir_threshold"]),
+                row(mark("IR Attenuation"), "retouch", &["ir_attenuation"]),
             ],
         ),
         (
