@@ -99,6 +99,77 @@ impl ScannerBackend for FlakyBackend {
     }
 }
 
+/// A backend that offers the optional film and metering hooks.
+struct OptionalHooksBackend {
+    device: ScannerDevice,
+}
+
+impl ScannerBackend for OptionalHooksBackend {
+    fn list_devices(&self) -> Result<Vec<ScannerDevice>, ScannerUnavailable> {
+        Ok(vec![self.device.clone()])
+    }
+
+    fn open_session(&mut self, _device_id: &str) -> Result<Box<dyn ScannerSession>, String> {
+        Err("not used".to_string())
+    }
+
+    fn eject(&mut self, _device_id: &str) -> Result<bool, String> {
+        Ok(false)
+    }
+
+    fn media_loaded(&mut self, _device_id: &str) -> Option<bool> {
+        Some(true)
+    }
+
+    fn detect_frames(
+        &mut self,
+        _device_id: &str,
+        _film_format: Option<&str>,
+        _film_type: &str,
+    ) -> usize {
+        6
+    }
+
+    fn meter(
+        &mut self,
+        _device_id: &str,
+        _params: &ScanParams,
+        _progress: &Progress,
+        _cancel: &Cancel,
+    ) -> Result<std::collections::BTreeMap<String, i64>, String> {
+        Ok(std::collections::BTreeMap::from([("red".to_string(), 7)]))
+    }
+}
+
+#[test]
+fn the_optional_hooks_report_what_the_backend_can_tell() {
+    let device = pitch_device(Some(3), 38.0);
+    let mut service = ScannerService::new(Box::new(OptionalHooksBackend { device }));
+    assert_eq!(service.media_loaded("x"), Some(true));
+    assert_eq!(service.detect_frames("x", Some("135"), "negative"), 6);
+    assert_eq!(
+        service
+            .meter("x", &ScanParams::default(), &no_progress(), &no_cancel())
+            .unwrap()
+            .get("red"),
+        Some(&7)
+    );
+}
+
+#[test]
+fn a_backend_without_the_hooks_reports_nothing() {
+    let backend = FlakyBackend::new(0);
+    let mut service = ScannerService::new(Box::new(backend));
+    assert_eq!(service.media_loaded("x"), None);
+    assert_eq!(service.detect_frames("x", None, "negative"), 0);
+    assert_eq!(
+        service
+            .meter("x", &ScanParams::default(), &no_progress(), &no_cancel())
+            .unwrap_err(),
+        "This scanner cannot meter a frame on its own"
+    );
+}
+
 #[test]
 fn a_transient_failure_is_retried_with_a_fresh_open() {
     let opens = Arc::new(AtomicU32::new(0));
@@ -260,6 +331,40 @@ fn a_failed_slot_is_yielded_and_the_strip_continues() {
     assert_eq!(previews.len(), 3);
     assert!(previews[1].rgb.is_none());
     assert!(previews[2].rgb.is_some());
+}
+
+#[test]
+fn the_service_writes_a_scan_under_a_free_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = ScannerService::new(Box::new(FlakyBackend::new(0)));
+    let result = ScanResult {
+        rgb: vec![0u8; 4 * 3 * 3],
+        dpi: 300,
+        ..ScanResult::default()
+    };
+    let first = service
+        .write_result(&result, dir.path(), "s_{{ seq }}", "TIFF", None, 4, 3)
+        .unwrap();
+    let second = service
+        .write_result(&result, dir.path(), "s_{{ seq }}", "TIFF", None, 4, 3)
+        .unwrap();
+    assert_ne!(first, second);
+    assert!(first.exists() && second.exists());
+}
+
+#[test]
+fn a_batch_reuses_the_frame_number_as_the_first_name() {
+    let dir = tempfile::tempdir().unwrap();
+    let service = ScannerService::new(Box::new(FlakyBackend::new(0)));
+    let result = ScanResult {
+        rgb: vec![0u8; 4 * 3 * 3],
+        dpi: 300,
+        ..ScanResult::default()
+    };
+    let path = service
+        .write_result(&result, dir.path(), "s_{{ seq }}", "TIFF", Some(7), 4, 3)
+        .unwrap();
+    assert_eq!(path.file_name().unwrap(), "s_7.tif");
 }
 
 #[test]

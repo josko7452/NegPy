@@ -184,6 +184,32 @@ pub trait ScannerBackend: Send {
     }
     fn open_session(&mut self, device_id: &str) -> Result<Box<dyn ScannerSession>, String>;
     fn eject(&mut self, device_id: &str) -> Result<bool, String>;
+
+    /// Whether film is loaded. `None` where the transport cannot tell.
+    fn media_loaded(&mut self, _device_id: &str) -> Option<bool> {
+        None
+    }
+
+    /// How many frames the loaded film carries, 0 where the transport cannot measure it.
+    fn detect_frames(
+        &mut self,
+        _device_id: &str,
+        _film_format: Option<&str>,
+        _film_type: &str,
+    ) -> usize {
+        0
+    }
+
+    /// Per-channel exposures for a frame, for later scans to reuse. Writes nothing.
+    fn meter(
+        &mut self,
+        _device_id: &str,
+        _params: &ScanParams,
+        _progress: &Progress,
+        _cancel: &Cancel,
+    ) -> Result<BTreeMap<String, i64>, String> {
+        Err("This scanner cannot meter a frame on its own".to_string())
+    }
 }
 
 #[cfg(test)]

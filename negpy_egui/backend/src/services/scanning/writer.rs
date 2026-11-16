@@ -8,20 +8,11 @@ use crate::services::export::encoders::{Resolution, TiffCompression, encode_tiff
 use crate::services::scanning::templating::{
     render_scan_filename, require_sequence_varying_scan_filename,
 };
+pub use crate::services::scanning::transport::ScanResult;
 
 /// The extension used while a scan is written, so a watched folder does not index it.
 pub const PART_SUFFIX: &str = ".part";
 pub const MONO_TIFF: &str = "TIFF (mono)";
-
-/// One scanner capture: 8- or 16-bit RGB, its IR plane and the IR validity mask.
-#[derive(Clone, Debug, Default, PartialEq)]
-pub struct ScanResult {
-    pub rgb: Vec<u8>,
-    pub ir: Option<Vec<u8>>,
-    pub ir_valid_mask: Option<Vec<u8>>,
-    pub dpi: i64,
-    pub icc_profile: Option<Vec<u8>>,
-}
 
 fn to_uint16(samples: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(samples.len() * 2);

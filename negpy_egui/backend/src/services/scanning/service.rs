@@ -12,6 +12,7 @@ use crate::services::scanning::roll::{FrameScanner, PerFrameRollSession, effecti
 use crate::services::scanning::transport::{
     Cancel, Progress, ScanError, ScanResult, ScannerBackend, ScannerDevice, ScannerSession,
 };
+use crate::services::scanning::writer::write_scan;
 
 pub const SCAN_IO_RETRY_ATTEMPTS: u32 = 3;
 pub const SCAN_IO_RETRY_DELAY_S: f64 = 0.5;
@@ -45,6 +46,60 @@ impl ScannerService {
 
     pub fn eject(&mut self, device_id: &str) -> Result<bool, String> {
         self.backend.eject(device_id)
+    }
+
+    /// Whether film is loaded. `None` where the transport cannot tell.
+    pub fn media_loaded(&mut self, device_id: &str) -> Option<bool> {
+        self.backend.media_loaded(device_id)
+    }
+
+    /// How many frames the loaded film carries, 0 where the transport cannot measure it.
+    pub fn detect_frames(
+        &mut self,
+        device_id: &str,
+        film_format: Option<&str>,
+        film_type: &str,
+    ) -> usize {
+        self.backend
+            .detect_frames(device_id, film_format, film_type)
+    }
+
+    /// Per-channel exposures for `params.frame`, for later scans to reuse. Writes nothing.
+    pub fn meter(
+        &mut self,
+        device_id: &str,
+        params: &ScanParams,
+        progress: &Progress,
+        cancel: &Cancel,
+    ) -> Result<std::collections::BTreeMap<String, i64>, String> {
+        self.backend.meter(device_id, params, progress, cancel)
+    }
+
+    /// Write one capture to a free basename and return the RGB path.
+    ///
+    /// `seq` seeds the collision search: a single scan passes `None` and starts at 1, a
+    /// range batch passes the frame number so masters are frame-numbered.
+    pub fn write_result(
+        &self,
+        result: &ScanResult,
+        output_folder: &std::path::Path,
+        filename_pattern: &str,
+        output_format: &str,
+        seq: Option<i64>,
+        width: usize,
+        height: usize,
+    ) -> Result<std::path::PathBuf, String> {
+        let date = chrono::Local::now().format("%Y%m%d").to_string();
+        write_scan(
+            result,
+            output_folder,
+            filename_pattern,
+            output_format,
+            &date,
+            seq,
+            width,
+            height,
+        )
     }
 
     /// Scan, retrying a transient USB I/O glitch with a fresh open each try.
