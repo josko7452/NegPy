@@ -120,3 +120,32 @@ fn a_half_slice_resizes_both_pixels_and_dimensions() {
             .is_none()
     );
 }
+
+#[test]
+fn a_source_is_decoded_once_until_a_field_changes() {
+    use negpy_backend::services::rendering::import::SourceCache;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("frame.tif");
+    let mut encoder =
+        tiff::encoder::TiffEncoder::new(std::fs::File::create(&path).unwrap()).unwrap();
+    encoder
+        .write_image::<tiff::encoder::colortype::RGB16>(3, 2, &vec![16384; 3 * 2 * 3])
+        .unwrap();
+    let cache = SourceCache::new();
+    let config = negpy_backend::domain::models::WorkspaceConfig::default();
+    let first = cache.load(&path, &config, None, &[]).expect("source");
+    let second = cache
+        .load(&path, &config, None, &[])
+        .expect("cached source");
+    assert_eq!(first, second);
+    cache.clear();
+    assert!(!cache.is_cached());
+    let mut changed = config.clone();
+    changed.process.linear_raw = !changed.process.linear_raw;
+    let third = cache
+        .load(&path, &changed, None, &[])
+        .expect("changed source");
+    assert!(cache.is_cached());
+    assert_eq!(third.image.width, 3);
+}

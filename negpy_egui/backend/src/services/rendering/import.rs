@@ -3,6 +3,7 @@
 //! sensor, then report the film process and the clear base the render will read.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use crate::domain::models::{ProcessMode, WorkspaceConfig, is_rgb_triplet, stitch_has_triplets};
 use crate::features::flatfield::logic::GainEntry;
@@ -14,6 +15,132 @@ use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::services::assets::half_frame::HalfSlice;
 use crate::services::rendering::base_read::base_log_for;
 use crate::services::rendering::lens::flatfield_source;
+
+/// The last corrected source, keyed by everything its decode read.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct SourceCacheKey {
+    path: String,
+    modified_nanos: u128,
+    source_token: String,
+    sensor_token: String,
+    flatfield_token: String,
+    gain_slices: Vec<(i32, u64, Option<[u64; 4]>, u64, char)>,
+}
+
+/// The corrected source and the facts the pipeline reads beside it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CachedSource {
+    pub image: ImageBuffer,
+    pub orientation: u8,
+    pub color_space: Option<String>,
+    pub source_encoding: Option<String>,
+}
+
+/// One-slot memo of the decoded and pre-corrected export source.
+#[derive(Default)]
+pub struct SourceCache {
+    entry: Mutex<Option<(SourceCacheKey, CachedSource)>>,
+}
+
+impl SourceCache {
+    /// A source cache with no entry.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Drop the memo, as releasing the active source does.
+    pub fn clear(&self) {
+        if let Ok(mut entry) = self.entry.lock() {
+            *entry = None;
+        }
+    }
+
+    /// Whether an entry is memoized.
+    #[must_use]
+    pub fn is_cached(&self) -> bool {
+        self.entry
+            .lock()
+            .is_ok_and(|entry| entry.as_ref().is_some())
+    }
+
+    /// Decode, or return the memoized source when nothing it reads changed.
+    pub fn load(
+        &self,
+        path: &Path,
+        config: &WorkspaceConfig,
+        entry: Option<&GainEntry>,
+        gain_slices: &[HalfSlice],
+    ) -> Result<CachedSource, String> {
+        let key = cache_key(path, config, entry, gain_slices)?;
+        if let Ok(guard) = self.entry.lock()
+            && let Some((cached_key, cached)) = guard.as_ref()
+            && *cached_key == key
+        {
+            return Ok(cached.clone());
+        }
+        let loaded = factory::load(
+            path,
+            LoadOptions {
+                linear_raw: config.process.linear_raw,
+                positive_decode: positive_decode(&config.process),
+                load_ir: true,
+            },
+        )?;
+        let decoded = loaded
+            .image
+            .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
+        let image = oriented(&decoded, loaded.orientation);
+        let image = precorrect_source(&image, config, entry, gain_slices, loaded.orientation);
+        let cached = CachedSource {
+            image,
+            orientation: loaded.orientation,
+            color_space: loaded.color_space,
+            source_encoding: loaded.source_encoding,
+        };
+        if let Ok(mut guard) = self.entry.lock() {
+            *guard = Some((key, cached.clone()));
+        }
+        Ok(cached)
+    }
+}
+
+fn cache_key(
+    path: &Path,
+    config: &WorkspaceConfig,
+    entry: Option<&GainEntry>,
+    gain_slices: &[HalfSlice],
+) -> Result<SourceCacheKey, String> {
+    let modified_nanos = std::fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |duration| duration.as_nanos());
+    Ok(SourceCacheKey {
+        path: path.display().to_string(),
+        modified_nanos,
+        source_token: crate::services::rendering::source_identity::source_token(config, entry),
+        sensor_token: crate::features::process::sensor::sensor_token(&config.process),
+        flatfield_token: crate::features::flatfield::logic::flatfield_token(
+            &config.flatfield,
+            entry,
+        ),
+        gain_slices: gain_slices
+            .iter()
+            .map(|slice| {
+                (
+                    slice.half,
+                    slice.split_x.to_bits(),
+                    slice
+                        .crop_rect
+                        .map(|rect| rect.map(|value| value.to_bits())),
+                    slice.gutter_thickness.to_bits(),
+                    slice.split_axis,
+                )
+            })
+            .collect(),
+    })
+}
 
 /// What a decode produced: the oriented, pre-corrected linear frame and its source facts.
 #[derive(Clone, Debug, PartialEq)]
