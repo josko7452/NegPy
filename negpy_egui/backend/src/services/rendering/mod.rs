@@ -8,3 +8,4 @@ pub mod prefetch_policy;
 pub mod preview_cache;
 pub mod preview_manager;
 pub mod source_identity;
+pub mod splash;

@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `7f4ea22e` export: write a finished frame
+**Last Updated:** 2026-11-17 | **Last Commit:** `c2b0a151` render: memo the corrected export source
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -15,7 +15,8 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `f8e1e6ca` export: convert pixels and profiles.
 - `32c5d156` export: choose the container encoder.
 - `7f4ea22e` export: write a finished frame.
-- In flight: source decode cache.
+- `c2b0a151` render: memo the corrected export source.
+- In flight: reduced-page splash preview.
 
 ## Verification
 - Targeted tests: `workspace_session`, `asset_config`, semantic download,
