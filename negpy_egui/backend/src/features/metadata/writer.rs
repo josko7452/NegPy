@@ -489,8 +489,8 @@ pub fn dump_exif_with_pixels(data: &ExifData, pixels: usize) -> Vec<u8> {
     let exif_size = 2 + exif.len() * 12 + 4;
     let gps_size = 2 + gps.len() * 12 + 4;
     let exif_at = 8 + zeroth_size;
-    let gps_at = exif_at + if exif.is_empty() { 0 } else { exif_size };
-    let mut extra_at = gps_at + if gps.is_empty() { 0 } else { gps_size };
+    let gps_at = exif_at + exif_size;
+    let mut extra_at = gps_at + gps_size;
     for entry in &mut zeroth {
         if entry.tag == TAG_EXIF_IFD {
             entry.bytes = (exif_at as u32).to_le_bytes().to_vec();
