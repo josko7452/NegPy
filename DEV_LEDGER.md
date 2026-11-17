@@ -1,10 +1,10 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `925bc048` render: paint a reduced-page splash
+**Last Updated:** 2026-11-17 | **Last Commit:** `1dd59e6b` display: prove a CMYK paper per pixel
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session runs a second 10-commit backend batch, then the audit and workspace test.
+This session completed a second 10-commit backend batch, the audit and the workspace test.
 
 ## Completed (Recent)
 - `6da70651` session: memo the last render per frame.
@@ -17,26 +17,28 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `7f4ea22e` export: write a finished frame.
 - `c2b0a151` render: memo the corrected export source.
 - `925bc048` render: paint a reduced-page splash.
-- In flight: exact CMYK paper proof.
+- `1dd59e6b` display: prove a CMYK paper per pixel.
 
 ## Verification
-- Targeted tests: `workspace_session`, `asset_config`, semantic download,
-  `preview_composites`, `preview_manager`, export pixel, encode and service unit tests.
-- `cargo fmt --all -- --check` clean.
-- Workspace test runs after commit 10 of this batch.
+- Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
+- `cargo test --workspace --no-fail-fast -j 4` passed after the audit.
 
-## Audit (Before This Batch)
-- Closed: render memo, settings catalog, sticky store, power assertion, lens metadata,
-  updater, preview cache/prefetch/detection, proof and gamut LUTs.
+## Audit (After Commit 10)
+- Closed: workspace session, asset resolvers, CLIP download, RGB/HDR/stitch previews,
+  export pixels/profiles/encoders/write path, source cache, reduced-page splash,
+  per-pixel CMYK proof.
 - **D10:** `services.rendering.gpu_engine` and all WGSL shaders remain unported.
-- **D10:** `ImageProcessor` remains partial: full export render/encode path, source
-  correction caches, CMYK per-pixel proof flags, and u16 color management remain.
-- **D10:** preview manager remains partial: splash and one-open paths, RGB/HDR/stitch
-  merges, and camera-WB/lens-correction decode glue remain.
-- **D12:** `services.assets.semantic_model` download glue remains; CLIP inference itself
-  is ported behind `tract-onnx`.
+- **D10:** `ImageProcessor` remains partial: full-res render glue, retouch/source bake
+  cache coordination, and JPEG/RAW embedded-preview extraction remain.
+- **D10:** `preview_manager` still lacks the one-open splash/linear call and camera-WB
+  decode glue; RGB/HDR/stitch assembly now exists.
+- **D10:** a finished export has no metadata embed step yet; the primitives exist.
+- **D12:** `services.assets.semantic_model` still lacks real ONNX tokenizer/model file
+  download verification; the download writer exists.
 - **D12:** scanner hardware transports remain (`sane`, Plustek, pieusb, nkscan).
-- **D6:** `fff_loader` returns None for SGI LogLuv until RLE/tables land.
+- **D6:** embedded-thumbnail extraction from camera RAW and the bounded DNG preview
+  remain; the Flextight LogLuv RLE/tables path is ported and tested.
+- JPEG XL and WebP export need pure-Rust encoders; they report a block reason.
 - GUI work remains out of scope.
 
 ## Constraints / Gotchas
