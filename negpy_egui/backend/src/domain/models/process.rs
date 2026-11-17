@@ -392,3 +392,43 @@ fn default_crosstalk_process() -> String {
 fn default_sensor_profile() -> String {
     "None".to_string()
 }
+
+/// The print stocks the scanning-setup wizard chooses between. A frame on any other
+/// stock keeps it.
+pub const SCAN_SETUP_PAPERS: [&str; 2] = ["neutral", "pakon"];
+
+/// `(linear_raw, paper_profile)` for a scanning rig. Only a camera under white light
+/// takes the as-shot-WB decode.
+#[must_use]
+pub fn scan_setup_values(capture: &str, light: &str) -> (bool, &'static str) {
+    (
+        capture == "scanner" || light != "white",
+        if light == "narrowband" {
+            "pakon"
+        } else {
+            "neutral"
+        },
+    )
+}
+
+/// `(capture, light)` from a saved scanning setup, Auto under white light by default.
+#[must_use]
+pub fn scan_setup_rig(saved: Option<&serde_json::Value>) -> (&'static str, &'static str) {
+    let text = |key: &str| {
+        saved
+            .and_then(|value| value.get(key))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or_default()
+    };
+    let capture = match text("capture") {
+        "camera" => "camera",
+        "scanner" => "scanner",
+        _ => "auto",
+    };
+    let light = if text("light") == "narrowband" {
+        "narrowband"
+    } else {
+        "white"
+    };
+    (capture, light)
+}

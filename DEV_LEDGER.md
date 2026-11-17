@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `1e973914` display: bake soft-proof and gamut tables
+**Last Updated:** 2026-11-17 | **Last Commit:** `151e3f36` session: hold the workspace files and active edit
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -9,10 +9,10 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 ## Completed (Recent)
 - `6da70651` session: memo the last render per frame.
 - `1e973914` display: bake soft-proof and gamut tables.
-- Pending: `session: hold the workspace files and active edit`.
+- `151e3f36` session: hold the workspace files and active edit.
 
 ## Verification
-- Targeted test for the in-flight commit: `workspace_session` passed.
+- Targeted tests: `workspace_session` passed; in flight `asset_config`.
 - `cargo fmt --all -- --check` clean.
 - Workspace test runs after commit 10 of this batch.
 

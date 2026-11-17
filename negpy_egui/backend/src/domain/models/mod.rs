@@ -45,8 +45,8 @@ pub use local::{LocalAdjustmentsConfig, LocalMask, MaskKey, MaskShape};
 pub use metadata::{MetadataConfig, normalize_description_fields};
 pub use process::{
     DemosaicMode, ProcessConfig, ProcessMode, SensorUnmix, SourceEncoding, auto_meter_for_mode,
-    cast_removal_for_mode, with_film_fields, with_positive_source, with_process_mode,
-    with_slide_bw, with_source_encoding,
+    cast_removal_for_mode, scan_setup_rig, scan_setup_values, with_film_fields,
+    with_positive_source, with_process_mode, with_slide_bw, with_source_encoding,
 };
 pub use retouch::RetouchConfig;
 pub use rgbscan::{RgbScanConfig, is_rgb_triplet, rgbscan_token};
