@@ -397,3 +397,42 @@ fn rational(value: f64) -> Vec<u8> {
     out.extend_from_slice(&1u32.to_le_bytes());
     out
 }
+
+/// A lossless WebP of uint8 RGB or gray pixels, with its ICC profile.
+///
+/// A lossy export has no encoder in this build, so the caller reports the block reason
+/// rather than writing a lossless file under a lossy setting.
+#[must_use]
+pub fn encode_webp_lossless(
+    pixels: &[u8],
+    width: usize,
+    height: usize,
+    channels: usize,
+    icc: Option<&[u8]>,
+) -> Option<Vec<u8>> {
+    if width == 0
+        || height == 0
+        || !(channels == 1 || channels == 3)
+        || width > 16384
+        || height > 16384
+    {
+        return None;
+    }
+    if pixels.len() != width * height * channels {
+        return None;
+    }
+    let color = if channels == 1 {
+        image_webp::ColorType::L8
+    } else {
+        image_webp::ColorType::Rgb8
+    };
+    let mut out = Vec::new();
+    let mut encoder = image_webp::WebPEncoder::new(&mut out);
+    if let Some(icc) = icc.filter(|value| !value.is_empty()) {
+        encoder.set_icc_profile(icc.to_vec());
+    }
+    encoder
+        .encode(pixels, width as u32, height as u32, color)
+        .ok()?;
+    Some(out)
+}

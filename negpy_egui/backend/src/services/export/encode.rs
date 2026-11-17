@@ -6,7 +6,7 @@
 
 use crate::domain::models::{ExportConfig, ExportFormat};
 use crate::services::export::encoders::{
-    Resolution, TiffCompression, encode_jpeg, encode_png, encode_tiff,
+    Resolution, TiffCompression, encode_jpeg, encode_png, encode_tiff, encode_webp_lossless,
 };
 use crate::services::export::pixels::ExportPixels;
 
@@ -22,7 +22,6 @@ pub struct EncodedExport {
 pub fn unsupported_reason(format: ExportFormat) -> Option<&'static str> {
     match format {
         ExportFormat::Jxl => Some("JPEG XL export needs an encoder this build does not carry."),
-        ExportFormat::Webp => Some("WebP export needs an encoder this build does not carry."),
         _ => None,
     }
 }
@@ -54,6 +53,12 @@ pub fn encode_export(
 ) -> Result<EncodedExport, String> {
     if let Some(reason) = unsupported_reason(config.export_fmt) {
         return Err(reason.to_string());
+    }
+    if config.export_fmt == ExportFormat::Webp && !config.webp_lossless {
+        return Err(
+            "Lossy WebP needs an encoder this build does not carry. Turn on Lossless WebP, or pick PNG or TIFF."
+                .to_string(),
+        );
     }
     let resolution = resolution_for(config);
     let bytes = match config.export_fmt {
@@ -91,7 +96,14 @@ pub fn encode_export(
                 resolution.y_dpi.round().max(1.0) as u16,
             )),
         ),
-        ExportFormat::Jxl | ExportFormat::Webp => None,
+        ExportFormat::Webp => encode_webp_lossless(
+            &pixels.samples,
+            pixels.width,
+            pixels.height,
+            pixels.channels,
+            pixels.icc.as_deref(),
+        ),
+        ExportFormat::Jxl => None,
     };
     bytes
         .map(|bytes| EncodedExport {
@@ -157,14 +169,25 @@ mod tests {
     }
 
     #[test]
-    fn an_unavailable_encoder_reports_its_reason() {
+    fn a_lossy_webp_reports_its_reason() {
         let mut config = ExportConfig::default();
         config.export_fmt = ExportFormat::Webp;
         assert!(encode_export(&pixels(), &config).is_err());
-        assert!(!can_encode(ExportFormat::Webp));
         config.export_fmt = ExportFormat::Jxl;
         assert!(!can_encode(ExportFormat::Jxl));
         assert!(unsupported_reason(ExportFormat::Tiff).is_none());
+        assert!(unsupported_reason(ExportFormat::Webp).is_none());
+    }
+
+    #[test]
+    fn a_lossless_webp_export_starts_with_its_container() {
+        let mut config = ExportConfig::default();
+        config.export_fmt = ExportFormat::Webp;
+        config.webp_lossless = true;
+        let webp = encode_export(&pixels(), &config).expect("lossless webp");
+        assert_eq!(&webp.bytes[..4], b"RIFF");
+        assert_eq!(&webp.bytes[8..12], b"WEBP");
+        assert_eq!(webp.extension, "webp");
     }
 
     #[test]

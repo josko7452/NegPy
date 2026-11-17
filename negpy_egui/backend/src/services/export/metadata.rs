@@ -47,7 +47,12 @@ impl EmbedPlan {
                 Some(&self.exif),
                 self.xmp.as_deref(),
             ),
-            ExportFormat::Jxl | ExportFormat::Webp => bytes,
+            ExportFormat::Webp => crate::features::metadata::writer::rewrite_webp_metadata(
+                &bytes,
+                Some(&self.exif),
+                self.xmp.as_deref(),
+            ),
+            ExportFormat::Jxl => bytes,
         }
     }
 }
