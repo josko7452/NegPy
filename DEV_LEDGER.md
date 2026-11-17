@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `f8e1e6ca` export: convert pixels and profiles
+**Last Updated:** 2026-11-17 | **Last Commit:** `32c5d156` export: choose the container encoder
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -13,11 +13,12 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `6e333a14` assets: fetch the CLIP model atomically.
 - `c1b10f82` render: assemble composite previews.
 - `f8e1e6ca` export: convert pixels and profiles.
-- In flight: export format chooser.
+- `32c5d156` export: choose the container encoder.
+- In flight: export write path.
 
 ## Verification
 - Targeted tests: `workspace_session`, `asset_config`, semantic download,
-  `preview_composites`, `preview_manager`, export pixel and encode unit tests.
+  `preview_composites`, `preview_manager`, export pixel, encode and service unit tests.
 - `cargo fmt --all -- --check` clean.
 - Workspace test runs after commit 10 of this batch.
 
