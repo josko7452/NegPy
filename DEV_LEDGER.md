@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 10:20 | **Last Commit:** `dc7d2e6d` desktop: capture the golden matrix
+**Last Updated:** 2026-11-18 10:35 | **Last Commit:** `4256b860` tests: add the binding golden GUI set
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is **allowed**.
@@ -7,12 +7,13 @@ NegFe is the target name; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 
 ## Next Steps (Ordered)
-1. [ ] E0: commit the golden fixtures and the Python comparison harness.
+1. [ ] E0: commit the Python capture and comparison scripts.
 2. [ ] E1: add the theme token module and its contrast tests.
 3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `4256b860` tests: add the binding golden GUI set.
 - `dc7d2e6d` desktop: capture the golden matrix.
 - `60762a7f` desktop: read the golden capture manifest.
 - `6cce2266` desktop: capture screenshots as PNG.
