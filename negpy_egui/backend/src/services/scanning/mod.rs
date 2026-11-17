@@ -1,6 +1,7 @@
 //! Mirrors `negpy/services/scanning/`: scan filenames and the 16-bit TIFF writer.
 
 pub mod params;
+pub mod registry;
 pub mod roll;
 pub mod service;
 pub mod settings;

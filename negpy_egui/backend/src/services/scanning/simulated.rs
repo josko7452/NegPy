@@ -25,6 +25,12 @@ fn caps() -> ScannerCapabilities {
     }
 }
 
+/// Whether the simulated rig is switched on for this process.
+#[must_use]
+pub fn enabled() -> bool {
+    std::env::var("NEGPY_SIMULATE_HARDWARE").is_ok_and(|value| value == "1")
+}
+
 /// The devices the simulated backend offers.
 #[must_use]
 pub fn devices() -> Vec<ScannerDevice> {
