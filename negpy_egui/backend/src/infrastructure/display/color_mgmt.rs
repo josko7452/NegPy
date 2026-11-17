@@ -65,6 +65,12 @@ pub fn profile_bytes(color_space: &str, user_icc_dir: &Path) -> Option<IccProfil
     Some(IccProfile { bytes, path })
 }
 
+/// Whether a profile path exists and holds readable bytes.
+#[must_use]
+pub fn icc_enabled_file(path: &Path) -> bool {
+    path.is_file() && std::fs::metadata(path).is_ok()
+}
+
 /// The bundled dispay profile paths and the user's, sorted.
 #[must_use]
 pub fn available_profiles(user_icc_dir: &Path) -> Vec<PathBuf> {

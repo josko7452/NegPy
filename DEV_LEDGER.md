@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `6e333a14` assets: fetch the CLIP model atomically
+**Last Updated:** 2026-11-17 | **Last Commit:** `c1b10f82` render: assemble composite previews
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -11,11 +11,12 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `1e973914` display: bake soft-proof and gamut tables.
 - `7d354e2d` session: resolve a frame's composite parts.
 - `6e333a14` assets: fetch the CLIP model atomically.
-- In flight: composite preview previews.
+- `c1b10f82` render: assemble composite previews.
+- In flight: export pixel conversion.
 
 ## Verification
 - Targeted tests: `workspace_session`, `asset_config`, semantic download,
-  `preview_composites`, `preview_manager`.
+  `preview_composites`, `preview_manager`, export-pixel unit tests.
 - `cargo fmt --all -- --check` clean.
 - Workspace test runs after commit 10 of this batch.
 
