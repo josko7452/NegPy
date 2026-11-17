@@ -38,6 +38,8 @@ pub struct PreviewRequest {
     pub positive_decode: String,
     pub highlight_mode: i64,
     pub bake_camera_wb: bool,
+    /// Decode on another frame's multipliers, as a bracket sibling pins to its reference.
+    pub wb_override: Option<[f64; 3]>,
     pub lens_corrections: LensCorrections,
     pub lens_flatfield: FlatFieldConfig,
 }
@@ -74,7 +76,7 @@ impl PreviewRequest {
             .map_or_else(|| "x".to_string(), |slice| slice.split_axis.to_string());
         key.positive_decode = self.positive_decode.clone();
         key.highlight_mode = self.highlight_mode;
-        key.bake_camera_wb = self.bake_camera_wb;
+        key.bake_camera_wb = self.bake_camera_wb || self.wb_override.is_some();
         key.lens_token = lens_decode_token(self.lens_corrections, &self.lens_flatfield, None);
         Some(key)
     }
@@ -188,10 +190,15 @@ impl PreviewManager {
         if is_cancelled.is_some_and(|cancelled| cancelled()) {
             return Err("preview load cancelled".to_string());
         }
+        let decodes_with_wb = crate::infrastructure::loaders::camera_wb::decodes_with_wb(
+            request.use_camera_wb,
+            request.bake_camera_wb,
+            request.wb_override.as_ref().map(|wb| wb.as_slice()),
+        );
         let loaded = factory::load(
             path,
             LoadOptions {
-                linear_raw: !request.use_camera_wb,
+                linear_raw: !decodes_with_wb,
                 positive_decode: (!request.positive_decode.is_empty())
                     .then(|| SourceEncoding::coerce(&request.positive_decode)),
                 load_ir: false,
@@ -208,6 +215,12 @@ impl PreviewManager {
                 .map(|value| *value as f32 / 65535.0)
                 .collect();
         }
+        let wb = request.wb_override.or_else(|| {
+            (request.bake_camera_wb && !request.use_camera_wb)
+                .then(|| crate::infrastructure::loaders::camera_wb::camera_wb_for(path))
+                .flatten()
+        });
+        let image = crate::infrastructure::loaders::camera_wb::apply_camera_wb(&image, wb);
         let (image, dims) = apply_half(&image, request.half_slice);
         let mut metadata = HashMap::new();
         if let Some(space) = loaded.color_space {
@@ -224,6 +237,44 @@ impl PreviewManager {
             );
         }
         Ok((image, dims, metadata))
+    }
+
+    /// Open one file once and return both its first-paint splash and its linear preview.
+    ///
+    /// A cache hit returns no splash, because the linear buffer is already fast enough.
+    pub fn load_splash_and_linear(
+        &self,
+        path: &Path,
+        request: &PreviewRequest,
+        protected_file_hashes: &[&str],
+        preserve_full_resolution: bool,
+        is_cancelled: Option<&dyn Fn() -> bool>,
+    ) -> (
+        Option<ImageBuffer>,
+        Result<(ImageBuffer, Dimensions, HashMap<String, Vec<f64>>), String>,
+    ) {
+        if let Some(hit) = self.get(request) {
+            return (None, Ok(hit));
+        }
+        let splash = (!request.full_resolution
+            && !request.lens_corrections.any()
+            && !request.bake_camera_wb)
+            .then(|| {
+                crate::services::rendering::splash::try_splash_preview(
+                    path,
+                    crate::services::rendering::splash::SPLASH_MAX_EDGE,
+                )
+                .map(|splash| splash.image)
+            })
+            .flatten();
+        let linear = self.load(
+            path,
+            request,
+            protected_file_hashes,
+            preserve_full_resolution,
+            is_cancelled,
+        );
+        (splash, linear)
     }
 
     /// Drop every cached buffer.
@@ -612,6 +663,7 @@ pub fn request_for(config: &WorkspaceConfig, file_hash: impl Into<String>) -> Pr
         positive_decode: config.process.source_encoding.as_str().to_string(),
         highlight_mode: config.process.highlight_reconstruction,
         bake_camera_wb: false,
+        wb_override: None,
         lens_corrections: crate::services::rendering::source_identity::metadata_lens_corrections(
             config,
         ),

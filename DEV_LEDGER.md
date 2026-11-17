@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `pending` loaders: read an embedded RAW preview
+**Last Updated:** 2026-11-17 | **Last Commit:** `pending` render: decode a preview on camera WB
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,7 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session completed a second 10-commit backend batch, the audit and the workspace test.
 
 ## Completed (Recent)
-- `pending` loaders: read an embedded RAW preview.
+- `pending` render: decode a preview on camera WB.
 - `1e973914` display: bake soft-proof and gamut tables.
 - `7d354e2d` session: resolve a frame's composite parts.
 - `6e333a14` assets: fetch the CLIP model atomically.
