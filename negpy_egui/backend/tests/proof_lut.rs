@@ -141,3 +141,18 @@ fn a_monitor_profile_changes_the_proof_table() {
     .expect("monitor proof");
     assert_ne!(plain.table, on_p3.table);
 }
+
+#[test]
+fn an_rgb_profile_is_not_a_print_proof() {
+    let condition = ProofCondition::default();
+    assert!(
+        negpy_backend::infrastructure::display::proof_lut::per_pixel_print_proof(
+            &[10, 20, 30],
+            &working(),
+            &space("sRGB"),
+            None,
+            &condition,
+        )
+        .is_none()
+    );
+}

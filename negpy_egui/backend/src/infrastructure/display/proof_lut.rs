@@ -293,6 +293,54 @@ fn println_proof(
     Some(paper)
 }
 
+/// The exact per-pixel CMYK paper proof: source -> paper -> display.
+///
+/// The preview samples a LUT; an export that carries CMYK paper data takes this path so
+/// its pixels are not interpolated across the paper's gamut boundary. `display` is the
+/// monitor profile, or sRGB when none is set. `paper_white` uses absolute colorimetry for
+/// the paper leg; otherwise it stays relative.
+#[must_use]
+pub fn per_pixel_print_proof(
+    rgb: &[u8],
+    source_icc: &[u8],
+    paper_icc: &[u8],
+    display_icc: Option<&[u8]>,
+    condition: &ProofCondition,
+) -> Option<Vec<u8>> {
+    if rgb.len() % 3 != 0 || !is_cmyk_profile(paper_icc) {
+        return None;
+    }
+    let source = Profile::new_from_slice(source_icc, false)?;
+    let paper = Profile::new_from_slice(paper_icc, false)?;
+    let display = match display_icc.filter(|bytes| !bytes.is_empty()) {
+        Some(bytes) => Profile::new_from_slice(bytes, false)?,
+        None => Profile::new_sRGB(),
+    };
+    let to_paper = Transform::new_to(
+        &source,
+        &paper,
+        DataType::RGB8,
+        DataType::CMYK,
+        condition.intent.intent(),
+    )?;
+    let mut cmyk = vec![0u8; rgb.len() / 3 * 4];
+    to_paper.convert(rgb, &mut cmyk);
+    let to_display = Transform::new_to(
+        &paper,
+        &display,
+        DataType::CMYK,
+        DataType::RGB8,
+        if condition.paper_white {
+            Intent::AbsoluteColorimetric
+        } else {
+            Intent::RelativeColorimetric
+        },
+    )?;
+    let mut out = vec![0u8; rgb.len()];
+    to_display.convert(&cmyk, &mut out);
+    Some(out)
+}
+
 fn proof_grid_codes(size: usize) -> Vec<u8> {
     if size <= 1 {
         return vec![0];

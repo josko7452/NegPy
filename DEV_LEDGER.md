@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `c2b0a151` render: memo the corrected export source
+**Last Updated:** 2026-11-17 | **Last Commit:** `925bc048` render: paint a reduced-page splash
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -16,7 +16,8 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `32c5d156` export: choose the container encoder.
 - `7f4ea22e` export: write a finished frame.
 - `c2b0a151` render: memo the corrected export source.
-- In flight: reduced-page splash preview.
+- `925bc048` render: paint a reduced-page splash.
+- In flight: exact CMYK paper proof.
 
 ## Verification
 - Targeted tests: `workspace_session`, `asset_config`, semantic download,
