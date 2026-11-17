@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `c1b10f82` render: assemble composite previews
+**Last Updated:** 2026-11-17 | **Last Commit:** `f8e1e6ca` export: convert pixels and profiles
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -12,11 +12,12 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 - `7d354e2d` session: resolve a frame's composite parts.
 - `6e333a14` assets: fetch the CLIP model atomically.
 - `c1b10f82` render: assemble composite previews.
-- In flight: export pixel conversion.
+- `f8e1e6ca` export: convert pixels and profiles.
+- In flight: export format chooser.
 
 ## Verification
 - Targeted tests: `workspace_session`, `asset_config`, semantic download,
-  `preview_composites`, `preview_manager`, export-pixel unit tests.
+  `preview_composites`, `preview_manager`, export pixel and encode unit tests.
 - `cargo fmt --all -- --check` clean.
 - Workspace test runs after commit 10 of this batch.
 
