@@ -7,13 +7,14 @@ NegFe is the target name; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 
 ## Next Steps (Ordered)
-1. [ ] E0: add `desktop/src/bin/negfe-capture.rs` and the golden fixtures.
+1. [ ] E0: commit the golden fixtures and the Python comparison harness.
 2. [ ] E0: run `tests/gui/compare.py` against `tests/gui/golden/tall/` and
    record the first layout score.
 3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `60762a7f` desktop: read the golden capture manifest.
 - `6cce2266` desktop: capture screenshots as PNG.
 - `7605867d` assets: scan crosstalk profile files.
 - `303cb18c` metadata: read a source EXIF block.
