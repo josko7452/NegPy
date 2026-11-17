@@ -7,7 +7,10 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::domain::models::{FlatFieldConfig, LensCorrections, SourceEncoding, WorkspaceConfig};
+use crate::domain::models::{
+    FlatFieldConfig, HdrConfig, LensCorrections, RgbScanConfig, SourceEncoding, WorkspaceConfig,
+    is_rgb_triplet,
+};
 use crate::domain::types::{AppConfig, Dimensions};
 use crate::infrastructure::loaders::factory::{self, LoadOptions};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -19,6 +22,9 @@ use crate::services::rendering::preview_cache::{
     PreviewBufferCache, PreviewCacheKey, PreviewCacheUsage,
 };
 use crate::services::rendering::source_identity::lens_decode_token;
+
+/// The bytes a composite merge produces, before its render exposure is applied.
+pub const COMPOSITE_CAMERA_WB_NONE: f64 = f64::NAN;
 
 /// The fields every linear-preview cache key resolves from the workspace.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -191,9 +197,17 @@ impl PreviewManager {
                 load_ir: false,
             },
         )?;
-        let image = loaded
+        let mut image = loaded
             .image
             .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
+        if image.pixels.is_empty()
+            && let Some(samples) = image.source_u16.take()
+        {
+            image.pixels = samples
+                .iter()
+                .map(|value| *value as f32 / 65535.0)
+                .collect();
+        }
         let (image, dims) = apply_half(&image, request.half_slice);
         let mut metadata = HashMap::new();
         if let Some(space) = loaded.color_space {
@@ -216,6 +230,330 @@ impl PreviewManager {
     pub fn clear(&self) {
         self.cache.clear();
     }
+
+    /// Merge a narrowband R/G/B triplet into one linear preview. Each exposure decodes
+    /// neutral, since only one narrowband channel carries signal.
+    pub fn load_rgb(
+        &self,
+        red_path: &Path,
+        rgbscan: &RgbScanConfig,
+        request: &PreviewRequest,
+        protected_file_hashes: &[&str],
+        preserve_full_resolution: bool,
+        is_cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<(ImageBuffer, Dimensions, HashMap<String, Vec<f64>>), String> {
+        if !is_rgb_triplet(rgbscan) {
+            return Err("RGB triplet paths are incomplete.".to_string());
+        }
+        let token = crate::domain::models::rgbscan_token(rgbscan);
+        let merged_key =
+            self.composite_key(&format!("rgb|{}", request_hash(request)), &token, request);
+        if let Some(key) = &merged_key
+            && let Some(hit) = self.cache.get(key)
+        {
+            return Ok(hit);
+        }
+        let (red, dims, mut metadata) = self.load(
+            red_path,
+            &PreviewRequest {
+                use_camera_wb: false,
+                ..request.clone()
+            },
+            protected_file_hashes,
+            preserve_full_resolution,
+            is_cancelled,
+        )?;
+        let green = self.load(
+            Path::new(&rgbscan.green_path),
+            &PreviewRequest {
+                file_hash: None,
+                use_camera_wb: false,
+                ..request.clone()
+            },
+            protected_file_hashes,
+            preserve_full_resolution,
+            is_cancelled,
+        )?;
+        let blue = self.load(
+            Path::new(&rgbscan.blue_path),
+            &PreviewRequest {
+                file_hash: None,
+                use_camera_wb: false,
+                ..request.clone()
+            },
+            protected_file_hashes,
+            preserve_full_resolution,
+            is_cancelled,
+        )?;
+        let green = match_size(&green.0, &red)?;
+        let blue = match_size(&blue.0, &red)?;
+        let merged = crate::features::rgbscan::assemble_rgb(&red, &green, &blue, rgbscan.align)
+            .ok_or_else(|| "RGB-scan exposures differ in shape.".to_string())?;
+        metadata.insert("camera_wb".to_string(), vec![COMPOSITE_CAMERA_WB_NONE]);
+        if let Some(key) = merged_key {
+            self.cache.put(
+                &key,
+                merged.clone(),
+                dims,
+                metadata.clone(),
+                protected_file_hashes,
+                preserve_full_resolution,
+            );
+        }
+        Ok((merged, dims, metadata))
+    }
+
+    /// Merge a bracket into one linear preview in the reference frame's exposure units.
+    pub fn load_hdr(
+        &self,
+        reference_path: &Path,
+        hdr: &HdrConfig,
+        request: &PreviewRequest,
+        protected_file_hashes: &[&str],
+        preserve_full_resolution: bool,
+        is_cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<(ImageBuffer, Dimensions, HashMap<String, Vec<f64>>), String> {
+        let ratios = &hdr.hdr_ratios;
+        if ratios.len() != hdr.hdr_paths.len() + 1 {
+            return Err(format!(
+                "{} frames but {} ratios",
+                hdr.hdr_paths.len() + 1,
+                ratios.len()
+            ));
+        }
+        let mut paths = vec![reference_path.display().to_string()];
+        paths.extend(hdr.hdr_paths.iter().cloned());
+        let anchor = crate::features::hdr::logic::resolve_anchor(&paths, ratios, hdr);
+        let token = crate::domain::models::hdr_merge_token(hdr);
+        let merged_key =
+            self.composite_key(&format!("hdr|{}", request_hash(request)), &token, request);
+        if let Some(key) = &merged_key
+            && let Some((raw, dims, metadata)) = self.cache.get(key)
+        {
+            return Ok((scale_merge(raw, ratios, anchor), dims, metadata));
+        }
+        let (reference, dims, metadata) = self.load(
+            reference_path,
+            request,
+            protected_file_hashes,
+            preserve_full_resolution,
+            is_cancelled,
+        )?;
+        let mut frames = vec![frame(&reference)];
+        for path in &hdr.hdr_paths {
+            let loaded = self.load(
+                Path::new(path),
+                &PreviewRequest {
+                    file_hash: None,
+                    ..request.clone()
+                },
+                protected_file_hashes,
+                preserve_full_resolution,
+                is_cancelled,
+            )?;
+            frames.push(frame(&match_size(&loaded.0, &reference)?));
+        }
+        let merged = crate::features::hdr::logic::merge_frames(&frames, ratios, 0, hdr.hdr_align)
+            .ok_or_else(|| "bracket frames differ in shape.".to_string())?;
+        let merged_image =
+            ImageBuffer::from_rgb(merged.width, merged.height, merged.pixels.clone());
+        if let Some(key) = merged_key {
+            self.cache.put(
+                &key,
+                merged_image.clone(),
+                dims,
+                metadata.clone(),
+                protected_file_hashes,
+                preserve_full_resolution,
+            );
+        }
+        Ok((scale_merge(merged_image, ratios, anchor), dims, metadata))
+    }
+
+    /// Assemble a stitch composite at preview scale, applying the flat field per part.
+    pub fn load_stitch(
+        &self,
+        primary_path: &Path,
+        config: &crate::domain::models::StitchConfig,
+        flatfield_profile_id: &str,
+        request: &PreviewRequest,
+        protected_file_hashes: &[&str],
+        preserve_full_resolution: bool,
+        is_cancelled: Option<&dyn Fn() -> bool>,
+    ) -> Result<(ImageBuffer, Dimensions, HashMap<String, Vec<f64>>), String> {
+        if !crate::domain::models::stitch_active(config) {
+            return Err("Stitch registration is incomplete.".to_string());
+        }
+        let flatfield_config = flatfield_config(flatfield_profile_id);
+        let flatfield =
+            crate::services::assets::flatfield::FlatFieldProfiles::new(&self.app.flatfield_dir)
+                .load_gain(flatfield_profile_id);
+        let flatfield_token = crate::features::flatfield::logic::flatfield_token(
+            &flatfield_config,
+            flatfield.as_ref(),
+        );
+        let token = format!(
+            "{}{}",
+            crate::domain::models::stitch_token(config),
+            flatfield_token
+        );
+        let merged_key = self.composite_key(
+            &format!("stitch|{}", request_hash(request)),
+            &token,
+            request,
+        );
+        if let Some(key) = &merged_key
+            && let Some(hit) = self.cache.get(key)
+        {
+            return Ok(hit);
+        }
+        let mut parts = Vec::with_capacity(config.stitch_paths.len() + 1);
+        let mut irs = Vec::with_capacity(config.stitch_paths.len() + 1);
+        let mut metadata = HashMap::new();
+        for (index, path) in std::iter::once(primary_path.display().to_string())
+            .chain(config.stitch_paths.iter().cloned())
+            .enumerate()
+        {
+            let [green, blue] = config
+                .stitch_triplets
+                .get(index)
+                .cloned()
+                .unwrap_or_default();
+            let part = if !green.is_empty() && !blue.is_empty() {
+                let triplet = RgbScanConfig {
+                    enabled: true,
+                    green_path: green,
+                    blue_path: blue,
+                    align: config.stitch_align,
+                };
+                self.load_rgb(
+                    Path::new(&path),
+                    &triplet,
+                    &PreviewRequest {
+                        file_hash: None,
+                        ..request.clone()
+                    },
+                    protected_file_hashes,
+                    preserve_full_resolution,
+                    is_cancelled,
+                )?
+            } else {
+                self.load(
+                    Path::new(&path),
+                    &PreviewRequest {
+                        file_hash: None,
+                        ..request.clone()
+                    },
+                    protected_file_hashes,
+                    preserve_full_resolution,
+                    is_cancelled,
+                )?
+            };
+            let part_image = crate::features::flatfield::logic::apply_flatfield(
+                &part.0,
+                &flatfield_config,
+                flatfield.as_ref(),
+                None,
+                None,
+            );
+            parts.push(part_image);
+            irs.push(None);
+            if index == 0 {
+                metadata = part.2;
+            }
+        }
+        let (merged, ir) = crate::features::stitch::stitch_composite(&parts, &irs, config);
+        if let Some(ir) = ir {
+            metadata.insert(
+                "ir_preview".to_string(),
+                ir.iter().map(|v| f64::from(*v)).collect(),
+            );
+        }
+        let dims = (
+            config.stitch_canvas[1].max(0),
+            config.stitch_canvas[0].max(0),
+        );
+        if let Some(key) = merged_key {
+            self.cache.put(
+                &key,
+                merged.clone(),
+                dims,
+                metadata.clone(),
+                protected_file_hashes,
+                preserve_full_resolution,
+            );
+        }
+        Ok((merged, dims, metadata))
+    }
+
+    fn composite_key(
+        &self,
+        base: &str,
+        token: &str,
+        request: &PreviewRequest,
+    ) -> Option<PreviewCacheKey> {
+        if token.is_empty() {
+            return None;
+        }
+        let mut key = PreviewCacheKey::new(
+            base,
+            request.use_camera_wb,
+            &request.color_space,
+            request.full_resolution,
+        );
+        key.demosaic = request.demosaic.clone();
+        key.positive_decode = request.positive_decode.clone();
+        key.highlight_mode = request.highlight_mode;
+        key.bake_camera_wb = request.bake_camera_wb;
+        Some(key)
+    }
+}
+
+fn request_hash(request: &PreviewRequest) -> String {
+    request.file_hash.clone().unwrap_or_default()
+}
+
+fn flatfield_config(profile_id: &str) -> FlatFieldConfig {
+    FlatFieldConfig {
+        apply: !profile_id.is_empty(),
+        profile_id: profile_id.to_string(),
+        ..FlatFieldConfig::default()
+    }
+}
+
+fn frame(image: &ImageBuffer) -> crate::features::hdr::logic::Frame {
+    crate::features::hdr::logic::Frame::new(image.width, image.height, image.pixels.clone())
+}
+
+fn match_size(image: &ImageBuffer, reference: &ImageBuffer) -> Result<ImageBuffer, String> {
+    if image.width == reference.width && image.height == reference.height {
+        return Ok(image.clone());
+    }
+    if (image.width * reference.height).abs_diff(image.height * reference.width)
+        > reference.width * image.height / 50
+    {
+        return Err("composite frames differ in shape.".to_string());
+    }
+    let resized = negpy_core::resize::resize_area(
+        &image.pixels,
+        image.height,
+        image.width,
+        3,
+        reference.height,
+        reference.width,
+    )
+    .ok_or_else(|| "composite frames differ in shape.".to_string())?;
+    Ok(ImageBuffer::from_rgb(
+        reference.width,
+        reference.height,
+        resized,
+    ))
+}
+
+fn scale_merge(image: ImageBuffer, ratios: &[f64], anchor: Option<f64>) -> ImageBuffer {
+    let merged = frame(&image);
+    let scaled = crate::features::hdr::logic::apply_render_exposure(&merged, ratios, anchor);
+    ImageBuffer::from_rgb(scaled.width, scaled.height, scaled.pixels)
 }
 
 fn apply_half(image: &ImageBuffer, half_slice: Option<HalfSlice>) -> (ImageBuffer, Dimensions) {
