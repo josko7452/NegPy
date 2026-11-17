@@ -52,6 +52,7 @@ fn main() -> eframe::Result {
             let ppp = cc.egui_ctx.pixels_per_point();
             let zoom = (1.0 / ppp).clamp(0.25, 1.0);
             cc.egui_ctx.set_zoom_factor(zoom);
+            negpy_desktop::styles::fonts::install(&cc.egui_ctx);
             Ok(Box::new(CaptureApp::new(
                 manifest,
                 reference,

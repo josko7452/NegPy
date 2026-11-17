@@ -1,18 +1,20 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 11:35 | **Last Commit:** `0b3c2a4b` desktop: add the color vision palettes
+**Last Updated:** 2026-11-18 12:15 | **Last Commit:** `6b5da499` desktop: build controls on the shared theme
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is **allowed**.
-NegFe is the target name; the folder rename is opportunistic.
+Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
+NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 
 ## Next Steps (Ordered)
-1. [ ] E1: add the control factories.
-2. [ ] E1: apply the theme to the capture shell and rescore.
-3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
+1. [ ] E0: load the reference frame and open the Contact Sheet dialog in the capture.
+2. [ ] E1: add `egui-phosphor` icon mapping and replace text glyph placeholders.
+3. [ ] E2: port `view.widgets.*` over the theme factories.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `6b5da499` desktop: build controls on the shared theme.
+- `68998a7e` desktop: add the shared layout metrics.
 - `0b3c2a4b` desktop: add the color vision palettes.
 - `f5276a7f` desktop: add the UI font stacks.
 - `fc49813d` desktop: add the theme token table.
@@ -21,20 +23,12 @@ NegFe is the target name; the folder rename is opportunistic.
 - `dc7d2e6d` desktop: capture the golden matrix.
 - `60762a7f` desktop: read the golden capture manifest.
 - `6cce2266` desktop: capture screenshots as PNG.
-- `7605867d` assets: scan crosstalk profile files.
-- `303cb18c` metadata: read a source EXIF block.
-- `4b0803d3` export: attach an Exif IFD to TIFF.
-- `33d95ab4` export: embed a metadata plan.
-- `29765ca1` export: render a file at full resolution.
-- `1a091aca` loaders: read an embedded RAW preview.
-- `63991661` render: decode a preview on camera WB.
-- `6e4276b5` export: encode a lossless WebP.
-- `85706b4f` scanning: register the scanner backends.
-- `e5fc7aad` capture: decode sensor RGB for metering.
 
 ## Verification
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- First layout score: 0.429 on `02_roll_top.png` (gate 0.80).
+- `cargo test --workspace` passed after the tenth commit.
+- Layout scores 0.425-0.526 across the 20 captures (gate 0.80).
+- E0 capture wrote 20 PNGs plus `manifest.json`.
 
 ## Audit
 - **D10:** GPU engine, WGSL shaders, ImageProcessor cache coordination and the
@@ -45,13 +39,10 @@ NegFe is the target name; the folder rename is opportunistic.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
-- Binding GUI reference: `negpy_egui/tests/gui/golden/tall/`, 19 window captures
-  at 1920x1600 plus the Contact Sheet dialog at 1080x760.
-- GUI parity is a layout score of 0.80, not pixel identity. Extract layout from
-  `theme.py`, `templates.py`, `main_window.py`, `right_panel.py`, `controls_panel.py`.
-- E0 comes first: the Rust capture must write every golden PNG and a manifest.
-- The capture harness copies the profile and suppresses the restore prompt.
-- NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; copy one family at a time.
-- Fingerprints and export bytes are pinned to Python.
+- Binding GUI reference: `negpy_egui/tests/gui/golden/tall/`.
+- GUI parity is a layout score of 0.80, not pixel identity.
+- The capture binary is `cargo run -p negpy-desktop --bin negfe-capture -- --golden tests/gui/golden/tall`.
+- Generated captures live under `tests/gui/actual/` and stay untracked.
+- The capture shell paints the scored regions; frame loading and dialog capture remain.
 - The 10-commit request supersedes the 5-commit checkpoint.
 - Headless desktop helpers live under `session/`, not as module filenames.

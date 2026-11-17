@@ -6,6 +6,7 @@
 use eframe::egui::{self, Color32, Frame, Rect, Stroke, Vec2};
 
 use crate::fixture::ReferenceFixture;
+use crate::styles::theme::Theme;
 
 /// The visible tab of the right rail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -125,6 +126,13 @@ impl NegFeApp {
 
     /// Paint the shell regions for this frame.
     pub fn draw(&self, ctx: &egui::Context) {
+        let theme = Theme::default();
+        let mut style = (*ctx.style()).clone();
+        style.visuals.panel_fill = theme.bg_panel;
+        style.visuals.window_fill = theme.bg_panel;
+        style.visuals.extreme_bg_color = theme.bg_input;
+        style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, theme.border_primary);
+        ctx.set_style(style);
         let screen = ctx.screen_rect();
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
@@ -141,15 +149,15 @@ impl eframe::App for NegFeApp {
 }
 
 fn surface() -> Color32 {
-    Color32::from_rgb(0x32, 0x32, 0x32)
+    Theme::default().bg_panel
 }
 
 fn canvas() -> Color32 {
-    Color32::from_rgb(0x6f, 0x6f, 0x6f)
+    Theme::default().canvas_bg_mid_grey
 }
 
 fn line() -> Stroke {
-    Stroke::new(1.0_f32, Color32::from_rgb(0x4c, 0x4c, 0x4c))
+    Stroke::new(1.0_f32, Theme::default().border_primary)
 }
 
 fn paint_shell(painter: &egui::Painter, screen: Rect, view: &ViewState) {
