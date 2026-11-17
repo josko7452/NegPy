@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `pending` metadata: read a source EXIF block
+**Last Updated:** 2026-11-17 | **Last Commit:** `pending` export: attach an Exif IFD to TIFF
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,7 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session completed a second 10-commit backend batch, the audit and the workspace test.
 
 ## Completed (Recent)
-- `pending` metadata: read a source EXIF block.
+- `pending` export: attach an Exif IFD to TIFF.
 - `1e973914` display: bake soft-proof and gamut tables.
 - `7d354e2d` session: resolve a frame's composite parts.
 - `6e333a14` assets: fetch the CLIP model atomically.

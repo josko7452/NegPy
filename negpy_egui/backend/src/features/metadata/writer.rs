@@ -1404,3 +1404,164 @@ mod tests {
         assert_eq!(exposure_bias("1 + 2/3 ev"), None, "1 + 2/3");
     }
 }
+
+#[derive(Clone, Copy)]
+enum ByteOrder {
+    Little,
+    Big,
+}
+
+impl ByteOrder {
+    fn u16(self, value: u16) -> [u8; 2] {
+        match self {
+            Self::Little => value.to_le_bytes(),
+            Self::Big => value.to_be_bytes(),
+        }
+    }
+
+    fn u32(self, value: u32) -> [u8; 4] {
+        match self {
+            Self::Little => value.to_le_bytes(),
+            Self::Big => value.to_be_bytes(),
+        }
+    }
+
+    fn read_u16(self, bytes: &[u8]) -> u16 {
+        let pair = [bytes[0], bytes[1]];
+        match self {
+            Self::Little => u16::from_le_bytes(pair),
+            Self::Big => u16::from_be_bytes(pair),
+        }
+    }
+
+    fn read_u32(self, bytes: &[u8]) -> u32 {
+        let quad: [u8; 4] = bytes[..4].try_into().unwrap();
+        match self {
+            Self::Little => u32::from_le_bytes(quad),
+            Self::Big => u32::from_be_bytes(quad),
+        }
+    }
+}
+
+/// `attach_exif_ifd`: add an Exif IFD to a classic TIFF.
+///
+/// The new IFD0 goes after the image data, so strip offsets stay valid. The header is
+/// repointed and the old entries are copied beside the new Exif pointer.
+#[must_use]
+pub fn attach_exif_ifd(tiff: &[u8], exif_bytes: &[u8]) -> Vec<u8> {
+    if tiff.len() < 8 || !(tiff.starts_with(b"II") || tiff.starts_with(b"MM")) {
+        return tiff.to_vec();
+    }
+    let order = if tiff.starts_with(b"II") {
+        ByteOrder::Little
+    } else {
+        ByteOrder::Big
+    };
+    if order.read_u16(&tiff[2..4]) != 42 {
+        return tiff.to_vec();
+    }
+    let ifd = order.read_u32(&tiff[4..8]) as usize;
+    if ifd < 8 || ifd + 2 > tiff.len() {
+        return tiff.to_vec();
+    }
+    let count = usize::from(order.read_u16(&tiff[ifd..ifd + 2]));
+    let ifd_end = ifd + 2 + count * 12 + 4;
+    if count > 4096 || ifd_end > tiff.len() {
+        return tiff.to_vec();
+    }
+    let mut entries: Vec<(u16, [u8; 12])> = Vec::with_capacity(count + 1);
+    for index in 0..count {
+        let start = ifd + 2 + index * 12;
+        let raw: [u8; 12] = tiff[start..start + 12].try_into().unwrap();
+        let tag = order.read_u16(&raw[..2]);
+        if tag == TAG_EXIF_IFD {
+            return tiff.to_vec();
+        }
+        entries.push((tag, raw));
+    }
+    let tag_count = u16::try_from(entries.len() + 1).unwrap_or(u16::MAX);
+    let head = 2 + usize::from(tag_count) * 12 + 4;
+    let pad = tiff.len() & 1;
+    let ifd_at = tiff.len() + pad;
+    let exif_at = ifd_at + head;
+    let Some(exif_ifd) = encode_exif_ifd(exif_bytes, order, exif_at) else {
+        return tiff.to_vec();
+    };
+    entries.push((TAG_EXIF_IFD, {
+        let mut raw = [0u8; 12];
+        raw[..2].copy_from_slice(&order.u16(TAG_EXIF_IFD));
+        raw[2..4].copy_from_slice(&order.u16(TIFF_LONG));
+        raw[4..8].copy_from_slice(&order.u32(1));
+        raw[8..12].copy_from_slice(&order.u32(exif_at as u32));
+        raw
+    }));
+    entries.sort_by_key(|(tag, _)| *tag);
+
+    let mut out = tiff.to_vec();
+    if pad == 1 {
+        out.push(0);
+    }
+    out[4..8].copy_from_slice(&order.u32(ifd_at as u32));
+    out.extend_from_slice(&order.u16(tag_count));
+    for (_, raw) in &entries {
+        out.extend_from_slice(raw);
+    }
+    out.extend_from_slice(&tiff[ifd_end - 4..ifd_end]);
+    out.extend_from_slice(&exif_ifd);
+    out
+}
+
+/// Encode a numeric payload in the opposite byte order.
+fn reorder_payload(kind: u16, payload: &[u8]) -> Vec<u8> {
+    let width = match kind {
+        TIFF_SHORT => 2,
+        TIFF_LONG | TIFF_SRATIONAL | TIFF_RATIONAL => 4,
+        _ => return payload.to_vec(),
+    };
+    payload
+        .chunks_exact(width)
+        .flat_map(|chunk| chunk.iter().rev().copied())
+        .collect()
+}
+
+fn encode_exif_ifd(data: &[u8], order: ByteOrder, file_offset: usize) -> Option<Vec<u8>> {
+    let exif = crate::infrastructure::loaders::exif_block::parse_exif_block(data)?;
+    let mut encoded: Vec<(u16, u16, u32, Vec<u8>)> = Vec::new();
+    for (tag, value) in &exif.exif {
+        if *tag == TAG_INTEROP_IFD {
+            continue;
+        }
+        let kind = tiff_type("Exif", *tag)?;
+        let (count, payload) = encode_value(kind, value)?;
+        let payload = match order {
+            ByteOrder::Little => payload,
+            ByteOrder::Big => reorder_payload(kind, &payload),
+        };
+        if count == 0 || payload.is_empty() {
+            continue;
+        }
+        encoded.push((*tag, kind, count, payload));
+    }
+    if encoded.is_empty() {
+        return None;
+    }
+    let head = 2 + encoded.len() * 12 + 4;
+    let mut out = Vec::with_capacity(head);
+    out.extend_from_slice(&order.u16(encoded.len() as u16));
+    let mut blob = Vec::new();
+    for (tag, kind, count, payload) in encoded {
+        out.extend_from_slice(&order.u16(tag));
+        out.extend_from_slice(&order.u16(kind));
+        out.extend_from_slice(&order.u32(count));
+        if payload.len() <= 4 {
+            out.extend_from_slice(&payload);
+            out.resize(out.len() + 4 - payload.len(), 0);
+        } else {
+            out.extend_from_slice(&order.u32((file_offset + head + blob.len()) as u32));
+            blob.extend_from_slice(&payload);
+        }
+    }
+    out.extend_from_slice(&order.u32(0));
+    out.extend_from_slice(&blob);
+    Some(out)
+}
