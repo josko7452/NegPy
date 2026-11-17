@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `1dd59e6b` display: prove a CMYK paper per pixel
+**Last Updated:** 2026-11-17 | **Last Commit:** `pending` assets: scan crosstalk profile files
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -7,7 +7,7 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 This session completed a second 10-commit backend batch, the audit and the workspace test.
 
 ## Completed (Recent)
-- `6da70651` session: memo the last render per frame.
+- `pending` assets: scan crosstalk profile files.
 - `1e973914` display: bake soft-proof and gamut tables.
 - `7d354e2d` session: resolve a frame's composite parts.
 - `6e333a14` assets: fetch the CLIP model atomically.

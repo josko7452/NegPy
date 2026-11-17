@@ -4,6 +4,7 @@ pub mod capture_modes;
 pub mod clip_model;
 pub mod clip_tokenizer;
 pub mod composites;
+pub mod crosstalk;
 pub mod embeddings;
 pub mod flatfield;
 pub mod frame_merge;
