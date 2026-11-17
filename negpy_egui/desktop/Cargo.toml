@@ -14,4 +14,8 @@ eframe = "0.32"
 egui = "0.32"
 egui_extras = "0.32"
 egui-wgpu = "0.32"
+image = { version = "0.25.10", default-features = false, features = ["png"] }
 wgpu = "25"
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,9 +1,17 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `e5fc7aad` capture: decode sensor RGB for metering
+**Last Updated:** 2026-11-18 09:30 | **Last Commit:** `e5fc7aad` capture: decode sensor RGB for metering
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
+Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is **allowed**.
+NegFe is the target name; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
+
+## Next Steps (Ordered)
+1. [ ] E0: add the fixture manifest and `desktop/src/bin/negfe-capture.rs`.
+2. [ ] E0: run `tests/gui/compare.py` against `tests/gui/golden/tall/` and
+   record the first layout score.
+3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
+4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
 - `7605867d` assets: scan crosstalk profile files.
@@ -19,28 +27,23 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI
 
 ## Verification
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- Workspace test run after the audit (result below).
 
-## Audit (After Commit 10)
-- Closed this batch: crosstalk profile TOML store, source EXIF read (JPEG/TIFF/JXL),
-  TIFF Exif IFD attach, metadata embed plan and write path, full-res export render,
-  embedded RAW preview, preview camera WB and one-open splash, lossless WebP,
-  scanner backend registry, sensor-RGB metering decode.
-- **D10:** `services.rendering.gpu_engine` and all WGSL shaders remain unported.
-- **D10:** `ImageProcessor` is still split across `import`, `render`, `export`; the
-  source-bake cache coordination and diptych join remain.
-- **D10:** `cam_xyz` and `camera_wb` are not yet threaded through `PipelineContext`;
-  `render_white_space` and the transfer base still read defaults, and `RawlerDecoder`
-  always applies as-shot WB, so `linear_raw` parity is open.
-- **D12:** `semantic_model` still needs real ONNX tokenizer/model verification beyond
-  the download writer.
-- **D12:** scanner hardware transports (`sane`, Plustek, pieusb, nkscan) remain.
-- JPEG XL export and lossy WebP report a block reason; both need encoders.
-- GUI work remains out of scope.
+## Audit
+- **D10:** GPU engine, WGSL shaders, ImageProcessor cache coordination and the
+  diptych join remain. `cam_xyz`/`camera_wb` are not threaded through
+  `PipelineContext`; `linear_raw` parity is open.
+- **D12:** real ONNX model verification and scanner hardware transports remain.
+- JPEG XL and lossy WebP need encoders.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
+- Binding GUI reference: `negpy_egui/tests/gui/golden/tall/`, 19 window captures
+  at 1920x1600 plus the Contact Sheet dialog at 1080x760.
+- GUI parity is a layout score of 0.80, not pixel identity. Extract layout from
+  `theme.py`, `templates.py`, `main_window.py`, `right_panel.py`, `controls_panel.py`.
+- E0 comes first: the Rust capture must write every golden PNG and a manifest.
+- The capture harness copies the profile and suppresses the restore prompt.
+- NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; copy one family at a time.
 - Fingerprints and export bytes are pinned to Python.
-- The 10-commit request supersedes the 5-commit checkpoint in `negpy_egui/AGENTS.md`.
-- Headless desktop helpers live under `session/`, not as 1:1 module filenames.
-- `dump_exif` now counts the empty Exif/GPS directories in its extra-data offset.
+- The 10-commit request supersedes the 5-commit checkpoint.
+- Headless desktop helpers live under `session/`, not as module filenames.
