@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 09:30 | **Last Commit:** `e5fc7aad` capture: decode sensor RGB for metering
+**Last Updated:** 2026-11-18 10:20 | **Last Commit:** `dc7d2e6d` desktop: capture the golden matrix
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is **allowed**.
@@ -8,12 +8,12 @@ NegFe is the target name; the folder rename is opportunistic.
 
 ## Next Steps (Ordered)
 1. [ ] E0: commit the golden fixtures and the Python comparison harness.
-2. [ ] E0: run `tests/gui/compare.py` against `tests/gui/golden/tall/` and
-   record the first layout score.
+2. [ ] E1: add the theme token module and its contrast tests.
 3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `dc7d2e6d` desktop: capture the golden matrix.
 - `60762a7f` desktop: read the golden capture manifest.
 - `6cce2266` desktop: capture screenshots as PNG.
 - `7605867d` assets: scan crosstalk profile files.
@@ -29,6 +29,7 @@ NegFe is the target name; the folder rename is opportunistic.
 
 ## Verification
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
+- First layout score: 0.429 on `02_roll_top.png` (gate 0.80).
 
 ## Audit
 - **D10:** GPU engine, WGSL shaders, ImageProcessor cache coordination and the

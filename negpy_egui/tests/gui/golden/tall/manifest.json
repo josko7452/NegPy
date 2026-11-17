@@ -1,0 +1,216 @@
+{
+  "profile": "copied NegPy user directory",
+  "folder": "reference roll folder",
+  "frame": "P5080635.ORF",
+  "width": 1920,
+  "height": 1600,
+  "captures": [
+    {
+      "file": "01_library.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "library",
+      "tab": "",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "02_roll_top.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "roll",
+      "tab": "",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "03_roll_process.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "roll",
+      "tab": "",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "04_frame_geometry.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "geometry",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "05_frame_tone.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "tone",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "06_frame_color.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "color",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "07_frame_finish.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "finish",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "08_frame_favorites.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "favourites",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "09_frame_history.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "frame",
+      "tab": "history",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "10_metadata_shot.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "metadata",
+      "tab": "",
+      "subtab": "shot",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "11_metadata_process.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "metadata",
+      "tab": "",
+      "subtab": "process",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "12_metadata_presets.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "metadata",
+      "tab": "",
+      "subtab": "presets",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "13_metadata_gear.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "metadata",
+      "tab": "",
+      "subtab": "gear",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "14_export_file.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "export",
+      "tab": "",
+      "subtab": "file",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "15_export_proof.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "export",
+      "tab": "",
+      "subtab": "proof",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "16_export_presets.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "export",
+      "tab": "",
+      "subtab": "presets",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "17_export_alongside.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "export",
+      "tab": "",
+      "subtab": "alongside",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "18_scan.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "scan",
+      "tab": "",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "canvas"
+    },
+    {
+      "file": "19_light_table.png",
+      "width": 1920,
+      "height": 1600,
+      "group": "library",
+      "tab": "",
+      "subtab": "",
+      "scroll": 0.0,
+      "view": "light_table"
+    },
+    {
+      "file": "20_contact_sheet_dialog.png",
+      "width": 1080,
+      "height": 760,
+      "group": "export",
+      "tab": "",
+      "subtab": "alongside",
+      "scroll": 0.0,
+      "view": "contact_sheet_dialog"
+    }
+  ],
+  "source": {
+    "profile": "a copied NegPy user directory",
+    "folder": "the reference roll folder",
+    "frame": "P5080635.ORF",
+    "rig": "Camera, White Light"
+  },
+  "fixture": "../../reference_roll.json"
+}

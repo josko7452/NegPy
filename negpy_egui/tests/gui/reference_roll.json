@@ -1,0 +1,79 @@
+{
+  "name": "reference_roll",
+  "window": {
+    "width": 1920,
+    "height": 1600,
+    "scale": 1.0
+  },
+  "fixture": {
+    "frame": "P5080635.ORF",
+    "tab": "roll",
+    "analysis": {
+      "open": true,
+      "log": true
+    },
+    "strip": {
+      "open": true,
+      "height": 248
+    },
+    "canvas": {
+      "fit": true
+    }
+  },
+  "regions": {
+    "top_bar": {
+      "box": [
+        0.0,
+        0.0,
+        1.0,
+        0.033
+      ],
+      "weight": 0.1
+    },
+    "canvas": {
+      "box": [
+        0.004,
+        0.033,
+        0.725,
+        0.806
+      ],
+      "weight": 0.25,
+      "mode": "placement"
+    },
+    "rail": {
+      "box": [
+        0.728,
+        0.033,
+        0.996,
+        0.995
+      ],
+      "weight": 0.4
+    },
+    "strip": {
+      "box": [
+        0.004,
+        0.808,
+        0.725,
+        0.962
+      ],
+      "weight": 0.1
+    },
+    "toolbar": {
+      "box": [
+        0.004,
+        0.963,
+        0.725,
+        0.995
+      ],
+      "weight": 0.15
+    }
+  },
+  "thresholds": {
+    "geometry": 0.6,
+    "palette": 18.0,
+    "structure": 0.45,
+    "text": 0.65,
+    "total": 0.8,
+    "layout": 0.8
+  }
+}
