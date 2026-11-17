@@ -10,5 +10,6 @@ pub mod linear_output;
 pub mod metadata;
 pub mod pixels;
 pub mod print;
+pub mod render;
 pub mod service;
 pub mod templating;
