@@ -28,7 +28,10 @@ fn a_jpeg_keeps_its_capture_date_and_camera() {
         exif.exif.get(&36867),
         Some(&ExifValue::Text("2024:05:12 14:30:00".into()))
     );
-    assert_eq!(exif.zeroth.get(&271), Some(&ExifValue::Text("Canon".into())));
+    assert_eq!(
+        exif.zeroth.get(&271),
+        Some(&ExifValue::Text("Canon".into()))
+    );
 }
 
 #[test]

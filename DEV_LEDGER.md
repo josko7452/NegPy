@@ -1,44 +1,41 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `pending` scanning: register the scanner backends
+**Last Updated:** 2026-11-17 | **Last Commit:** `e5fc7aad` capture: decode sensor RGB for metering
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session completed a second 10-commit backend batch, the audit and the workspace test.
 
 ## Completed (Recent)
-- `pending` scanning: register the scanner backends.
-- `1e973914` display: bake soft-proof and gamut tables.
-- `7d354e2d` session: resolve a frame's composite parts.
-- `6e333a14` assets: fetch the CLIP model atomically.
-- `c1b10f82` render: assemble composite previews.
-- `f8e1e6ca` export: convert pixels and profiles.
-- `32c5d156` export: choose the container encoder.
-- `7f4ea22e` export: write a finished frame.
-- `c2b0a151` render: memo the corrected export source.
-- `925bc048` render: paint a reduced-page splash.
-- `1dd59e6b` display: prove a CMYK paper per pixel.
+- `7605867d` assets: scan crosstalk profile files.
+- `303cb18c` metadata: read a source EXIF block.
+- `4b0803d3` export: attach an Exif IFD to TIFF.
+- `33d95ab4` export: embed a metadata plan.
+- `29765ca1` export: render a file at full resolution.
+- `1a091aca` loaders: read an embedded RAW preview.
+- `63991661` render: decode a preview on camera WB.
+- `6e4276b5` export: encode a lossless WebP.
+- `85706b4f` scanning: register the scanner backends.
+- `e5fc7aad` capture: decode sensor RGB for metering.
 
 ## Verification
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- `cargo test --workspace --no-fail-fast -j 4` passed after the audit.
+- Workspace test run after the audit (result below).
 
 ## Audit (After Commit 10)
-- Closed: workspace session, asset resolvers, CLIP download, RGB/HDR/stitch previews,
-  export pixels/profiles/encoders/write path, source cache, reduced-page splash,
-  per-pixel CMYK proof.
+- Closed this batch: crosstalk profile TOML store, source EXIF read (JPEG/TIFF/JXL),
+  TIFF Exif IFD attach, metadata embed plan and write path, full-res export render,
+  embedded RAW preview, preview camera WB and one-open splash, lossless WebP,
+  scanner backend registry, sensor-RGB metering decode.
 - **D10:** `services.rendering.gpu_engine` and all WGSL shaders remain unported.
-- **D10:** `ImageProcessor` remains partial: full-res render glue, retouch/source bake
-  cache coordination, and JPEG/RAW embedded-preview extraction remain.
-- **D10:** `preview_manager` still lacks the one-open splash/linear call and camera-WB
-  decode glue; RGB/HDR/stitch assembly now exists.
-- **D10:** a finished export has no metadata embed step yet; the primitives exist.
-- **D12:** `services.assets.semantic_model` still lacks real ONNX tokenizer/model file
-  download verification; the download writer exists.
-- **D12:** scanner hardware transports remain (`sane`, Plustek, pieusb, nkscan).
-- **D6:** embedded-thumbnail extraction from camera RAW and the bounded DNG preview
-  remain; the Flextight LogLuv RLE/tables path is ported and tested.
-- JPEG XL and WebP export need pure-Rust encoders; they report a block reason.
+- **D10:** `ImageProcessor` is still split across `import`, `render`, `export`; the
+  source-bake cache coordination and diptych join remain.
+- **D10:** `cam_xyz` and `camera_wb` are not yet threaded through `PipelineContext`;
+  `render_white_space` and the transfer base still read defaults, and `RawlerDecoder`
+  always applies as-shot WB, so `linear_raw` parity is open.
+- **D12:** `semantic_model` still needs real ONNX tokenizer/model verification beyond
+  the download writer.
+- **D12:** scanner hardware transports (`sane`, Plustek, pieusb, nkscan) remain.
+- JPEG XL export and lossy WebP report a block reason; both need encoders.
 - GUI work remains out of scope.
 
 ## Constraints / Gotchas
@@ -46,6 +43,4 @@ This session completed a second 10-commit backend batch, the audit and the works
 - Fingerprints and export bytes are pinned to Python.
 - The 10-commit request supersedes the 5-commit checkpoint in `negpy_egui/AGENTS.md`.
 - Headless desktop helpers live under `session/`, not as 1:1 module filenames.
-- `c2df6270` added the catalog; `ada50a63` completed missing Paper Response, Retouch
-  and Finishing rows needed by the sticky migrations.
-- `negpy_egui/Cargo.lock` gained `objc2-foundation` for the macOS power assertion.
+- `dump_exif` now counts the empty Exif/GPS directories in its extra-data offset.

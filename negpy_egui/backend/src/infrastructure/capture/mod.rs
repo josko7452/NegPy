@@ -2,4 +2,5 @@
 //! beside it.
 
 pub mod protocol;
+pub mod raw_demosaic;
 pub mod settings;
