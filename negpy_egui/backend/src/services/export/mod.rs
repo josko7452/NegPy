@@ -7,6 +7,7 @@ pub mod encode;
 pub mod encoders;
 pub mod frame_merge;
 pub mod linear_output;
+pub mod metadata;
 pub mod pixels;
 pub mod print;
 pub mod service;

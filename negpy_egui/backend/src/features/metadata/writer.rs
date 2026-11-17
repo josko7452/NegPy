@@ -1443,7 +1443,12 @@ impl ByteOrder {
     }
 }
 
-/// `attach_exif_ifd`: add an Exif IFD to a classic TIFF.
+/// Tags the encoder already writes, or that describe the source pixels.
+const TIFF_RESERVED_0TH: [u16; 17] = [
+    254, 256, 257, 258, 259, 262, 270, 273, 277, 278, 279, 282, 283, 284, 296, 305, 700,
+];
+
+/// `attach_exif_ifd`: add an Exif IFD, and the source's own 0th fields, to a classic TIFF.
 ///
 /// The new IFD0 goes after the image data, so strip offsets stay valid. The header is
 /// repointed and the old entries are copied beside the new Exif pointer.
@@ -1470,6 +1475,7 @@ pub fn attach_exif_ifd(tiff: &[u8], exif_bytes: &[u8]) -> Vec<u8> {
         return tiff.to_vec();
     }
     let mut entries: Vec<(u16, [u8; 12])> = Vec::with_capacity(count + 1);
+    let mut present = std::collections::BTreeSet::new();
     for index in 0..count {
         let start = ifd + 2 + index * 12;
         let raw: [u8; 12] = tiff[start..start + 12].try_into().unwrap();
@@ -1477,9 +1483,34 @@ pub fn attach_exif_ifd(tiff: &[u8], exif_bytes: &[u8]) -> Vec<u8> {
         if tag == TAG_EXIF_IFD {
             return tiff.to_vec();
         }
+        present.insert(tag);
         entries.push((tag, raw));
     }
-    let tag_count = u16::try_from(entries.len() + 1).unwrap_or(u16::MAX);
+    let Some(block) = crate::infrastructure::loaders::exif_block::parse_exif_block(exif_bytes)
+    else {
+        return tiff.to_vec();
+    };
+    let mut extras: Vec<(u16, u16, u32, Vec<u8>)> = Vec::new();
+    for (tag, value) in &block.zeroth {
+        if TIFF_RESERVED_0TH.contains(tag) || present.contains(tag) {
+            continue;
+        }
+        let Some(kind) = tiff_type("0th", *tag) else {
+            continue;
+        };
+        let Some((count, payload)) = encode_value(kind, value) else {
+            continue;
+        };
+        let payload = match order {
+            ByteOrder::Little => payload,
+            ByteOrder::Big => reorder_payload(kind, &payload),
+        };
+        if count == 0 || payload.is_empty() {
+            continue;
+        }
+        extras.push((*tag, kind, count, payload));
+    }
+    let tag_count = u16::try_from(entries.len() + 1 + extras.len()).unwrap_or(u16::MAX);
     let head = 2 + usize::from(tag_count) * 12 + 4;
     let pad = tiff.len() & 1;
     let ifd_at = tiff.len() + pad;
@@ -1495,6 +1526,21 @@ pub fn attach_exif_ifd(tiff: &[u8], exif_bytes: &[u8]) -> Vec<u8> {
         raw[8..12].copy_from_slice(&order.u32(exif_at as u32));
         raw
     }));
+    let extra_at = exif_at + exif_ifd.len();
+    let mut blob = Vec::new();
+    for (tag, kind, count, payload) in extras {
+        let mut raw = [0u8; 12];
+        raw[..2].copy_from_slice(&order.u16(tag));
+        raw[2..4].copy_from_slice(&order.u16(kind));
+        raw[4..8].copy_from_slice(&order.u32(count));
+        if payload.len() <= 4 {
+            raw[8..8 + payload.len()].copy_from_slice(&payload);
+        } else {
+            raw[8..12].copy_from_slice(&order.u32((extra_at + blob.len()) as u32));
+            blob.extend_from_slice(&payload);
+        }
+        entries.push((tag, raw));
+    }
     entries.sort_by_key(|(tag, _)| *tag);
 
     let mut out = tiff.to_vec();
@@ -1508,6 +1554,7 @@ pub fn attach_exif_ifd(tiff: &[u8], exif_bytes: &[u8]) -> Vec<u8> {
     }
     out.extend_from_slice(&tiff[ifd_end - 4..ifd_end]);
     out.extend_from_slice(&exif_ifd);
+    out.extend_from_slice(&blob);
     out
 }
 

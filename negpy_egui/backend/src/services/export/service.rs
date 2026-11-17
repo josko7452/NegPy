@@ -8,6 +8,7 @@ use crate::domain::models::{
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::kernel::system::paths::replace_file;
 use crate::services::export::encode::encode_export;
+use crate::services::export::metadata::export_embed_plan;
 use crate::services::export::pixels::{export_pixels, target_profile};
 use crate::services::export::print::{apply_layout, effective_border_color};
 
@@ -118,7 +119,26 @@ pub fn write_export(
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("Could not create {}: {error}", directory.display()))?;
     let path = directory.join(format!("{stem}.{}", rendered.extension));
-    let bytes = encode_export(&rendered.pixels, config)?.bytes;
+    let encoded = encode_export(&rendered.pixels, config)?;
+    let resolution = Some(crate::features::metadata::resolution::Resolution::from_dpi(
+        crate::services::export::print::effective_dpi(config) as f64,
+    ));
+    let source_exif = crate::infrastructure::loaders::exif_block::read_exif_file(source_path);
+    let source_exif = source_exif.map(|raw| crate::features::metadata::exif_read::SourceExif {
+        zeroth: raw.zeroth,
+        exif: raw.exif,
+        gps: raw.gps,
+    });
+    let bytes = match export_embed_plan(
+        &workspace.metadata,
+        source_exif.as_ref(),
+        source_path,
+        None,
+        resolution.as_ref(),
+    ) {
+        Some(plan) => plan.embed(encoded.bytes, config.export_fmt),
+        None => encoded.bytes,
+    };
     let temporary = directory.join(format!(".{stem}.{}.part", std::process::id()));
     std::fs::write(&temporary, bytes)
         .map_err(|error| format!("Could not write {}: {error}", temporary.display()))?;
