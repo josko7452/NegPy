@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-17 | **Last Commit:** `151e3f36` session: hold the workspace files and active edit
+**Last Updated:** 2026-11-17 | **Last Commit:** `7d354e2d` session: resolve a frame's composite parts
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up, backend only. Stop before GUI work.
@@ -9,10 +9,11 @@ This session runs a second 10-commit backend batch, then the audit and workspace
 ## Completed (Recent)
 - `6da70651` session: memo the last render per frame.
 - `1e973914` display: bake soft-proof and gamut tables.
-- `151e3f36` session: hold the workspace files and active edit.
+- `7d354e2d` session: resolve a frame's composite parts.
+- In flight: semantic-model download glue.
 
 ## Verification
-- Targeted tests: `workspace_session` passed; in flight `asset_config`.
+- Targeted tests: `workspace_session`, `asset_config`, semantic-download unit tests.
 - `cargo fmt --all -- --check` clean.
 - Workspace test runs after commit 10 of this batch.
 

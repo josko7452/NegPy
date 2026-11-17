@@ -17,6 +17,7 @@ pub mod profiles;
 pub mod rehome;
 pub mod rolls;
 pub mod search;
+pub mod semantic_model;
 pub mod sidecar;
 pub mod thumbnail_fingerprint;
 pub mod thumbnails;
