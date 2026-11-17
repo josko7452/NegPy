@@ -6,3 +6,4 @@ pub mod render_memo;
 pub mod settings_catalog;
 pub mod startup;
 pub mod sticky;
+pub mod workspace;
