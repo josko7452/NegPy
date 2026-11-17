@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 11:05 | **Last Commit:** `fc49813d` desktop: add the theme token table
+**Last Updated:** 2026-11-18 11:20 | **Last Commit:** `f5276a7f` desktop: add the UI font stacks
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is **allowed**.
@@ -7,12 +7,13 @@ NegFe is the target name; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
 
 ## Next Steps (Ordered)
-1. [ ] E1: add the color-vision palettes.
-2. [ ] E1: add the layout metrics and sweep definitions.
+1. [ ] E1: add the layout metrics and sweep definitions.
+2. [ ] E1: add the control factories.
 3. [ ] E1: port `view.styles.*` theme, fonts, color_vision and templates.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `f5276a7f` desktop: add the UI font stacks.
 - `fc49813d` desktop: add the theme token table.
 - `2f007228` tests: add the GUI capture scripts.
 - `4256b860` tests: add the binding golden GUI set.

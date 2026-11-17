@@ -178,6 +178,13 @@ impl Default for Theme {
 }
 
 impl Theme {
+    /// Dodge & Burn's warm mask color.
+    pub const DODGE: Color32 = Color32::from_rgb(0xe8, 0xc8, 0x4a);
+    /// Dodge & Burn's cool mask color.
+    pub const BURN: Color32 = Color32::from_rgb(0x4a, 0x8f, 0xe8);
+}
+
+impl Theme {
     /// A surface color with `alpha` applied.
     #[must_use]
     pub fn with_alpha(color: Color32, alpha: u8) -> Color32 {
