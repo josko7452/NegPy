@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 16:12 | **Last Commit:** `b677b361` desktop: add the split action
+**Last Updated:** 2026-11-18 16:18 | **Last Commit:** `4344b0b2` desktop: align field rows to the slider columns
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -7,14 +7,16 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 This session: work 10 commits, targeted tests per commit, then the workspace run.
 
 ## Next Steps (Ordered)
-1. [ ] E2: add the right-rail tab header.
-2. [ ] E2: port `view.widgets.*` over the theme factories.
+1. [ ] E2: port the remaining `view.widgets.*` over the theme factories.
+2. [ ] E3: canvas views over the widget layer.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `4344b0b2` desktop: align field rows to the slider columns.
 - `b677b361` desktop: add the split action.
 - `e0499fa5` desktop: add the fold and its rail.
 - `6776562c` desktop: add the step combo and card header.
+- `1dad6412` desktop: add the slider and segmented choice.
 - `1dad6412` desktop: add the slider and segmented choice.
 - `ee6f4697` desktop: draw the shell glyphs from the icon map.
 - `084a7484` desktop: add the phosphor icon map.

@@ -8,3 +8,5 @@ pub mod fold;
 pub mod segmented_choice;
 pub mod split_action;
 pub mod step_combo;
+
+pub mod tab_header;
