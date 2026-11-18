@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 14:40 | **Last Commit:** `aa9afd15` desktop: build controls on the shared theme
+**Last Updated:** 2026-11-18 14:58 | **Last Commit:** `da905e74` desktop: load the fixture frame into the capture
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -7,13 +7,14 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 This session: work 10 commits, targeted tests per commit, then the workspace run.
 
 ## Next Steps (Ordered)
-1. [ ] E0: load the reference frame and open the Contact Sheet dialog in the capture.
+1. [ ] E0: open the Contact Sheet dialog from the capture and score it.
 2. [ ] E1: add `egui-phosphor` icon mapping and replace text glyph placeholders.
 3. [ ] E2: port `view.widgets.*` over the theme factories.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
 - E0 frame load: backend display frame, fixture source paths, fitted canvas texture.
+- E0 dialog: 1080x760 Contact Sheet view and per-entry viewport resize.
 - `6b5da499` desktop: build controls on the shared theme.
 - `68998a7e` desktop: add the shared layout metrics.
 - `0b3c2a4b` desktop: add the color vision palettes.

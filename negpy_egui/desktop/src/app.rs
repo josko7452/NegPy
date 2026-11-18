@@ -8,6 +8,7 @@ use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOpt
 use crate::fixture::ReferenceFixture;
 use crate::frame_source::FrameImage;
 use crate::styles::theme::Theme;
+use crate::view::contact_sheet;
 
 /// The visible tab of the right rail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -71,6 +72,7 @@ pub struct ViewState {
     pub analysis_log: bool,
     pub strip_open: bool,
     pub texture_size: Option<Vec2>,
+    pub contact_sheet: bool,
 }
 
 impl ViewState {
@@ -87,6 +89,7 @@ impl ViewState {
             analysis_log: fixture.fixture.analysis.log,
             strip_open: fixture.fixture.strip.open,
             texture_size: None,
+            contact_sheet: false,
         }
     }
 
@@ -102,6 +105,7 @@ impl ViewState {
             analysis_log: true,
             strip_open: true,
             texture_size: None,
+            contact_sheet: view == "contact_sheet_dialog",
         }
     }
 }
@@ -152,6 +156,15 @@ impl NegFeApp {
         ctx.set_style(style);
         let texture = self.texture_for(ctx).map(|texture| texture.id());
         let screen = ctx.screen_rect();
+        if self.view.contact_sheet {
+            egui::CentralPanel::default()
+                .frame(Frame::NONE.fill(theme.bg_panel))
+                .show(ctx, |ui| {
+                    ui.painter().rect_filled(screen, 0.0, theme.bg_panel);
+                    contact_sheet::paint(ui.painter(), screen, texture);
+                });
+            return;
+        }
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());

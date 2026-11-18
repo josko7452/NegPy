@@ -41,7 +41,7 @@ fn main() -> eframe::Result {
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
-        .with_resizable(false);
+        .with_resizable(true);
     eframe::run_native(
         "NegFe Capture",
         eframe::NativeOptions {
@@ -91,6 +91,7 @@ struct CaptureApp {
     wrote_manifest: bool,
     frames: usize,
     frame: FrameImage,
+    viewport: Option<CaptureSize>,
 }
 
 impl CaptureApp {
@@ -108,6 +109,10 @@ impl CaptureApp {
             manifest.captures[0].scroll,
         );
         app.set_frame(frame.clone());
+        let viewport = CaptureSize {
+            width: manifest.width,
+            height: manifest.height,
+        };
         Self {
             manifest,
             reference,
@@ -118,6 +123,7 @@ impl CaptureApp {
             requested: false,
             wrote_manifest: false,
             frames: 0,
+            viewport: Some(viewport),
         }
     }
 
@@ -171,7 +177,6 @@ impl CaptureApp {
 
 impl eframe::App for CaptureApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.app.draw(ctx);
         self.frames += 1;
         if self.frames > 600 {
             eprintln!("Timed out waiting for the screenshot event.");
@@ -182,8 +187,19 @@ impl eframe::App for CaptureApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
+        let expected = self.entry().size();
+        if self.viewport != Some(expected) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize(egui::vec2(
+                expected.width as f32,
+                expected.height as f32,
+            )));
+            self.viewport = Some(expected);
+            self.requested = false;
+            ctx.request_repaint();
+            return;
+        }
+        self.app.draw(ctx);
         if let Some(image) = capture::take_screenshot(ctx) {
-            let expected: CaptureSize = self.entry().size();
             let image = if expected.accepts(&image) {
                 image
             } else {
