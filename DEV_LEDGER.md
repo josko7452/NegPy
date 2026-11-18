@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 16:18 | **Last Commit:** `4344b0b2` desktop: align field rows to the slider columns
+**Last Updated:** 2026-11-18 16:38 | **Last Commit:** `46ae11a6` desktop: add the rail tab header
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -8,15 +8,15 @@ This session: work 10 commits, targeted tests per commit, then the workspace run
 
 ## Next Steps (Ordered)
 1. [ ] E2: port the remaining `view.widgets.*` over the theme factories.
-2. [ ] E3: canvas views over the widget layer.
-4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
+2. [ ] E5: build the rail cards on the widget layer; the score gate is 0.80.
+3. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `46ae11a6` desktop: add the rail tab header.
 - `4344b0b2` desktop: align field rows to the slider columns.
 - `b677b361` desktop: add the split action.
 - `e0499fa5` desktop: add the fold and its rail.
 - `6776562c` desktop: add the step combo and card header.
-- `1dad6412` desktop: add the slider and segmented choice.
 - `1dad6412` desktop: add the slider and segmented choice.
 - `ee6f4697` desktop: draw the shell glyphs from the icon map.
 - `084a7484` desktop: add the phosphor icon map.
@@ -33,9 +33,12 @@ This session: work 10 commits, targeted tests per commit, then the workspace run
 - `60762a7f` desktop: read the golden capture manifest.
 
 ## Verification
-- Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
-- `cargo test --workspace` passed after the tenth commit.
-- Capture with `NEGPY_GUI_FOLDER` and `NEGPY_GUI_PROFILE` shows the real frame.
+- `cargo fmt --all -- --check`, `cargo check --workspace` and
+  `cargo test --workspace` pass after commit 10.
+- The capture writes 20 PNGs; every layout score fails the 0.80 gate until the
+  rail cards land. Mean 0.487, dialog 0.673, best tab 0.530.
+- `cargo tree -p negpy-backend` shows no PyO3, numpy, egui or eframe.
+- `git diff --stat -- negpy negpy_core` is empty.
 
 ## Audit
 - **D10:** GPU engine, WGSL shaders, ImageProcessor cache coordination and the
