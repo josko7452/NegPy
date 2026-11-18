@@ -8,6 +8,7 @@ pub mod fold;
 pub mod overflow_bar;
 pub mod panel_tab;
 pub mod segmented_choice;
+pub mod sort_button;
 pub mod split_action;
 pub mod step_combo;
 pub mod sub_tabs;
