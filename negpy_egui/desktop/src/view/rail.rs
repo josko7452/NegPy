@@ -9,6 +9,8 @@ use eframe::egui::{
 
 use crate::app::{Tab, ViewState};
 use crate::styles::icons::Icon;
+use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
+use crate::styles::templates::{ActionRank, labeled_action, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -195,6 +197,56 @@ impl RailState {
         self.analysis.show(ui, |ui| {
             let _ = card(ui, |ui| {
                 ui.horizontal(|ui| {
+                    let tab_height = DEFAULT_BUTTON_HEIGHT;
+                    let (tools, _) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width(), tab_height),
+                        Sense::hover(),
+                    );
+                    for (index, icon) in
+                        [Icon::ChevronLeft, Icon::Export, Icon::Stack, Icon::Circle]
+                            .iter()
+                            .enumerate()
+                    {
+                        let button = Rect::from_min_size(
+                            egui::pos2(tools.left() + index as f32 * 38.0, tools.top()),
+                            Vec2::new(34.0, tab_height),
+                        );
+                        ui.painter().rect_filled(button, 4.0, theme.bg_input);
+                        ui.painter().rect_stroke(
+                            button,
+                            4.0,
+                            Stroke::new(1.0_f32, theme.border_primary),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.painter().text(
+                            button.center(),
+                            Align2::CENTER_CENTER,
+                            icon.glyph(),
+                            FontId::proportional(13.0),
+                            theme.text_secondary,
+                        );
+                    }
+                    let log = Rect::from_min_size(
+                        egui::pos2(tools.right() - 44.0, tools.top()),
+                        Vec2::new(44.0, tab_height),
+                    );
+                    ui.painter().rect_filled(log, 4.0, theme.bg_checked);
+                    ui.painter().rect_stroke(
+                        log,
+                        4.0,
+                        Stroke::new(1.0_f32, theme.border_checked),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        log.center(),
+                        Align2::CENTER_CENTER,
+                        "Log",
+                        FontId::proportional(13.0),
+                        theme.text_primary,
+                    );
+                });
+                ui.add_space(f32::from(theme.space_md));
+                ui.horizontal(|ui| {
                     let height = 150.0;
                     let (chart, _) = ui.allocate_exact_size(
                         Vec2::new(ui.available_width(), height),
@@ -279,12 +331,138 @@ impl RailState {
 
     fn show_collapsed(&mut self, ui: &mut Ui, title: &str, modified: usize) {
         ui.add_space(f32::from(Theme::default().space_sm));
-        let mut section = CollapsibleSection::new(title).with_guide().collapsed();
+        let mut section = CollapsibleSection::new(title).with_guide();
         section.modified = modified;
-        section.show(ui, |ui| {
-            let _ = card(ui, |ui| {
-                let _ = hint(ui, "This card has no controls yet.");
+        if title == "Calibration" {
+            section.expanded = true;
+            section.show(ui, |ui| self.show_calibration_body(ui));
+        } else if title == "Roll Analysis" {
+            section.expanded = true;
+            section.show(ui, |ui| self.show_roll_analysis_body(ui));
+        } else {
+            section.expanded = false;
+            section.show(ui, |ui| {
+                let _ = card(ui, |ui| {
+                    let _ = hint(ui, "This card has no controls yet.");
+                });
             });
+        }
+    }
+
+    fn show_roll_analysis_body(&mut self, ui: &mut Ui) {
+        let theme = Theme::default();
+        let _ = card(ui, |ui| {
+            ui.horizontal(|ui| {
+                let _ = section_subheader(ui, "ROLLS");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let _ = labeled_action(ui, "Use Frame", ActionRank::Normal);
+                    ui.add_space(f32::from(theme.space_sm));
+                    let _ = labeled_action(ui, "Reanalyze", ActionRank::Normal);
+                });
+            });
+            ui.add_space(f32::from(theme.space_sm));
+            let _ = hint(
+                ui,
+                "Roll Analysis first crops the frames that wait for Auto Crop.",
+            );
+            let field = Rect::from_min_size(
+                egui::pos2(ui.cursor().left(), ui.cursor().top()),
+                Vec2::new(ui.available_width(), 36.0),
+            );
+            ui.painter().rect_filled(field, 4.0, theme.bg_input);
+            ui.painter().rect_stroke(
+                field,
+                4.0,
+                Stroke::new(1.0_f32, theme.border_primary),
+                egui::StrokeKind::Inside,
+            );
+            ui.painter().text(
+                field.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
+                Align2::LEFT_CENTER,
+                "✓ w9",
+                FontId::proportional(f32::from(theme.font_size_base)),
+                theme.text_primary,
+            );
+            ui.advance_cursor_after_rect(field);
+            ui.add_space(f32::from(theme.space_sm));
+            ui.label(
+                RichText::new("⚠ Baseline from an older analysis: run Reanalyze")
+                    .size(f32::from(theme.font_size_small))
+                    .color(theme.warn_amber),
+            );
+            ui.add_space(f32::from(theme.space_md));
+            ui.horizontal(|ui| {
+                let _ = section_subheader(ui, "SCENES");
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let _ = labeled_action(ui, "Detect", ActionRank::Normal);
+                });
+            });
+            let _ = hint(
+                ui,
+                "Select frames in the Film Strip, then right-click › Scene › Group as Scene...",
+            );
+            ui.add_space(f32::from(theme.space_sm));
+            let _ = section_subheader(ui, "USE AVERAGE");
+            ui.label(
+                RichText::new("⚠ Baseline: Roll “w9”, from an older analysis")
+                    .size(f32::from(theme.font_size_small))
+                    .color(theme.warn_amber),
+            );
+            ui.add_space(f32::from(theme.space_sm));
+            ui.horizontal(|ui| {
+                let _ = labeled_action(ui, "Luma", ActionRank::Normal);
+                ui.add_space(f32::from(theme.space_sm));
+                let _ = labeled_action(ui, "Color", ActionRank::Normal);
+                ui.add_space(f32::from(theme.space_sm));
+                let _ = labeled_action(ui, "Cast", ActionRank::Normal);
+            });
+        });
+    }
+
+    fn show_calibration_body(&mut self, ui: &mut Ui) {
+        let theme = Theme::default();
+        let _ = card(ui, |ui| {
+            let _ = section_subheader(ui, "CROSSTALK");
+            ui.add_space(f32::from(theme.space_sm));
+            ui.horizontal(|ui| {
+                let _ = ui.label(
+                    RichText::new("Matrix")
+                        .size(f32::from(theme.font_size_base))
+                        .color(theme.text_secondary),
+                );
+                ui.add_space(f32::from(theme.space_md));
+                let combo = Rect::from_min_size(
+                    egui::pos2(ui.cursor().left(), ui.cursor().top()),
+                    Vec2::new(ui.available_width(), DEFAULT_BUTTON_HEIGHT),
+                );
+                ui.painter().rect_filled(combo, 4.0, theme.bg_input);
+                ui.painter().rect_stroke(
+                    combo,
+                    4.0,
+                    Stroke::new(1.0_f32, theme.border_primary),
+                    egui::StrokeKind::Inside,
+                );
+                ui.painter().text(
+                    combo.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
+                    Align2::LEFT_CENTER,
+                    "Kodak Gold 200 (approx)",
+                    FontId::proportional(f32::from(theme.font_size_base)),
+                    theme.text_primary,
+                );
+                ui.painter().text(
+                    combo.right_center() - Vec2::new(f32::from(theme.space_xl), 0.0),
+                    Align2::RIGHT_CENTER,
+                    Icon::ChevronRight.glyph(),
+                    FontId::proportional(f32::from(theme.font_size_small)),
+                    theme.text_secondary,
+                );
+                ui.advance_cursor_after_rect(combo);
+            });
+            ui.add_space(f32::from(theme.space_sm));
+            let mut strength =
+                CompactSlider::new(SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.49));
+            strength.set_value(0.49);
+            let _ = strength.show(ui, "Strength");
         });
     }
 }
