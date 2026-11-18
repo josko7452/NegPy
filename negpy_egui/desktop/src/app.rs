@@ -321,6 +321,16 @@ fn paint_shell(
                     Color32::WHITE,
                 );
             }
+            let dot = egui::pos2(tile.right() - 10.0, tile.top() + 10.0);
+            painter.circle_filled(
+                dot,
+                3.0,
+                if index < 2 {
+                    Theme::default().warn_amber
+                } else {
+                    Theme::default().text_hint
+                },
+            );
             if index == 0 {
                 painter.rect_stroke(
                     tile,
@@ -357,24 +367,259 @@ fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
 }
 
 fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
+    use crate::styles::icons::Icon;
+    use crate::styles::layout::{
+        BAR_BUTTON_HEIGHT, BAR_ICON_SIZE, BAR_TRACK_BUTTON_HEIGHT, BAR_TRACK_PAD,
+    };
+
+    let theme = Theme::default();
     painter.rect_filled(toolbar, 0.0, surface());
-    let labels = ["Photo", "Roll", "1 / 13", "16%", "Print", "Roll"];
+    let row_height = BAR_BUTTON_HEIGHT;
+    let top = toolbar.top() + (toolbar.height() - row_height) / 2.0;
     let mut x = toolbar.left() + 8.0;
-    for label in labels {
-        let width = if label == "Print" { 82.0 } else { 58.0 };
-        let button =
-            Rect::from_min_size(egui::pos2(x, toolbar.top() + 8.0), Vec2::new(width, 36.0));
-        painter.rect_filled(button, 4.0, Color32::from_rgb(0x2f, 0x2f, 0x2f));
-        painter.rect_stroke(button, 4.0, line(), egui::StrokeKind::Inside);
+
+    let flat = |painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32| {
         painter.text(
-            button.center(),
+            rect.center(),
             egui::Align2::CENTER_CENTER,
-            label,
-            egui::FontId::proportional(13.0),
-            Color32::from_rgb(0xe4, 0xe4, 0xe4),
+            icon.glyph(),
+            egui::FontId::proportional(BAR_ICON_SIZE),
+            color,
         );
-        x += width + 6.0;
+    };
+    let track = |painter: &egui::Painter, rect: Rect| {
+        painter.rect_filled(rect, 4.0, theme.bg_input);
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(1.0_f32, theme.border_primary),
+            egui::StrokeKind::Inside,
+        );
+    };
+
+    let mode = Rect::from_min_size(egui::pos2(x, top), Vec2::new(112.0, row_height));
+    track(painter, mode);
+    let segment = mode.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
+    let photo = Rect::from_min_size(
+        segment.min,
+        Vec2::new(segment.width() / 2.0, BAR_TRACK_BUTTON_HEIGHT),
+    );
+    let roll = Rect::from_min_size(
+        egui::pos2(photo.right(), photo.top()),
+        Vec2::new(segment.width() / 2.0, BAR_TRACK_BUTTON_HEIGHT),
+    );
+    painter.rect_filled(photo, 4.0, theme.bg_checked);
+    painter.rect_stroke(
+        photo,
+        4.0,
+        egui::Stroke::new(1.0_f32, theme.border_checked),
+        egui::StrokeKind::Inside,
+    );
+    flat(painter, photo, Icon::Image, theme.text_primary);
+    painter.text(
+        photo.right_center() + Vec2::new(5.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Photo",
+        egui::FontId::proportional(13.0),
+        theme.text_primary,
+    );
+    flat(painter, roll, Icon::Film, theme.text_hint);
+    painter.text(
+        roll.right_center() + Vec2::new(5.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Roll",
+        egui::FontId::proportional(13.0),
+        theme.text_hint,
+    );
+    x = mode.right() + 8.0;
+
+    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(178.0, row_height));
+    track(painter, navigation);
+    let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
+    flat(
+        painter,
+        Rect::from_min_size(inner.min, Vec2::splat(BAR_TRACK_BUTTON_HEIGHT)),
+        Icon::ChevronLeft,
+        theme.text_secondary,
+    );
+    painter.text(
+        inner.center(),
+        egui::Align2::CENTER_CENTER,
+        "1 / 13",
+        egui::FontId::proportional(13.0),
+        theme.text_secondary,
+    );
+    flat(
+        painter,
+        Rect::from_min_size(
+            egui::pos2(inner.right() - BAR_TRACK_BUTTON_HEIGHT, inner.top()),
+            Vec2::splat(BAR_TRACK_BUTTON_HEIGHT),
+        ),
+        Icon::ChevronRight,
+        theme.text_secondary,
+    );
+    x = navigation.right() + 8.0;
+
+    let zoom = Rect::from_min_size(egui::pos2(x, top), Vec2::new(82.0, row_height));
+    track(painter, zoom);
+    painter.text(
+        zoom.center() - Vec2::new(6.0, 0.0),
+        egui::Align2::CENTER_CENTER,
+        "16%",
+        egui::FontId::proportional(13.0),
+        theme.text_secondary,
+    );
+    flat(
+        painter,
+        Rect::from_min_size(
+            egui::pos2(zoom.right() - 26.0, zoom.top()),
+            Vec2::new(24.0, row_height),
+        ),
+        Icon::ChevronDown,
+        theme.text_secondary,
+    );
+    x = zoom.right() + 8.0;
+
+    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(184.0, row_height));
+    track(painter, geometry);
+    for (index, icon) in [
+        Icon::RotateLeft,
+        Icon::RotateRight,
+        Icon::FlipHorizontal,
+        Icon::FlipVertical,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let button = Rect::from_min_size(
+            egui::pos2(
+                geometry.left()
+                    + BAR_TRACK_PAD
+                    + index as f32 * (geometry.width() - 2.0 * BAR_TRACK_PAD) / 4.0,
+                geometry.top() + BAR_TRACK_PAD,
+            ),
+            Vec2::new(
+                (geometry.width() - 2.0 * BAR_TRACK_PAD) / 4.0,
+                BAR_TRACK_BUTTON_HEIGHT,
+            ),
+        );
+        if index == 3 {
+            painter.rect_filled(button, 4.0, theme.bg_checked);
+        }
+        flat(
+            painter,
+            button,
+            *icon,
+            if index == 3 {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            },
+        );
     }
+    x = geometry.right() + 8.0;
+
+    for (icon, width) in [(Icon::Wrench, 72.0), (Icon::Undo, 36.0), (Icon::Redo, 36.0)] {
+        let button = Rect::from_min_size(egui::pos2(x, top), Vec2::new(width, row_height));
+        track(painter, button);
+        flat(
+            painter,
+            button,
+            icon,
+            if icon == Icon::Redo {
+                theme.text_muted
+            } else {
+                theme.text_secondary
+            },
+        );
+        x = button.right() + 6.0;
+    }
+
+    let print = Rect::from_min_size(egui::pos2(x, top), Vec2::new(112.0, row_height));
+    track(painter, print);
+    flat(
+        painter,
+        Rect::from_min_size(print.min, Vec2::new(34.0, row_height)),
+        Icon::Print,
+        theme.text_secondary,
+    );
+    painter.text(
+        print.left_center() + Vec2::new(38.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Print",
+        egui::FontId::proportional(13.0),
+        theme.text_secondary,
+    );
+    flat(
+        painter,
+        Rect::from_min_size(
+            egui::pos2(print.right() - 26.0, print.top()),
+            Vec2::new(24.0, row_height),
+        ),
+        Icon::ChevronDown,
+        theme.text_secondary,
+    );
+    x = print.right() + 6.0;
+
+    let roll_average = Rect::from_min_size(egui::pos2(x, top), Vec2::new(66.0, row_height));
+    track(painter, roll_average);
+    flat(painter, roll_average, Icon::Film, theme.text_secondary);
+    x = roll_average.right() + 6.0;
+
+    let primary = Rect::from_min_size(egui::pos2(x, top), Vec2::new(154.0, row_height));
+    painter.rect_filled(primary, 4.0, theme.bg_primary);
+    painter.rect_stroke(
+        primary,
+        4.0,
+        egui::Stroke::new(1.0_f32, theme.border_checked_hover),
+        egui::StrokeKind::Inside,
+    );
+    flat(
+        painter,
+        Rect::from_min_size(primary.min, Vec2::new(36.0, row_height)),
+        Icon::Export,
+        theme.text_on_accent,
+    );
+    painter.text(
+        primary.left_center() + Vec2::new(40.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        "Roll",
+        egui::FontId::proportional(13.0),
+        theme.text_on_accent,
+    );
+    flat(
+        painter,
+        Rect::from_min_size(
+            egui::pos2(primary.right() - 26.0, primary.top()),
+            Vec2::new(24.0, row_height),
+        ),
+        Icon::ChevronDown,
+        theme.text_on_accent,
+    );
+    x = primary.right() + 8.0;
+
+    let frames = Rect::from_min_size(egui::pos2(x, top), Vec2::new(72.0, row_height));
+    track(painter, frames);
+    for (index, icon) in [Icon::Grid, Icon::Menu, Icon::Sliders].iter().enumerate() {
+        let button = Rect::from_min_size(
+            egui::pos2(
+                frames.left() + BAR_TRACK_PAD + index as f32 * 23.0,
+                frames.top() + BAR_TRACK_PAD,
+            ),
+            Vec2::new(23.0, BAR_TRACK_BUTTON_HEIGHT),
+        );
+        flat(
+            painter,
+            button,
+            *icon,
+            if index == 0 {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            },
+        );
+    }
+    let _ = frames.right();
 }
 
 #[cfg(test)]

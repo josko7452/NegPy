@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 22:50 | **Last Commit:** `HEAD` desktop: space roll cards like the reference
+**Last Updated:** 2026-11-18 23:00 | **Last Commit:** `HEAD` desktop: name the canvas bar icon roles
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
