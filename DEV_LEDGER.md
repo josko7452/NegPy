@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 22:20 | **Last Commit:** `HEAD` desktop: capture golden frames at exact size
+**Last Updated:** 2026-11-18 22:25 | **Last Commit:** `HEAD` desktop: keep section bodies inside the scroll
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.

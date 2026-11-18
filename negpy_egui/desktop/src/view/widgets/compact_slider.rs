@@ -114,7 +114,7 @@ impl CompactSlider {
     pub fn show(&mut self, ui: &mut Ui, label: &str) -> (egui::Response, bool) {
         let theme = Theme::default();
         let mut changed = false;
-        ui.horizontal(|ui| {
+        let row = ui.horizontal(|ui| {
             ui.add_sized(
                 Vec2::new(FIELD_LABEL_WIDTH, DEFAULT_BUTTON_HEIGHT),
                 egui::Label::new(
@@ -163,8 +163,7 @@ impl CompactSlider {
                 theme.text_primary,
             );
         });
-        let response = ui.allocate_rect(ui.max_rect(), Sense::hover());
-        (response, changed)
+        (row.response, changed)
     }
 }
 
