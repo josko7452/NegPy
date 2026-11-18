@@ -278,11 +278,8 @@ fn paint_shell(
     );
     painter.rect_filled(canvas_rect, 0.0, canvas());
 
+    let photo = fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0));
     if let Some(texture) = frame {
-        let size = view
-            .texture_size
-            .unwrap_or_else(|| Vec2::new(canvas_rect.width() * 0.92, canvas_rect.height() * 0.93));
-        let photo = fitted_rect(canvas_rect, size);
         painter.image(
             texture,
             photo,
@@ -290,10 +287,6 @@ fn paint_shell(
             Color32::WHITE,
         );
     } else {
-        let photo = fitted_rect(
-            canvas_rect,
-            Vec2::new(canvas_rect.width() * 0.92, canvas_rect.height() * 0.93),
-        );
         painter.rect_filled(photo, 0.0, Color32::from_rgb(0xa8, 0xa0, 0x90));
     }
 
@@ -303,17 +296,35 @@ fn paint_shell(
             Vec2::new(canvas_width, strip_height),
         );
         painter.rect_filled(strip, 0.0, Color32::from_rgb(0x2f, 0x2f, 0x2f));
-        let tile_width = (strip.width() - 2.0 * margin) / 6.0;
-        for index in 0..6 {
+        let count = 6;
+        let gap = 4.0;
+        let tile_width = (strip.width() - 2.0 * margin - gap * (count - 1) as f32) / count as f32;
+        for index in 0..count {
             let tile = Rect::from_min_size(
                 egui::pos2(
-                    strip.left() + margin + index as f32 * tile_width,
+                    strip.left() + margin + index as f32 * (tile_width + gap),
                     strip.top() + margin,
                 ),
-                Vec2::new(tile_width - margin, strip.height() - 2.0 * margin),
+                Vec2::new(tile_width, strip.height() - 2.0 * margin),
             );
             painter.rect_filled(tile, 0.0, Color32::from_rgb(0x80, 0x80, 0x80));
             painter.rect_stroke(tile, 0.0, line(), egui::StrokeKind::Inside);
+            if let Some(texture) = frame {
+                painter.image(
+                    texture,
+                    tile,
+                    Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                    Color32::WHITE,
+                );
+            }
+            if index == 0 {
+                painter.rect_stroke(
+                    tile,
+                    0.0,
+                    Stroke::new(2.0_f32, Theme::default().border_checked),
+                    egui::StrokeKind::Inside,
+                );
+            }
         }
     }
 
