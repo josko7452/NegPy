@@ -36,6 +36,16 @@ pub enum Icon {
     Grid,
     Menu,
     Reset,
+    ArrowLeft,
+    ArrowRight,
+    RotateLeft,
+    RotateRight,
+    FlipHorizontal,
+    FlipVertical,
+    Undo,
+    Redo,
+    Wrench,
+    GridFour,
 }
 
 impl Icon {
@@ -70,6 +80,16 @@ impl Icon {
             Self::Grid => phosphor::SQUARES_FOUR,
             Self::Menu => phosphor::DOTS_THREE,
             Self::Reset => phosphor::ARROW_COUNTER_CLOCKWISE,
+            Self::ArrowLeft => phosphor::ARROW_LEFT,
+            Self::ArrowRight => phosphor::ARROW_RIGHT,
+            Self::RotateLeft => phosphor::ARROW_COUNTER_CLOCKWISE,
+            Self::RotateRight => phosphor::ARROW_CLOCKWISE,
+            Self::FlipHorizontal => phosphor::FLIP_HORIZONTAL,
+            Self::FlipVertical => phosphor::FLIP_VERTICAL,
+            Self::Undo => phosphor::ARROW_U_UP_LEFT,
+            Self::Redo => phosphor::ARROW_U_UP_RIGHT,
+            Self::Wrench => phosphor::WRENCH,
+            Self::GridFour => phosphor::SQUARES_FOUR,
         }
     }
 }
@@ -116,6 +136,16 @@ mod tests {
             Icon::Circle,
             Icon::Folder,
             Icon::Reset,
+            Icon::ArrowLeft,
+            Icon::ArrowRight,
+            Icon::RotateLeft,
+            Icon::RotateRight,
+            Icon::FlipHorizontal,
+            Icon::FlipVertical,
+            Icon::Undo,
+            Icon::Redo,
+            Icon::Wrench,
+            Icon::GridFour,
         ] {
             assert!(!icon.glyph().is_empty());
         }
