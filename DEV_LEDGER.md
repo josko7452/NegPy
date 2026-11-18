@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 17:20 | **Last Commit:** `pending` desktop: add the flat row layer
+**Last Updated:** 2026-11-18 17:20 | **Last Commit:** `pending` desktop: build the rail view
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -7,11 +7,12 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 This session: work 10 commits, targeted tests per commit, then the workspace run.
 
 ## Next Steps (Ordered)
-1. [ ] E2: port `overflow_bar`, `sub_tabs`, `sort_button`, `flat_rows`, `elided_label`, `marks`; then `charts`.
+1. [ ] E5: fill the Roll, Frame, Metadata, Export and Scan cards over the rail view.
 2. [ ] E5: build the rail cards on the widget layer; the score gate is 0.80.
 3. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `pending` desktop: build the rail view with the real main strip, Analysis and Setup.
 - `pending` desktop: add flat rows with fills, pills and ⋮.
 - `pending` desktop: add triage badges and elided labels.
 - `pending` desktop: add the sort control with its direction choice.

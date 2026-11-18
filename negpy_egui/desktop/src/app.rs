@@ -10,9 +10,10 @@ use crate::frame_source::FrameImage;
 use crate::styles::icons::Icon;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
+use crate::view::rail::{RAIL_WIDTH, RailState};
 
 /// The visible tab of the right rail.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Tab {
     Library,
     #[default]
@@ -127,6 +128,7 @@ impl ViewState {
 /// The desktop application state.
 pub struct NegFeApp {
     pub view: ViewState,
+    pub rail: RailState,
     pub frame: Option<FrameImage>,
     texture: Option<TextureHandle>,
 }
@@ -135,8 +137,10 @@ impl NegFeApp {
     /// An app showing the reference fixture.
     #[must_use]
     pub fn new(fixture: &ReferenceFixture) -> Self {
+        let view = ViewState::from_fixture(fixture);
         Self {
-            view: ViewState::from_fixture(fixture),
+            rail: RailState::for_view(&view),
+            view,
             frame: None,
             texture: None,
         }
@@ -145,8 +149,10 @@ impl NegFeApp {
     /// An app showing one manifest capture.
     #[must_use]
     pub fn for_capture(group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) -> Self {
+        let view = ViewState::from_capture(group, tab, subtab, view, scroll);
         Self {
-            view: ViewState::from_capture(group, tab, subtab, view, scroll),
+            rail: RailState::for_view(&view),
+            view,
             frame: None,
             texture: None,
         }
@@ -182,7 +188,14 @@ impl NegFeApp {
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
-            paint_shell(ui.painter(), screen, &self.view, texture);
+            let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture);
+            let mut rail = std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
+            let switched = rail.show(ui, rail_rect);
+            self.view.tab = rail.tab;
+            self.rail = rail;
+            if let Some(tab) = switched {
+                self.view.tab = tab;
+            }
         });
     }
 
@@ -221,7 +234,7 @@ fn paint_shell(
     screen: Rect,
     view: &ViewState,
     frame: Option<egui::TextureId>,
-) {
+) -> Rect {
     let margin = 8.0;
     let top = Rect::from_min_max(
         screen.min + Vec2::new(margin, margin),
@@ -237,7 +250,7 @@ fn paint_shell(
     );
 
     let body_top = top.bottom() + margin;
-    let rail_width = 514.0_f32.min((screen.width() * 0.27).max(420.0));
+    let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
     let rail = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
@@ -305,8 +318,10 @@ fn paint_shell(
     painter.rect_filled(toolbar, 0.0, surface());
     painter.line_segment([toolbar.left_top(), toolbar.right_top()], line());
 
-    paint_rail(painter, rail, view);
+    painter.rect_filled(rail, 0.0, surface());
+    painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
     paint_toolbar(painter, toolbar);
+    rail
 }
 
 fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
@@ -315,101 +330,6 @@ fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
     }
     let scale = (outer.width() / content.x).min(outer.height() / content.y);
     Rect::from_center_size(outer.center(), content * scale)
-}
-
-fn paint_rail(painter: &egui::Painter, rail: Rect, view: &ViewState) {
-    painter.rect_filled(rail, 0.0, surface());
-    painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
-    let tab_height = 58.0;
-    let tab_width = rail.width() / Tab::ALL.len() as f32;
-    for (index, tab) in Tab::ALL.iter().enumerate() {
-        let rect = Rect::from_min_size(
-            egui::pos2(rail.left() + index as f32 * tab_width, rail.top()),
-            Vec2::new(tab_width, tab_height),
-        );
-        let selected = *tab == view.tab;
-        painter.rect_filled(
-            rect,
-            0.0,
-            if selected {
-                Color32::from_rgb(0x50, 0x42, 0x42)
-            } else {
-                surface()
-            },
-        );
-        let color = if selected {
-            Color32::from_rgb(0xe4, 0xe4, 0xe4)
-        } else {
-            Color32::from_rgb(0xa4, 0xa4, 0xa4)
-        };
-        painter.text(
-            rect.center() - Vec2::new(0.0, 9.0),
-            egui::Align2::CENTER_CENTER,
-            tab.icon().glyph(),
-            egui::FontId::proportional(16.0),
-            color,
-        );
-        painter.text(
-            rect.center() + Vec2::new(0.0, 15.0),
-            egui::Align2::CENTER_CENTER,
-            tab.label(),
-            egui::FontId::proportional(11.0),
-            color,
-        );
-    }
-
-    let search = Rect::from_min_size(
-        egui::pos2(rail.left() + 8.0, rail.top() + tab_height + 8.0),
-        Vec2::new(rail.width() - 16.0, 36.0),
-    );
-    painter.rect_filled(search, 4.0, Color32::from_rgb(0x2f, 0x2f, 0x2f));
-    painter.rect_stroke(search, 4.0, line(), egui::StrokeKind::Inside);
-    painter.text(
-        search.left_center() + Vec2::new(12.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        Icon::Search.glyph(),
-        egui::FontId::proportional(14.0),
-        Color32::from_rgb(0x8b, 0x8b, 0x8b),
-    );
-    painter.text(
-        search.left_center() + Vec2::new(32.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        "Find a control, card or action...",
-        egui::FontId::proportional(13.0),
-        Color32::from_rgb(0x8b, 0x8b, 0x8b),
-    );
-
-    let mut y = search.bottom() + 8.0;
-    if view.tab == Tab::Roll {
-        y = paint_card(painter, rail, y, "Analysis", 190.0);
-        y = paint_card(painter, rail, y, "Setup", 170.0);
-        y = paint_card(painter, rail, y, "Calibration", 120.0);
-        let _ = paint_card(painter, rail, y, "Metering", 55.0);
-    } else if view.tab == Tab::Library {
-        paint_card(painter, rail, y, "Library", 240.0);
-    } else {
-        paint_card(painter, rail, y, view.tab.label(), rail.bottom() - y - 8.0);
-    }
-}
-
-fn paint_card(painter: &egui::Painter, rail: Rect, top: f32, title: &str, height: f32) -> f32 {
-    let card = Rect::from_min_size(
-        egui::pos2(rail.left() + 8.0, top),
-        Vec2::new(rail.width() - 16.0, height),
-    );
-    painter.rect_filled(card, 4.0, Color32::from_rgb(0x37, 0x37, 0x37));
-    painter.rect_stroke(card, 4.0, line(), egui::StrokeKind::Inside);
-    let header = Rect::from_min_size(card.min, Vec2::new(card.width(), 40.0));
-    painter.rect_filled(header, 0.0, Color32::from_rgb(0x3b, 0x3b, 0x3b));
-    painter.line_segment([header.left_bottom(), header.right_bottom()], line());
-    painter.text(
-        header.left_center() + Vec2::new(10.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        title,
-        egui::FontId::proportional(14.0),
-        Color32::from_rgb(0xe4, 0xe4, 0xe4),
-    );
-    card.bottom() + 6.0
 }
 
 fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {

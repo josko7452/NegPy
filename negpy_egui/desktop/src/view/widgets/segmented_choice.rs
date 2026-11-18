@@ -39,6 +39,13 @@ impl<'a> SegmentedChoice<'a> {
             Vec2::new(ui.available_width(), DEFAULT_BUTTON_HEIGHT),
             Sense::click(),
         );
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt(("segmented", self.labels))
+                .max_rect(rect)
+                .layout(egui::Layout::left_to_right(egui::Align::Center)),
+        );
+        child.set_width(rect.width());
         let width = rect.width() / count as f32;
         let mut picked = None;
         for (index, label) in self.labels.iter().enumerate() {
@@ -48,7 +55,7 @@ impl<'a> SegmentedChoice<'a> {
             );
             let current = index == self.current;
             let segment_response =
-                ui.interact(segment, ui.id().with(("segment", index)), Sense::click());
+                child.interact(segment, child.id().with(("segment", index)), Sense::click());
             let hovered = segment_response.hovered();
             let fill = if current {
                 if hovered {
@@ -61,19 +68,19 @@ impl<'a> SegmentedChoice<'a> {
             } else {
                 theme.bg_input
             };
-            ui.painter().rect_filled(segment.shrink(1.0), 4.0, fill);
+            child.painter().rect_filled(segment.shrink(1.0), 4.0, fill);
             let border = if current {
                 theme.border_checked
             } else {
                 theme.border_primary
             };
-            ui.painter().rect_stroke(
+            child.painter().rect_stroke(
                 segment.shrink(1.0),
                 4.0,
                 Stroke::new(1.0_f32, border),
                 egui::StrokeKind::Inside,
             );
-            ui.painter().text(
+            child.painter().text(
                 segment.center(),
                 egui::Align2::CENTER_CENTER,
                 *label,

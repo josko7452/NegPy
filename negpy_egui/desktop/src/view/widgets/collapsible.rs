@@ -106,10 +106,21 @@ impl CollapsibleSection {
         }
         let body_rect = Rect::from_min_size(
             egui::pos2(header.left(), header.bottom()),
-            Vec2::new(header.width(), 0.0),
+            Vec2::new(header.width(), ui.available_height()),
         );
-        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(body_rect));
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .id_salt((&self.title, "body"))
+                .max_rect(body_rect)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        child.set_width(body_rect.width());
         let result = body(&mut child);
+        let height = child.min_rect().height().max(0.0);
+        ui.advance_cursor_after_rect(Rect::from_min_size(
+            body_rect.min,
+            Vec2::new(body_rect.width(), height),
+        ));
         (response, Some(result))
     }
 }
