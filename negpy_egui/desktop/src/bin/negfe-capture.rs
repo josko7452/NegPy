@@ -41,7 +41,8 @@ fn main() -> eframe::Result {
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
-        .with_resizable(true);
+        .with_resizable(true)
+        .with_clamp_size_to_monitor_size(false);
     eframe::run_native(
         "NegFe Capture",
         eframe::NativeOptions {
@@ -51,9 +52,6 @@ fn main() -> eframe::Result {
             ..Default::default()
         },
         Box::new(move |cc| {
-            let ppp = cc.egui_ctx.pixels_per_point();
-            let zoom = (1.0 / ppp).clamp(0.25, 1.0);
-            cc.egui_ctx.set_zoom_factor(zoom);
             negpy_desktop::styles::fonts::install(&cc.egui_ctx);
             Ok(Box::new(CaptureApp::new(
                 manifest,
@@ -109,10 +107,6 @@ impl CaptureApp {
             manifest.captures[0].scroll,
         );
         app.set_frame(frame.clone());
-        let viewport = CaptureSize {
-            width: manifest.width,
-            height: manifest.height,
-        };
         Self {
             manifest,
             reference,
@@ -123,7 +117,7 @@ impl CaptureApp {
             requested: false,
             wrote_manifest: false,
             frames: 0,
-            viewport: Some(viewport),
+            viewport: None,
         }
     }
 
@@ -202,8 +196,18 @@ impl eframe::App for CaptureApp {
         if let Some(image) = capture::take_screenshot(ctx) {
             let image = if expected.accepts(&image) {
                 image
+            } else if let Some(factor) = capture::proportional_factor(&image, expected) {
+                std::sync::Arc::new(capture::downscale(&image, factor))
             } else {
-                std::sync::Arc::new(capture::resize(&image, expected.width, expected.height))
+                eprintln!(
+                    "{} captured at {}x{}, expected {}x{}",
+                    self.entry().file,
+                    image.size[0],
+                    image.size[1],
+                    expected.width,
+                    expected.height
+                );
+                std::process::exit(1);
             };
             let path = self.output.join(&self.entry().file);
             if let Err(error) = capture::write_png(&image, &path) {

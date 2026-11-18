@@ -15,6 +15,20 @@ pub struct CaptureSize {
     pub height: usize,
 }
 
+/// The integer factor from a physical capture to the logical size, when exact.
+#[must_use]
+pub fn proportional_factor(image: &ColorImage, expected: CaptureSize) -> Option<usize> {
+    if expected.width == 0 || expected.height == 0 {
+        return None;
+    }
+    if image.size[0] % expected.width != 0 || image.size[1] % expected.height != 0 {
+        return None;
+    }
+    let x = image.size[0] / expected.width;
+    let y = image.size[1] / expected.height;
+    (x == y && x >= 1).then_some(x)
+}
+
 impl CaptureSize {
     /// The golden window size.
     pub const GOLDEN: Self = Self {
@@ -161,6 +175,20 @@ mod tests {
         let decoded = image::open(&path).unwrap().to_rgb8();
         assert_eq!(decoded.dimensions(), (2, 1));
         assert_eq!(decoded.as_raw(), &[12, 34, 56, 210, 200, 190]);
+    }
+
+    #[test]
+    fn a_physical_capture_must_scale_by_one_integer() {
+        let expected = CaptureSize {
+            width: 4,
+            height: 3,
+        };
+        let exact = ColorImage::new([4, 3], vec![Color32::BLACK; 12]);
+        assert_eq!(proportional_factor(&exact, expected), Some(1));
+        let hidpi = ColorImage::new([8, 6], vec![Color32::BLACK; 48]);
+        assert_eq!(proportional_factor(&hidpi, expected), Some(2));
+        let squashed = ColorImage::new([8, 4], vec![Color32::BLACK; 32]);
+        assert_eq!(proportional_factor(&squashed, expected), None);
     }
 
     #[test]
