@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 15:36 | **Last Commit:** `ee6f4697` desktop: draw the shell glyphs from the icon map
+**Last Updated:** 2026-11-18 15:50 | **Last Commit:** `1dad6412` desktop: add the slider and segmented choice
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -8,7 +8,7 @@ This session: work 10 commits, targeted tests per commit, then the workspace run
 
 ## Next Steps (Ordered)
 1. [ ] E0: open the Contact Sheet dialog from the capture and score it.
-2. [ ] E2: add the step combo, collapsible card and slider group.
+2. [ ] E2: add the slider group and the rail/group folds.
 3. [ ] E2: port `view.widgets.*` over the theme factories.
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
@@ -18,6 +18,7 @@ This session: work 10 commits, targeted tests per commit, then the workspace run
 - E1 icons: pin `egui-phosphor` 0.10 for egui 0.32 and add the named icon map.
 - E1 glyphs: shell tabs and dialog controls read the icon roles.
 - E2 start: compact slider and segmented choice over the shared theme.
+- E2 forms: step combo and collapsible card over the shared header.
 - `6b5da499` desktop: build controls on the shared theme.
 - `68998a7e` desktop: add the shared layout metrics.
 - `0b3c2a4b` desktop: add the color vision palettes.
