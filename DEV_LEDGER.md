@@ -6,10 +6,10 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 This session completed the 10-commit budget. E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: close the remaining shell gap. All 20 captures score 0.568 to
-   0.681; the 0.80 gate is still 0.12 away. The strip track and rail header
-   chrome are now in place; the next pass should measure the toolbar and
-   rail card interiors.
+1. [ ] E5: close the remaining shell gap. All 20 captures score 0.572 to
+   0.685; the 0.80 gate is still 0.12 away. The strip track, rail header
+   chrome and mode labels are now in place; the next pass should measure
+   the toolbar and rail card interiors.
 2. [ ] E5: replace reference-only panel values with backend services.
 3. [ ] E6: start the dialogs over the new rail panels.
 
@@ -27,10 +27,10 @@ This session completed the 10-commit budget. E5 shell parity is active.
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
 - Fresh 1920x1600 capture: Roll layout 0.645 after the last shell fix.
-- `cargo check --workspace` passes. `cargo test --workspace` passes on a
-  rerun; the first run hit a flaky exact-4 ms timing assertion in
-  `kernel::system::timing`, which passes in isolation and on rerun.
-- Full golden comparison: 20 captures, 0.568 to 0.681; none at 0.80.
+- `cargo check --workspace` and `cargo test --workspace` pass.
+- Full golden comparison: 20 captures, 0.572 to 0.685; none at 0.80.
+  The lowest are the Export and Scan tabs; the highest are Library and
+  Frame History.
 - `git diff --stat -- negpy negpy_core` must stay empty.
 
 ## Constraints / Gotchas

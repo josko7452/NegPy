@@ -315,20 +315,24 @@ fn paint_shell(
             egui::pos2(screen.left() + margin, canvas_bottom),
             Vec2::new(canvas_width, strip_height),
         );
-        painter.rect_filled(strip, 0.0, Color32::from_rgb(0x2f, 0x2f, 0x2f));
-        let count = 6;
+        let theme = Theme::default();
+        painter.rect_filled(strip, 0.0, Color32::from_rgb(0x6f, 0x6f, 0x6f));
+        let scrollbar = 12.0;
+        let tiles = Rect::from_min_max(
+            strip.min + Vec2::splat(0.0),
+            egui::pos2(strip.right(), strip.bottom() - scrollbar),
+        );
+        let tile_width = 210.0;
         let gap = 4.0;
-        let tile_width = (strip.width() - 2.0 * margin - gap * (count - 1) as f32) / count as f32;
+        let inset = 4.0;
+        let count = ((tiles.width() - inset) / (tile_width + gap)).ceil() as usize + 1;
         for index in 0..count {
+            let left = tiles.left() + inset + index as f32 * (tile_width + gap);
             let tile = Rect::from_min_size(
-                egui::pos2(
-                    strip.left() + margin + index as f32 * (tile_width + gap),
-                    strip.top() + margin,
-                ),
-                Vec2::new(tile_width, strip.height() - 2.0 * margin),
+                egui::pos2(left, tiles.top() + inset),
+                Vec2::new(tile_width, tiles.height() - 2.0 * inset),
             );
-            painter.rect_filled(tile, 0.0, Color32::from_rgb(0x80, 0x80, 0x80));
-            painter.rect_stroke(tile, 0.0, line(), egui::StrokeKind::Inside);
+            painter.rect_filled(tile, 0.0, Color32::from_rgb(0x17, 0x15, 0x16));
             if let Some(texture) = frame {
                 painter.image(
                     texture,
@@ -337,25 +341,34 @@ fn paint_shell(
                     Color32::WHITE,
                 );
             }
-            let dot = egui::pos2(tile.right() - 10.0, tile.top() + 10.0);
+            let border = if index == 0 {
+                theme.border_checked
+            } else {
+                theme.border_color
+            };
+            painter.rect_stroke(
+                tile,
+                0.0,
+                Stroke::new(if index == 0 { 3.0 } else { 1.0_f32 }, border),
+                egui::StrokeKind::Inside,
+            );
+            let dot = egui::pos2(tile.right() - 7.0, tile.top() + 7.0);
             painter.circle_filled(
                 dot,
-                3.0,
+                4.0,
                 if index < 2 {
-                    Theme::default().warn_amber
+                    theme.warn_amber
                 } else {
-                    Theme::default().text_hint
+                    Color32::from_rgb(0x8b, 0x8b, 0x8b)
                 },
             );
-            if index == 0 {
-                painter.rect_stroke(
-                    tile,
-                    0.0,
-                    Stroke::new(2.0_f32, Theme::default().border_checked),
-                    egui::StrokeKind::Inside,
-                );
-            }
+            painter.circle_stroke(dot, 4.0, Stroke::new(1.0_f32, theme.mark_photo));
         }
+        let bar = Rect::from_min_max(
+            egui::pos2(strip.left() + inset, tiles.bottom() + 2.0),
+            egui::pos2(strip.left() + strip.width() * 0.5, strip.bottom() - 2.0),
+        );
+        painter.rect_filled(bar, bar.height() / 2.0, theme.border_color);
     }
 
     let toolbar = Rect::from_min_size(

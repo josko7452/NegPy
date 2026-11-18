@@ -30,7 +30,7 @@ pub mod scan;
 
 /// The rail's fixed width at the golden window.
 pub const RAIL_WIDTH: f32 = 514.0;
-/// The search field's height under the tab strip.
+/// The search field's height in the top bar.
 pub const SEARCH_HEIGHT: f32 = 36.0;
 
 /// The tab state the rail shows.
