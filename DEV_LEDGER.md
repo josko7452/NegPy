@@ -1,34 +1,29 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 00:05 | **Last Commit:** `HEAD` desktop: paint the grouped canvas bar
+**Last Updated:** 2026-11-19 00:35 | **Last Commit:** `HEAD` desktop: put Find over the rail in the top bar
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
-**Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session completed the 10-commit budget. E5 panel bodies and capture navigation are built.
+This session is working the next 10 commits; 8 are done. E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: correct the shared shell bands; the rail still scores below the
-   0.80 layout gate.
-2. [ ] E5: replace reference-only panel values with backend services as each
-   panel gets wired to the controller.
+1. [ ] E5: match the Film Strip tile geometry and scroll track.
+2. [ ] E5: replace reference-only panel values with backend services.
 3. [ ] E6: start the dialogs over the new rail panels.
 
 ## Completed (Recent)
-- `986be01e` desktop: build the Export rail tab.
-- `5d6a3e2d` desktop: build the Metadata rail tab.
-- `00955bc8` desktop: build the Finish frame page.
-- `a42e181a` desktop: build the Look frame page.
-- `cb9bac09` desktop: build the Exposure frame page.
-- `c03aac07` desktop: build the Geometry frame page.
-- `6f4623f1` desktop: build the Library rail tab.
-- `dcccd4d0` desktop: add the tab summary bar.
+- `7eef57f5` desktop: put Find over the rail in the top bar.
+- `a226baca` desktop: paint the grouped canvas bar.
+- `04c2f5a9` desktop: name the canvas bar icon roles.
+- `f5fc4827` desktop: space roll cards like the reference.
+- `8a618a30` desktop: allocate the slider row it paints.
+- `7eadf07c` desktop: keep section bodies inside the scroll.
+- `38c8a7f6` desktop: capture golden frames at exact size.
 
 ## Verification
-- Targeted `cargo test -p negpy-desktop --lib view::rail` passes per commit.
-- `cargo check --workspace` and `cargo test --workspace` pass after commit 10.
-- The real-profile capture writes all 20 PNGs with the selected tab and
-  sub-tab. Layout scores run 0.455 to 0.673; none reaches the 0.80 gate.
-- `git diff --stat -- negpy negpy_core` is empty.
+- Targeted `cargo test -p negpy-desktop --lib` passes per commit.
+- Fresh 1920x1600 capture: Roll layout 0.633 after the top-bar move.
+- `cargo check --workspace` and `cargo test --workspace` run after commit 10.
+- `git diff --stat -- negpy negpy_core` must stay empty.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
@@ -37,9 +32,8 @@ This session completed the 10-commit budget. E5 panel bodies and capture navigat
 - Capture with `NEGPY_GUI_PROFILE=/home/bruno/Dokumenty/NegPy` and
   `NEGPY_GUI_FOLDER=/home/bruno/WORK/svetovy_vylet/skeny/vv9`.
 - Generated captures live under `tests/gui/actual/` and stay untracked.
+- The capture must be exactly 1920x1600 or an integer scale; never squash it.
 - A collapsible body must advance the parent cursor by its measured height,
   or the next card overlaps it.
-- A segmented choice hit-tests inside its own child UI; a parent-wide
-  `allocate_rect(..., Sense::hover())` duplicates widget IDs.
+- A slider row must allocate only its own row, not the section rect.
 - The 10-commit request supersedes the 5-commit checkpoint this session.
-- Headless desktop helpers live under `session/`, not as module filenames.

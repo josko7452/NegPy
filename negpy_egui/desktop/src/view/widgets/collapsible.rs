@@ -91,13 +91,15 @@ impl CollapsibleSection {
             theme.text_primary,
         );
         let mut right = header.right() - f32::from(theme.space_lg);
-        if self.has_guide {
-            right = paint_header_icon(ui, right, header.center().y, Icon::Info, &theme);
-        }
+        right = paint_header_icon(ui, right, header.center().y, Icon::ChevronDown, &theme);
+        right = paint_header_icon(ui, right, header.center().y, Icon::Reset, &theme);
+        right = paint_header_icon(ui, right, header.center().y, Icon::Circle, &theme);
         if self.modified > 0 {
-            right = paint_header_icon(ui, right, header.center().y, Icon::TurnPage, &theme);
+            right = paint_header_icon(ui, right, header.center().y, Icon::Tag, &theme);
         }
-        let _ = right;
+        if self.has_guide {
+            let _ = paint_header_icon(ui, right, header.center().y, Icon::Info, &theme);
+        }
         if response.clicked() {
             self.expanded = !self.expanded;
         }
