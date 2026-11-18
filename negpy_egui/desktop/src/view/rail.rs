@@ -19,6 +19,7 @@ use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 
+pub mod frame_geometry;
 pub mod library;
 
 /// The rail's fixed width at the golden window.
@@ -41,6 +42,7 @@ pub struct RailState {
     pub shadow_density: CompactSlider,
     pub highlight_density: CompactSlider,
     pub library: library::LibraryState,
+    pub geometry: frame_geometry::GeometryState,
 }
 
 impl RailState {
@@ -86,6 +88,7 @@ impl RailState {
                 SliderSpec::new(-1.0, 1.0, 0.01, 2).with_default(0.0),
             ),
             library: library::LibraryState::default(),
+            geometry: frame_geometry::GeometryState::default(),
         }
     }
 
@@ -185,14 +188,18 @@ impl RailState {
             self.frame_subtab.current = picked;
         }
         ui.add_space(f32::from(Theme::default().space_sm));
-        let cards = frame_cards(self.frame_subtab.current_key());
-        if !cards.is_empty() {
-            let _ = TabSummary::new(cards.len()).show(ui);
-        }
-        ui.add_space(f32::from(Theme::default().space_sm));
-        for title in cards {
-            self.show_collapsed(ui, title, 0);
+        if self.frame_subtab.current_key() == "geometry" {
+            self.geometry.show(ui);
+        } else {
+            let cards = frame_cards(self.frame_subtab.current_key());
+            if !cards.is_empty() {
+                let _ = TabSummary::new(cards.len()).show(ui);
+            }
             ui.add_space(f32::from(Theme::default().space_sm));
+            for title in cards {
+                self.show_collapsed(ui, title, 0);
+                ui.add_space(f32::from(Theme::default().space_sm));
+            }
         }
     }
 
