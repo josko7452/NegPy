@@ -20,6 +20,7 @@ use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 
 pub mod frame_color;
+pub mod frame_finish;
 pub mod frame_geometry;
 pub mod frame_tone;
 pub mod library;
@@ -47,6 +48,7 @@ pub struct RailState {
     pub geometry: frame_geometry::GeometryState,
     pub exposure: frame_tone::ExposureState,
     pub look: frame_color::LookState,
+    pub finish: frame_finish::FinishState,
 }
 
 impl RailState {
@@ -95,6 +97,7 @@ impl RailState {
             geometry: frame_geometry::GeometryState::default(),
             exposure: frame_tone::ExposureState::default(),
             look: frame_color::LookState::default(),
+            finish: frame_finish::FinishState::default(),
         }
     }
 
@@ -203,6 +206,9 @@ impl RailState {
             }
             "color" => {
                 self.look.show(ui);
+            }
+            "finish" => {
+                self.finish.show(ui);
             }
             key => {
                 let cards = frame_cards(key);
