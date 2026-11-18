@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 17:20 | **Last Commit:** `pending` desktop: build the rail view
+**Last Updated:** 2026-11-18 17:20 | **Last Commit:** `pending` desktop: align the shell bands
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -12,6 +12,7 @@ This session: work 10 commits, targeted tests per commit, then the workspace run
 3. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `pending` desktop: align the canvas, strip and toolbar bands to the golden geometry.
 - `pending` desktop: build the rail view with the real main strip, Analysis and Setup.
 - `pending` desktop: add flat rows with fills, pills and ⋮.
 - `pending` desktop: add triage badges and elided labels.

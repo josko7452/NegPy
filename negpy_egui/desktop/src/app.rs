@@ -8,6 +8,7 @@ use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOpt
 use crate::fixture::ReferenceFixture;
 use crate::frame_source::FrameImage;
 use crate::styles::icons::Icon;
+use crate::styles::layout::TOP_ROW_HEIGHT;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
 use crate::view::rail::{RAIL_WIDTH, RailState};
@@ -238,29 +239,37 @@ fn paint_shell(
     let margin = 8.0;
     let top = Rect::from_min_max(
         screen.min + Vec2::new(margin, margin),
-        egui::pos2(screen.right() - margin, screen.top() + 44.0),
+        egui::pos2(screen.right() - margin, screen.top() + TOP_ROW_HEIGHT),
+    );
+    let top = Rect::from_min_max(
+        screen.min + Vec2::new(margin, margin),
+        egui::pos2(
+            screen.right() - margin,
+            top.bottom() + Vec2::new(0.0, margin).y,
+        ),
     );
     painter.rect_filled(top, 0.0, surface());
     painter.text(
-        top.left_center(),
+        top.left_center() + Vec2::new(0.0, -4.0),
         egui::Align2::LEFT_CENTER,
         "P5080635.ORF · 7792 x 10388 px",
         egui::FontId::proportional(13.0),
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
     );
 
-    let body_top = top.bottom() + margin;
+    let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
     let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
+    let rail_width = if screen.width() >= 1800.0 {
+        RAIL_WIDTH
+    } else {
+        rail_width
+    };
     let rail = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
     );
-    let strip_height = if view.strip_open {
-        (screen.height() * 0.155).clamp(180.0, 248.0)
-    } else {
-        0.0
-    };
-    let toolbar_height = 52.0;
+    let strip_height = if view.strip_open { 249.0 } else { 0.0 };
+    let toolbar_height = 44.0;
     let canvas_width = rail.left() - margin - (screen.left() + margin);
     let canvas_bottom = screen.bottom() - margin - toolbar_height - strip_height;
     let canvas_rect = Rect::from_min_size(
