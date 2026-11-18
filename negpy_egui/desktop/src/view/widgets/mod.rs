@@ -3,8 +3,10 @@
 
 pub mod collapsible;
 pub mod compact_slider;
+pub mod elided_label;
 pub mod field_row;
 pub mod fold;
+pub mod marks;
 pub mod overflow_bar;
 pub mod panel_tab;
 pub mod segmented_choice;
