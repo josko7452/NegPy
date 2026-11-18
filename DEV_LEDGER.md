@@ -1,16 +1,21 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 00:35 | **Last Commit:** `HEAD` desktop: put Find over the rail in the top bar
+**Last Updated:** 2026-11-19 02:00 | **Last Commit:** `HEAD` desktop: match the Film Strip tile track
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
-This session is working the next 10 commits; 8 are done. E5 shell parity is active.
+This session completed the 10-commit budget. E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: match the Film Strip tile geometry and scroll track.
+1. [ ] E5: close the remaining shell gap. All 20 captures score 0.568 to
+   0.681; the 0.80 gate is still 0.12 away. The strip track and rail header
+   chrome are now in place; the next pass should measure the toolbar and
+   rail card interiors.
 2. [ ] E5: replace reference-only panel values with backend services.
 3. [ ] E6: start the dialogs over the new rail panels.
 
 ## Completed (Recent)
+- `ddaf05c6` desktop: match the Film Strip tile track.
+- `c8191452` desktop: show the card header chrome.
 - `7eef57f5` desktop: put Find over the rail in the top bar.
 - `a226baca` desktop: paint the grouped canvas bar.
 - `04c2f5a9` desktop: name the canvas bar icon roles.
@@ -21,8 +26,11 @@ This session is working the next 10 commits; 8 are done. E5 shell parity is acti
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- Fresh 1920x1600 capture: Roll layout 0.633 after the top-bar move.
-- `cargo check --workspace` and `cargo test --workspace` run after commit 10.
+- Fresh 1920x1600 capture: Roll layout 0.645 after the last shell fix.
+- `cargo check --workspace` passes. `cargo test --workspace` passes on a
+  rerun; the first run hit a flaky exact-4 ms timing assertion in
+  `kernel::system::timing`, which passes in isolation and on rerun.
+- Full golden comparison: 20 captures, 0.568 to 0.681; none at 0.80.
 - `git diff --stat -- negpy negpy_core` must stay empty.
 
 ## Constraints / Gotchas

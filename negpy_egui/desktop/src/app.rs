@@ -413,7 +413,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
         );
     };
 
-    let mode = Rect::from_min_size(egui::pos2(x, top), Vec2::new(112.0, row_height));
+    let mode = Rect::from_min_size(egui::pos2(x, top), Vec2::new(136.0, row_height));
     track(painter, mode);
     let segment = mode.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
     let photo = Rect::from_min_size(
@@ -431,17 +431,27 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
         egui::Stroke::new(1.0_f32, theme.border_checked),
         egui::StrokeKind::Inside,
     );
-    flat(painter, photo, Icon::Image, theme.text_primary);
+    flat(
+        painter,
+        Rect::from_min_size(photo.min, Vec2::new(24.0, photo.height())),
+        Icon::Image,
+        theme.text_primary,
+    );
     painter.text(
-        photo.right_center() + Vec2::new(5.0, 0.0),
+        photo.left_center() + Vec2::new(26.0, 0.0),
         egui::Align2::LEFT_CENTER,
         "Photo",
         egui::FontId::proportional(13.0),
         theme.text_primary,
     );
-    flat(painter, roll, Icon::Film, theme.text_hint);
+    flat(
+        painter,
+        Rect::from_min_size(roll.min, Vec2::new(24.0, roll.height())),
+        Icon::Film,
+        theme.text_hint,
+    );
     painter.text(
-        roll.right_center() + Vec2::new(5.0, 0.0),
+        roll.left_center() + Vec2::new(26.0, 0.0),
         egui::Align2::LEFT_CENTER,
         "Roll",
         egui::FontId::proportional(13.0),
