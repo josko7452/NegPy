@@ -32,6 +32,7 @@ pub fn definitions() -> FontDefinitions {
         .get_mut(&FontFamily::Proportional)
         .expect("egui has a proportional family");
     proportional.insert(0, "negfe-ui".to_string());
+    super::icons::install(&mut fonts);
     fonts
 }
 
@@ -65,6 +66,7 @@ mod tests {
         let fonts = definitions();
         assert_eq!(fonts.families[&FontFamily::Proportional][0], "negfe-ui");
         assert!(fonts.font_data.contains_key("negfe-ui"));
+        assert!(fonts.font_data.contains_key("phosphor"));
     }
 
     #[test]

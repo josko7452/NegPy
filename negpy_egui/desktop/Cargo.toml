@@ -13,6 +13,7 @@ negpy-backend = { path = "../backend" }
 eframe = { version = "0.32", features = ["wgpu"] }
 egui = "0.32"
 egui_extras = "0.32"
+egui-phosphor = "0.10"
 egui-wgpu = "0.32"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
 serde = { version = "1.0.229", features = ["derive"] }
