@@ -6,6 +6,7 @@
 
 use eframe::egui::{self, Align2, Color32, FontId, Rect, Stroke, TextureId, Vec2};
 
+use crate::styles::icons::Icon;
 use crate::styles::layout::{DEFAULT_BUTTON_HEIGHT, FIELD_LABEL_WIDTH, HEADER_BUTTON_SIZE};
 use crate::styles::theme::Theme;
 
@@ -113,7 +114,7 @@ fn paint_navigation(painter: &egui::Painter, canvas: Rect, theme: &Theme) {
             egui::pos2(canvas.center().x - 56.0, y),
             Vec2::new(36.0, 28.0),
         ),
-        "‹",
+        Icon::ChevronLeft.glyph(),
         theme,
     );
     painter.text(
@@ -129,7 +130,7 @@ fn paint_navigation(painter: &egui::Painter, canvas: Rect, theme: &Theme) {
             egui::pos2(canvas.center().x + 56.0, y),
             Vec2::new(36.0, 28.0),
         ),
-        "›",
+        Icon::ChevronRight.glyph(),
         theme,
     );
 }
@@ -176,7 +177,7 @@ fn paint_controls(painter: &egui::Painter, panel: Rect, theme: &Theme) {
             egui::pos2(box_left + box_width - 38.0, 126.0 - 6.0),
             Vec2::new(38.0, 38.0),
         ),
-        "⟳",
+        Icon::TurnPage.glyph(),
         theme,
     );
     paint_slider(
@@ -238,7 +239,7 @@ fn paint_controls(painter: &egui::Painter, panel: Rect, theme: &Theme) {
             egui::pos2(panel.left(), 420.0),
             Vec2::new(panel.width(), 38.0),
         ),
-        "Pick Frames",
+        format!("{} Pick Frames", Icon::PickFrames.glyph()).as_str(),
         theme,
     );
 
@@ -292,7 +293,7 @@ fn paint_controls(painter: &egui::Painter, panel: Rect, theme: &Theme) {
         ),
         Vec2::splat(HEADER_BUTTON_SIZE),
     );
-    paint_button(painter, info, "i", theme);
+    paint_button(painter, info, Icon::Help.glyph(), theme);
     let cancel = Rect::from_min_size(
         egui::pos2(panel.right() - 2.0 * 72.0 - theme.space_md as f32, footer),
         Vec2::new(72.0, DEFAULT_BUTTON_HEIGHT),
@@ -352,7 +353,7 @@ fn paint_field(
     painter.text(
         field.right_center() + Vec2::new(-10.0, 0.0),
         Align2::RIGHT_CENTER,
-        "‹",
+        Icon::ChevronDown.glyph(),
         FontId::proportional(f32::from(theme.font_size_base)),
         theme.text_hint,
     );

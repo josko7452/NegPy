@@ -7,6 +7,7 @@ use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOpt
 
 use crate::fixture::ReferenceFixture;
 use crate::frame_source::FrameImage;
+use crate::styles::icons::Icon;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
 
@@ -43,6 +44,19 @@ impl Tab {
             Self::Metadata => "Metadata",
             Self::Export => "Export",
             Self::Scan => "Scan",
+        }
+    }
+
+    /// The icon above the tab label.
+    #[must_use]
+    pub fn icon(self) -> Icon {
+        match self {
+            Self::Library => Icon::Grid,
+            Self::Roll => Icon::Film,
+            Self::Frame => Icon::Image,
+            Self::Metadata => Icon::Metadata,
+            Self::Export => Icon::Export,
+            Self::Scan => Icon::Scan,
         }
     }
 
@@ -323,16 +337,24 @@ fn paint_rail(painter: &egui::Painter, rail: Rect, view: &ViewState) {
                 surface()
             },
         );
+        let color = if selected {
+            Color32::from_rgb(0xe4, 0xe4, 0xe4)
+        } else {
+            Color32::from_rgb(0xa4, 0xa4, 0xa4)
+        };
         painter.text(
-            rect.center(),
+            rect.center() - Vec2::new(0.0, 9.0),
+            egui::Align2::CENTER_CENTER,
+            tab.icon().glyph(),
+            egui::FontId::proportional(16.0),
+            color,
+        );
+        painter.text(
+            rect.center() + Vec2::new(0.0, 15.0),
             egui::Align2::CENTER_CENTER,
             tab.label(),
-            egui::FontId::proportional(13.0),
-            if selected {
-                Color32::from_rgb(0xe4, 0xe4, 0xe4)
-            } else {
-                Color32::from_rgb(0xa4, 0xa4, 0xa4)
-            },
+            egui::FontId::proportional(11.0),
+            color,
         );
     }
 
@@ -344,6 +366,13 @@ fn paint_rail(painter: &egui::Painter, rail: Rect, view: &ViewState) {
     painter.rect_stroke(search, 4.0, line(), egui::StrokeKind::Inside);
     painter.text(
         search.left_center() + Vec2::new(12.0, 0.0),
+        egui::Align2::LEFT_CENTER,
+        Icon::Search.glyph(),
+        egui::FontId::proportional(14.0),
+        Color32::from_rgb(0x8b, 0x8b, 0x8b),
+    );
+    painter.text(
+        search.left_center() + Vec2::new(32.0, 0.0),
         egui::Align2::LEFT_CENTER,
         "Find a control, card or action...",
         egui::FontId::proportional(13.0),
@@ -414,6 +443,14 @@ mod tests {
             assert_eq!(Tab::from_key(&tab.label().to_lowercase()), tab);
         }
         assert_eq!(Tab::from_key("unknown"), Tab::Roll);
+    }
+
+    #[test]
+    fn every_tab_has_a_distinct_icon_role() {
+        let icons: Vec<_> = Tab::ALL.iter().map(|tab| tab.icon()).collect();
+        for (index, icon) in icons.iter().enumerate() {
+            assert!(!icons[..index].contains(icon));
+        }
     }
 
     #[test]
