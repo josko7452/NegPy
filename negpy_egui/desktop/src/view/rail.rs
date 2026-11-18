@@ -24,6 +24,7 @@ pub mod frame_finish;
 pub mod frame_geometry;
 pub mod frame_tone;
 pub mod library;
+pub mod metadata;
 
 /// The rail's fixed width at the golden window.
 pub const RAIL_WIDTH: f32 = 514.0;
@@ -49,6 +50,7 @@ pub struct RailState {
     pub exposure: frame_tone::ExposureState,
     pub look: frame_color::LookState,
     pub finish: frame_finish::FinishState,
+    pub metadata: metadata::MetadataState,
 }
 
 impl RailState {
@@ -98,6 +100,7 @@ impl RailState {
             exposure: frame_tone::ExposureState::default(),
             look: frame_color::LookState::default(),
             finish: frame_finish::FinishState::default(),
+            metadata: metadata::MetadataState::default(),
         }
     }
 
@@ -151,7 +154,9 @@ impl RailState {
             }
             Tab::Roll => self.show_roll(ui),
             Tab::Frame => self.show_frame(ui),
-            Tab::Metadata => self.show_generic(ui, "Metadata"),
+            Tab::Metadata => {
+                self.metadata.show(ui);
+            }
             Tab::Export => self.show_generic(ui, "Export"),
             Tab::Scan => self.show_generic(ui, "Scan"),
         }
