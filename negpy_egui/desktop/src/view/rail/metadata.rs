@@ -98,6 +98,16 @@ impl Default for MetadataState {
 }
 
 impl MetadataState {
+    /// Select a sub-tab by its manifest key.
+    pub fn show_subtab(&mut self, key: &str) {
+        self.page = match key {
+            "process" => 1,
+            "presets" => 2,
+            "gear" => 3,
+            _ => 0,
+        };
+    }
+
     /// Paint the tab. Returns whether the edit changed.
     pub fn show(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;

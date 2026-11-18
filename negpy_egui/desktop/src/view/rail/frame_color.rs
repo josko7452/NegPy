@@ -1,6 +1,6 @@
 //! The Frame tab's Look page: color, detail, alternative processes and toning.
 
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 
 use crate::styles::templates::{TextRole, hint_label, section_subheader};
 use crate::styles::theme::Theme;

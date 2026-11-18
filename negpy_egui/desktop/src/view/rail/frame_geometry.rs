@@ -1,6 +1,6 @@
 //! The Frame tab's Geometry page: the crop and the frame's own straightening.
 
-use eframe::egui::{self, RichText, Ui};
+use eframe::egui::{RichText, Ui};
 
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;

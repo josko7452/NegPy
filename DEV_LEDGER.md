@@ -1,36 +1,33 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 18:10 | **Last Commit:** `HEAD` desktop: fit the canvas and strip tiles
+**Last Updated:** 2026-11-18 16:20 | **Last Commit:** `HEAD` desktop: build the Scan rail tab
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
-This session completed the 10-commit budget. E5 remains open.
+This session completed the 10-commit budget. E5 panel bodies and capture navigation are built.
 
 ## Next Steps (Ordered)
-1. [ ] E5: match the rail card stack to the golden set (headers, heights, folds);
-   the 0.80 layout gate is still failing.
-2. [ ] E5: fill the Metadata, Export and Scan cards, then the Frame card bodies.
-3. [ ] E5: rerun every capture with the real profile and roll, not stub paths.
-4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
+1. [ ] E5: correct the shared shell bands; the rail still scores below the
+   0.80 layout gate.
+2. [ ] E5: replace reference-only panel values with backend services as each
+   panel gets wired to the controller.
+3. [ ] E6: start the dialogs over the new rail panels.
 
 ## Completed (Recent)
-- `8eccce30` desktop: fit the canvas and strip tiles to the golden boxes.
-- `e2b8ad5c` desktop: fill the Analysis and Roll card bodies.
-- `748665d9` desktop: align the canvas, strip and toolbar bands.
-- `599fd35d` desktop: build the rail view on the shared controls.
-- `5f07c2e6` desktop: add flat rows with fills, pills and ⋮.
-- `fbfbdb23` desktop: add triage badges and elided labels.
-- `5feb7a5a` desktop: add the sort control with its direction choice.
-- `3779b8b6` desktop: add the sub-tab strip with its saved key.
-- `c4eb0f2e` desktop: add the overflow bar with a pinned tab.
-- `9445ab83` desktop: add the panel tab with chip and edited dot.
+- `986be01e` desktop: build the Export rail tab.
+- `5d6a3e2d` desktop: build the Metadata rail tab.
+- `00955bc8` desktop: build the Finish frame page.
+- `a42e181a` desktop: build the Look frame page.
+- `cb9bac09` desktop: build the Exposure frame page.
+- `c03aac07` desktop: build the Geometry frame page.
+- `6f4623f1` desktop: build the Library rail tab.
+- `dcccd4d0` desktop: add the tab summary bar.
 
 ## Verification
-- `cargo fmt --all -- --check`, `cargo check --workspace` and
-  `cargo test --workspace` pass after commit 10.
-- Capture writes 20 PNGs with the real frame. Mean 0.503, best 0.673; no image
-  reaches the 0.80 layout gate.
-- `cargo tree -p negpy-backend` shows no PyO3, numpy, egui or eframe.
+- Targeted `cargo test -p negpy-desktop --lib view::rail` passes per commit.
+- `cargo check --workspace` and `cargo test --workspace` pass after commit 10.
+- The real-profile capture writes all 20 PNGs with the selected tab and
+  sub-tab. Layout scores run 0.455 to 0.673; none reaches the 0.80 gate.
 - `git diff --stat -- negpy negpy_core` is empty.
 
 ## Constraints / Gotchas

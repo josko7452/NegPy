@@ -112,7 +112,11 @@ impl ViewState {
     /// Set the state named by one manifest entry.
     pub fn from_capture(group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) -> Self {
         Self {
-            tab: Tab::from_key(tab),
+            tab: if tab.is_empty() {
+                Tab::from_key(group)
+            } else {
+                Tab::from_key(tab)
+            },
             subtab: subtab.to_string(),
             group: group.to_string(),
             view: view.to_string(),
@@ -399,5 +403,13 @@ mod tests {
         assert_eq!(view.tab, Tab::Frame);
         assert_eq!(view.subtab, "tone");
         assert_eq!(view.scroll, 250);
+    }
+
+    #[test]
+    fn a_capture_without_a_tab_key_reads_the_group() {
+        let view = ViewState::from_capture("metadata", "", "shot", "canvas", 0.0);
+        assert_eq!(view.tab, Tab::Metadata);
+        let view = ViewState::from_capture("scan", "", "", "canvas", 0.0);
+        assert_eq!(view.tab, Tab::Scan);
     }
 }

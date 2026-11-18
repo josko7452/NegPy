@@ -26,6 +26,7 @@ pub mod frame_geometry;
 pub mod frame_tone;
 pub mod library;
 pub mod metadata;
+pub mod scan;
 
 /// The rail's fixed width at the golden window.
 pub const RAIL_WIDTH: f32 = 514.0;
@@ -53,6 +54,7 @@ pub struct RailState {
     pub finish: frame_finish::FinishState,
     pub metadata: metadata::MetadataState,
     pub export: export::ExportState,
+    pub scan: scan::ScanState,
 }
 
 impl RailState {
@@ -68,6 +70,14 @@ impl RailState {
         analysis.expanded = view.analysis_open;
         let mut setup = CollapsibleSection::new("Setup").with_guide();
         setup.expanded = true;
+        let mut metadata = metadata::MetadataState::default();
+        let mut export = export::ExportState::default();
+        if view.tab == Tab::Metadata {
+            metadata.show_subtab(&view.subtab);
+        }
+        if view.tab == Tab::Export {
+            export.show_subtab(&view.subtab);
+        }
         Self {
             tab: view.tab,
             frame_subtab,
@@ -102,8 +112,9 @@ impl RailState {
             exposure: frame_tone::ExposureState::default(),
             look: frame_color::LookState::default(),
             finish: frame_finish::FinishState::default(),
-            metadata: metadata::MetadataState::default(),
-            export: export::ExportState::default(),
+            metadata,
+            export,
+            scan: scan::ScanState::default(),
         }
     }
 
@@ -163,21 +174,10 @@ impl RailState {
             Tab::Export => {
                 self.export.show(ui);
             }
-            Tab::Scan => self.show_generic(ui, "Scan"),
+            Tab::Scan => {
+                self.scan.show(ui);
+            }
         }
-    }
-
-    fn show_generic(&mut self, ui: &mut Ui, title: &str) {
-        let mut section = CollapsibleSection::new(title).with_guide();
-        section.show(ui, |ui| {
-            let _ = card(ui, |ui| {
-                ui.label(
-                    RichText::new("No cards on this tab yet.")
-                        .size(f32::from(Theme::default().font_size_small))
-                        .color(Theme::default().text_muted),
-                );
-            });
-        });
     }
 
     fn show_roll(&mut self, ui: &mut Ui) {
@@ -624,5 +624,13 @@ mod tests {
         view.tab = Tab::Frame;
         let state = RailState::for_view(&view);
         assert_eq!(state.frame_subtab.current_key(), "tone");
+    }
+
+    #[test]
+    fn a_capture_subtab_selects_metadata_and_export_pages() {
+        let view = ViewState::from_capture("metadata", "", "process", "canvas", 0.0);
+        assert_eq!(RailState::for_view(&view).metadata.page, 1);
+        let view = ViewState::from_capture("export", "", "proof", "canvas", 0.0);
+        assert_eq!(RailState::for_view(&view).export.page, 1);
     }
 }

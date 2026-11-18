@@ -1,6 +1,6 @@
 //! The Export tab: the output intent, the file form, the proof and the export action.
 
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 
 use crate::styles::icons::Icon;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
@@ -99,6 +99,16 @@ impl Default for ExportState {
 }
 
 impl ExportState {
+    /// Select a sub-tab by its manifest key.
+    pub fn show_subtab(&mut self, key: &str) {
+        self.page = match key {
+            "proof" => 1,
+            "presets" => 2,
+            "alongside" => 3,
+            _ => 0,
+        };
+    }
+
     /// Paint the tab. Returns whether the edit changed.
     pub fn show(&mut self, ui: &mut Ui) -> bool {
         let tabs = export_tabs();

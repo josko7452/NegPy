@@ -1,6 +1,6 @@
 //! The Frame tab's Exposure page: filtration, tone, paper response and local work.
 
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;

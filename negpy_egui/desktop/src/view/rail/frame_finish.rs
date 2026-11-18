@@ -1,6 +1,6 @@
 //! The Frame tab's Finish page: retouch, then the post-crop finishing effects.
 
-use eframe::egui::{self, Ui};
+use eframe::egui::Ui;
 
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
