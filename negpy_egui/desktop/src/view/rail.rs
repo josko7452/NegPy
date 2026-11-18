@@ -17,6 +17,7 @@ use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
+use crate::view::widgets::tab_header::TabSummary;
 
 /// The rail's fixed width at the golden window.
 pub const RAIL_WIDTH: f32 = 514.0;
@@ -182,11 +183,12 @@ impl RailState {
             self.frame_subtab.current = picked;
         }
         ui.add_space(f32::from(Theme::default().space_sm));
-        let mut header = CollapsibleSection::new("2 of 2 cards edited").with_guide();
-        header.expanded = false;
-        header.show(ui, |_| {});
+        let cards = frame_cards(self.frame_subtab.current_key());
+        if !cards.is_empty() {
+            let _ = TabSummary::new(cards.len()).show(ui);
+        }
         ui.add_space(f32::from(Theme::default().space_sm));
-        for title in frame_cards(self.frame_subtab.current_key()) {
+        for title in cards {
             self.show_collapsed(ui, title, 0);
             ui.add_space(f32::from(Theme::default().space_sm));
         }

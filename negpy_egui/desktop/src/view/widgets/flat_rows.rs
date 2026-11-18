@@ -139,6 +139,7 @@ pub fn two_line_rects(row: Rect, left: f32, right: f32) -> (Rect, Rect) {
 }
 
 /// One two-line row, ready for a fill and a click.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FlatRow {
     pub name: String,
     pub detail: String,

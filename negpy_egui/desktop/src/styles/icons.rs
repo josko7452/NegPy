@@ -35,6 +35,7 @@ pub enum Icon {
     Stack,
     Grid,
     Menu,
+    Reset,
 }
 
 impl Icon {
@@ -68,6 +69,7 @@ impl Icon {
             Self::Stack => phosphor::STACK,
             Self::Grid => phosphor::SQUARES_FOUR,
             Self::Menu => phosphor::DOTS_THREE,
+            Self::Reset => phosphor::ARROW_COUNTER_CLOCKWISE,
         }
     }
 }
@@ -113,6 +115,7 @@ mod tests {
             Icon::Check,
             Icon::Circle,
             Icon::Folder,
+            Icon::Reset,
         ] {
             assert!(!icon.glyph().is_empty());
         }
