@@ -93,4 +93,25 @@ impl AppConfig {
             canvas_zoom_max: 8.0,
         }
     }
+
+    /// Fill every path field from one user directory, as the Python startup does.
+    #[must_use]
+    pub fn for_user_dir(user_dir: &std::path::Path) -> Self {
+        let joined = |name: &str| user_dir.join(name).display().to_string();
+        Self {
+            edits_db_path: joined("edits.db"),
+            settings_db_path: joined("settings.db"),
+            presets_dir: joined("presets"),
+            cache_dir: joined("cache"),
+            user_icc_dir: joined("icc"),
+            crosstalk_dir: joined("crosstalk"),
+            sensor_dir: joined("sensor"),
+            flatfield_dir: joined("flatfield"),
+            gear_dir: joined("gear"),
+            default_export_dir: joined("export"),
+            adobe_rgb_profile: joined("icc/AdobeCompat-v4.icc"),
+            override_toml_path: joined("override.toml"),
+            ..Self::with_defaults()
+        }
+    }
 }

@@ -1,10 +1,10 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 12:15 | **Last Commit:** `6b5da499` desktop: build controls on the shared theme
+**Last Updated:** 2026-11-18 14:40 | **Last Commit:** `aa9afd15` desktop: build controls on the shared theme
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
-NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; the folder rename is opportunistic.
 **Source of truth: `negpy_egui/AGENTS.md`**; `MIGRATION_PLAN.md` is advisory.
+This session: work 10 commits, targeted tests per commit, then the workspace run.
 
 ## Next Steps (Ordered)
 1. [ ] E0: load the reference frame and open the Contact Sheet dialog in the capture.
@@ -13,6 +13,7 @@ NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; the folder rename is opport
 4. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- E0 frame load: backend display frame, fixture source paths, fitted canvas texture.
 - `6b5da499` desktop: build controls on the shared theme.
 - `68998a7e` desktop: add the shared layout metrics.
 - `0b3c2a4b` desktop: add the color vision palettes.
@@ -22,13 +23,11 @@ NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; the folder rename is opport
 - `4256b860` tests: add the binding golden GUI set.
 - `dc7d2e6d` desktop: capture the golden matrix.
 - `60762a7f` desktop: read the golden capture manifest.
-- `6cce2266` desktop: capture screenshots as PNG.
 
 ## Verification
 - Targeted tests passed per commit; `cargo fmt --all -- --check` clean.
 - `cargo test --workspace` passed after the tenth commit.
-- Layout scores 0.425-0.526 across the 20 captures (gate 0.80).
-- E0 capture wrote 20 PNGs plus `manifest.json`.
+- Capture with `NEGPY_GUI_FOLDER` and `NEGPY_GUI_PROFILE` shows the real frame.
 
 ## Audit
 - **D10:** GPU engine, WGSL shaders, ImageProcessor cache coordination and the
@@ -43,6 +42,7 @@ NegFe owns `negfe/assets/` and `~/Dokumenty/NegFe/`; the folder rename is opport
 - GUI parity is a layout score of 0.80, not pixel identity.
 - The capture binary is `cargo run -p negpy-desktop --bin negfe-capture -- --golden tests/gui/golden/tall`.
 - Generated captures live under `tests/gui/actual/` and stay untracked.
-- The capture shell paints the scored regions; frame loading and dialog capture remain.
+- The capture binary reads `NEGPY_GUI_FOLDER` and `NEGPY_GUI_PROFILE` first; the
+  manifest `source` block is the fallback.
 - The 10-commit request supersedes the 5-commit checkpoint.
 - Headless desktop helpers live under `session/`, not as module filenames.

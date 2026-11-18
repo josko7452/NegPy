@@ -46,6 +46,27 @@ pub struct GoldenManifest {
     pub width: usize,
     pub height: usize,
     pub captures: Vec<CaptureEntry>,
+    /// The folder the capture reads the frame from, when the manifest names one.
+    #[serde(default)]
+    pub source_folder: String,
+    /// The copied user directory the capture reads edits from.
+    #[serde(default)]
+    pub source_profile: String,
+    #[serde(default)]
+    pub source: Option<ManifestSource>,
+}
+
+/// The paths the golden capture was produced from.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct ManifestSource {
+    #[serde(default)]
+    pub profile: String,
+    #[serde(default)]
+    pub folder: String,
+    #[serde(default)]
+    pub frame: String,
+    #[serde(default)]
+    pub rig: String,
 }
 
 /// The state the reference roll asks the window to show.
@@ -138,6 +159,51 @@ impl GoldenManifest {
             .collect()
     }
 
+    /// The folder a capture reads its frame from: the explicit source folder, then the
+    /// recorded source block, then the manifest's own folder when it is a path.
+    #[must_use]
+    pub fn frame_folder(&self) -> Option<PathBuf> {
+        let explicit = std::env::var_os("NEGPY_GUI_FOLDER").map(PathBuf::from);
+        explicit
+            .or_else(|| {
+                self.source
+                    .as_ref()
+                    .map(|source| PathBuf::from(&source.folder))
+                    .filter(|path| path.is_dir())
+            })
+            .or_else(|| {
+                (!self.source_folder.is_empty())
+                    .then(|| PathBuf::from(&self.source_folder))
+                    .filter(|path| path.is_dir())
+            })
+            .or_else(|| {
+                let path = PathBuf::from(&self.folder);
+                path.is_dir().then_some(path)
+            })
+    }
+
+    /// The user directory a capture copies and reads edits from.
+    #[must_use]
+    pub fn profile_dir(&self) -> Option<PathBuf> {
+        std::env::var_os("NEGPY_GUI_PROFILE")
+            .map(PathBuf::from)
+            .or_else(|| {
+                self.source
+                    .as_ref()
+                    .map(|source| PathBuf::from(&source.profile))
+                    .filter(|path| path.is_dir())
+            })
+            .or_else(|| {
+                (!self.source_profile.is_empty())
+                    .then(|| PathBuf::from(&self.source_profile))
+                    .filter(|path| path.is_dir())
+            })
+            .or_else(|| {
+                let path = PathBuf::from(&self.profile);
+                path.is_dir().then_some(path)
+            })
+    }
+
     /// Write the manifest to `path` with a trailing newline.
     pub fn write(&self, path: &Path) -> Result<(), String> {
         let text = serde_json::to_string_pretty(self)
@@ -195,6 +261,29 @@ mod tests {
         let mut manifest: GoldenManifest = serde_json::from_str(MANIFEST).unwrap();
         manifest.captures[0].width = 1921;
         assert!(manifest.validate().is_err());
+    }
+
+    #[test]
+    fn a_manifest_names_its_source_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = dir.path().join("profile");
+        let roll = dir.path().join("roll");
+        std::fs::create_dir_all(&profile).unwrap();
+        std::fs::create_dir_all(&roll).unwrap();
+        let text = r#"{
+            "profile": "copied profile",
+            "folder": "roll",
+            "frame": "P5080635.ORF",
+            "width": 1920,
+            "height": 1600,
+            "captures": [],
+            "source": {"profile": "__PROFILE__", "folder": "__ROLL__", "frame": "P5080635.ORF", "rig": ""}
+        }"#
+        .replace("__PROFILE__", &profile.display().to_string())
+        .replace("__ROLL__", &roll.display().to_string());
+        let manifest: GoldenManifest = serde_json::from_str(&text).unwrap();
+        assert_eq!(manifest.frame_folder().unwrap(), roll);
+        assert_eq!(manifest.profile_dir().unwrap(), profile);
     }
 
     #[test]

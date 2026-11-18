@@ -2,6 +2,7 @@
 
 pub mod auto_geometry;
 pub mod base_read;
+pub mod display_frame;
 pub mod import;
 pub mod lens;
 pub mod prefetch_policy;

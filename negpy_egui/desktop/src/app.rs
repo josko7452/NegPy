@@ -3,9 +3,10 @@
 //! The shell is intentionally small during the theme port: it paints the fixed regions
 //! the golden comparator scores, so every capture has the same geometry as NegPy.
 
-use eframe::egui::{self, Color32, Frame, Rect, Stroke, Vec2};
+use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
 
 use crate::fixture::ReferenceFixture;
+use crate::frame_source::FrameImage;
 use crate::styles::theme::Theme;
 
 /// The visible tab of the right rail.
@@ -69,6 +70,7 @@ pub struct ViewState {
     pub analysis_open: bool,
     pub analysis_log: bool,
     pub strip_open: bool,
+    pub texture_size: Option<Vec2>,
 }
 
 impl ViewState {
@@ -84,6 +86,7 @@ impl ViewState {
             analysis_open: fixture.fixture.analysis.open,
             analysis_log: fixture.fixture.analysis.log,
             strip_open: fixture.fixture.strip.open,
+            texture_size: None,
         }
     }
 
@@ -98,6 +101,7 @@ impl ViewState {
             analysis_open: true,
             analysis_log: true,
             strip_open: true,
+            texture_size: None,
         }
     }
 }
@@ -105,6 +109,8 @@ impl ViewState {
 /// The desktop application state.
 pub struct NegFeApp {
     pub view: ViewState,
+    pub frame: Option<FrameImage>,
+    texture: Option<TextureHandle>,
 }
 
 impl NegFeApp {
@@ -113,6 +119,8 @@ impl NegFeApp {
     pub fn new(fixture: &ReferenceFixture) -> Self {
         Self {
             view: ViewState::from_fixture(fixture),
+            frame: None,
+            texture: None,
         }
     }
 
@@ -121,11 +129,20 @@ impl NegFeApp {
     pub fn for_capture(group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) -> Self {
         Self {
             view: ViewState::from_capture(group, tab, subtab, view, scroll),
+            frame: None,
+            texture: None,
         }
     }
 
+    /// Show a decoded frame on the canvas.
+    pub fn set_frame(&mut self, frame: FrameImage) {
+        self.view.texture_size = Some(Vec2::new(frame.width as f32, frame.height as f32));
+        self.texture = None;
+        self.frame = Some(frame);
+    }
+
     /// Paint the shell regions for this frame.
-    pub fn draw(&self, ctx: &egui::Context) {
+    pub fn draw(&mut self, ctx: &egui::Context) {
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -133,12 +150,24 @@ impl NegFeApp {
         style.visuals.extreme_bg_color = theme.bg_input;
         style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, theme.border_primary);
         ctx.set_style(style);
+        let texture = self.texture_for(ctx).map(|texture| texture.id());
         let screen = ctx.screen_rect();
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
-            paint_shell(ui.painter(), screen, &self.view);
+            paint_shell(ui.painter(), screen, &self.view, texture);
         });
+    }
+
+    fn texture_for(&mut self, ctx: &egui::Context) -> Option<&TextureHandle> {
+        if self.texture.is_none()
+            && let Some(frame) = &self.frame
+            && frame.is_rgb()
+        {
+            let image = egui::ColorImage::from_rgb([frame.width, frame.height], &frame.pixels);
+            self.texture = Some(ctx.load_texture("fixture-frame", image, TextureOptions::LINEAR));
+        }
+        self.texture.as_ref()
     }
 }
 
@@ -160,7 +189,12 @@ fn line() -> Stroke {
     Stroke::new(1.0_f32, Theme::default().border_primary)
 }
 
-fn paint_shell(painter: &egui::Painter, screen: Rect, view: &ViewState) {
+fn paint_shell(
+    painter: &egui::Painter,
+    screen: Rect,
+    view: &ViewState,
+    frame: Option<egui::TextureId>,
+) {
     let margin = 8.0;
     let top = Rect::from_min_max(
         screen.min + Vec2::new(margin, margin),
@@ -195,11 +229,24 @@ fn paint_shell(painter: &egui::Painter, screen: Rect, view: &ViewState) {
     );
     painter.rect_filled(canvas_rect, 0.0, canvas());
 
-    let photo = Rect::from_center_size(
-        canvas_rect.center(),
-        Vec2::new(canvas_rect.width() * 0.92, canvas_rect.height() * 0.93),
-    );
-    painter.rect_filled(photo, 0.0, Color32::from_rgb(0xa8, 0xa0, 0x90));
+    if let Some(texture) = frame {
+        let size = view
+            .texture_size
+            .unwrap_or_else(|| Vec2::new(canvas_rect.width() * 0.92, canvas_rect.height() * 0.93));
+        let photo = fitted_rect(canvas_rect, size);
+        painter.image(
+            texture,
+            photo,
+            Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+            Color32::WHITE,
+        );
+    } else {
+        let photo = fitted_rect(
+            canvas_rect,
+            Vec2::new(canvas_rect.width() * 0.92, canvas_rect.height() * 0.93),
+        );
+        painter.rect_filled(photo, 0.0, Color32::from_rgb(0xa8, 0xa0, 0x90));
+    }
 
     if strip_height > 0.0 {
         let strip = Rect::from_min_size(
@@ -233,6 +280,14 @@ fn paint_shell(painter: &egui::Painter, screen: Rect, view: &ViewState) {
 
     paint_rail(painter, rail, view);
     paint_toolbar(painter, toolbar);
+}
+
+fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
+    if content.x <= 0.0 || content.y <= 0.0 {
+        return outer;
+    }
+    let scale = (outer.width() / content.x).min(outer.height() / content.y);
+    Rect::from_center_size(outer.center(), content * scale)
 }
 
 fn paint_rail(painter: &egui::Painter, rail: Rect, view: &ViewState) {

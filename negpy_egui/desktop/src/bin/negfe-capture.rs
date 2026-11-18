@@ -9,6 +9,7 @@ use eframe::egui::{self, ViewportBuilder};
 use negpy_desktop::app::NegFeApp;
 use negpy_desktop::capture::{self, CaptureSize};
 use negpy_desktop::fixture::{CaptureEntry, GoldenManifest, ReferenceFixture};
+use negpy_desktop::frame_source::{FrameImage, frame_path, load_display_frame, placeholder};
 
 #[derive(Clone, Debug)]
 struct Options {
@@ -36,6 +37,7 @@ fn main() -> eframe::Result {
         std::process::exit(2);
     });
     std::fs::create_dir_all(&options.output).unwrap();
+    let frame = load_frame(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -57,9 +59,26 @@ fn main() -> eframe::Result {
                 manifest,
                 reference,
                 options.output,
+                frame,
             )))
         }),
     )
+}
+
+fn load_frame(manifest: &GoldenManifest, reference: &ReferenceFixture) -> FrameImage {
+    let path = frame_path(manifest.frame_folder(), &reference.fixture.frame);
+    let profile = manifest.profile_dir();
+    path.as_deref()
+        .and_then(
+            |path| match load_display_frame(path, profile.as_deref(), 1600) {
+                Ok(frame) => Some(frame),
+                Err(error) => {
+                    eprintln!("{error}");
+                    None
+                }
+            },
+        )
+        .unwrap_or_else(|| placeholder(1600, 1200))
 }
 
 struct CaptureApp {
@@ -71,22 +90,30 @@ struct CaptureApp {
     requested: bool,
     wrote_manifest: bool,
     frames: usize,
+    frame: FrameImage,
 }
 
 impl CaptureApp {
-    fn new(manifest: GoldenManifest, reference: ReferenceFixture, output: PathBuf) -> Self {
-        let app = NegFeApp::for_capture(
+    fn new(
+        manifest: GoldenManifest,
+        reference: ReferenceFixture,
+        output: PathBuf,
+        frame: FrameImage,
+    ) -> Self {
+        let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
             &manifest.captures[0].tab,
             &manifest.captures[0].subtab,
             &manifest.captures[0].view,
             manifest.captures[0].scroll,
         );
+        app.set_frame(frame.clone());
         Self {
             manifest,
             reference,
             output,
             app,
+            frame,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -102,13 +129,15 @@ impl CaptureApp {
         self.index += 1;
         self.requested = false;
         if let Some(entry) = self.manifest.captures.get(self.index) {
-            self.app = NegFeApp::for_capture(
+            let mut app = NegFeApp::for_capture(
                 &entry.group,
                 &entry.tab,
                 &entry.subtab,
                 &entry.view,
                 entry.scroll,
             );
+            app.set_frame(self.frame.clone());
+            self.app = app;
         }
     }
 
@@ -123,6 +152,15 @@ impl CaptureApp {
             width: self.manifest.width,
             height: self.manifest.height,
             captures: self.manifest.captures.clone(),
+            source_folder: self
+                .manifest
+                .frame_folder()
+                .map_or_else(String::new, |path| path.display().to_string()),
+            source_profile: self
+                .manifest
+                .profile_dir()
+                .map_or_else(String::new, |path| path.display().to_string()),
+            source: self.manifest.source.clone(),
         };
         if let Err(error) = written.write(&self.output.join("manifest.json")) {
             eprintln!("{error}");

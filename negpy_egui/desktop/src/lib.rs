@@ -3,4 +3,5 @@
 pub mod app;
 pub mod capture;
 pub mod fixture;
+pub mod frame_source;
 pub mod styles;
