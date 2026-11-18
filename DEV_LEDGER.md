@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 16:38 | **Last Commit:** `46ae11a6` desktop: add the rail tab header
+**Last Updated:** 2026-11-18 17:20 | **Last Commit:** `pending` desktop: add the panel tab
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
@@ -7,11 +7,12 @@ Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 This session: work 10 commits, targeted tests per commit, then the workspace run.
 
 ## Next Steps (Ordered)
-1. [ ] E2: port the remaining `view.widgets.*` over the theme factories.
+1. [ ] E2: port `overflow_bar`, `sub_tabs`, `sort_button`, `flat_rows`, `elided_label`, `marks`; then `charts`.
 2. [ ] E5: build the rail cards on the widget layer; the score gate is 0.80.
 3. [ ] Move one asset family into `negfe/assets/` when its Rust code reads it.
 
 ## Completed (Recent)
+- `pending` desktop: add the panel tab with the warm chip, icon-only width and edited dot.
 - `46ae11a6` desktop: add the rail tab header.
 - `4344b0b2` desktop: align field rows to the slider columns.
 - `b677b361` desktop: add the split action.

@@ -5,6 +5,7 @@ pub mod collapsible;
 pub mod compact_slider;
 pub mod field_row;
 pub mod fold;
+pub mod panel_tab;
 pub mod segmented_choice;
 pub mod split_action;
 pub mod step_combo;
