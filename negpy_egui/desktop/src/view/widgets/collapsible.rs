@@ -106,7 +106,7 @@ impl CollapsibleSection {
         }
         let body_rect = Rect::from_min_size(
             egui::pos2(header.left(), header.bottom()),
-            Vec2::new(header.width(), ui.available_height()),
+            Vec2::new(header.width(), 0.0),
         );
         let mut child = ui.new_child(
             egui::UiBuilder::new()
@@ -115,8 +115,14 @@ impl CollapsibleSection {
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
         child.set_width(body_rect.width());
+        child.set_max_height(f32::INFINITY);
         let result = body(&mut child);
-        let height = child.min_rect().height().max(0.0);
+        let height = child.min_rect().height();
+        let height = if height.is_finite() {
+            height.max(0.0)
+        } else {
+            0.0
+        };
         ui.advance_cursor_after_rect(Rect::from_min_size(
             body_rect.min,
             Vec2::new(body_rect.width(), height),
@@ -192,6 +198,54 @@ mod tests {
             });
         });
         assert!(!painted);
+    }
+
+    #[test]
+    fn sections_after_a_card_stay_in_the_scroll_area() {
+        let ctx = egui::Context::default();
+        let mut a = CollapsibleSection::new("A");
+        let mut b = CollapsibleSection::new("B").collapsed();
+        let mut c = CollapsibleSection::new("C").collapsed();
+        let mut tops = Vec::new();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_max_height(200.0);
+                a.show(ui, |ui| {
+                    let _ = card(ui, |ui| {
+                        ui.allocate_exact_size(
+                            Vec2::new(ui.available_width(), 60.0),
+                            Sense::hover(),
+                        );
+                    });
+                });
+                let (h, _) = b.show(ui, |_| {});
+                tops.push(h.rect.top());
+                let (h2, _) = c.show(ui, |_| {});
+                tops.push(h2.rect.top());
+            });
+        });
+        assert!(tops[0] < 200.0 && tops[1] < 200.0);
+    }
+
+    #[test]
+    fn an_open_section_advances_by_its_body_not_the_rail() {
+        let ctx = egui::Context::default();
+        let mut first = CollapsibleSection::new("First");
+        let mut second = CollapsibleSection::new("Second");
+        let mut second_header = None;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                ui.set_max_height(400.0);
+                first.show(ui, |ui| {
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 60.0), Sense::hover());
+                });
+                let (header, _) = second.show(ui, |ui| {
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 20.0), Sense::hover());
+                });
+                second_header = Some(header.rect.top());
+            });
+        });
+        assert!(second_header.unwrap() < 400.0);
     }
 
     #[test]

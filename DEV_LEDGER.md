@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 17:30 | **Last Commit:** `HEAD` desktop: build the Scan rail tab
+**Last Updated:** 2026-11-18 22:20 | **Last Commit:** `HEAD` desktop: capture golden frames at exact size
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
