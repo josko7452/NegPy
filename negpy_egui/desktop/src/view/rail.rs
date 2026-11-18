@@ -19,6 +19,7 @@ use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 
+pub mod export;
 pub mod frame_color;
 pub mod frame_finish;
 pub mod frame_geometry;
@@ -51,6 +52,7 @@ pub struct RailState {
     pub look: frame_color::LookState,
     pub finish: frame_finish::FinishState,
     pub metadata: metadata::MetadataState,
+    pub export: export::ExportState,
 }
 
 impl RailState {
@@ -101,6 +103,7 @@ impl RailState {
             look: frame_color::LookState::default(),
             finish: frame_finish::FinishState::default(),
             metadata: metadata::MetadataState::default(),
+            export: export::ExportState::default(),
         }
     }
 
@@ -157,7 +160,9 @@ impl RailState {
             Tab::Metadata => {
                 self.metadata.show(ui);
             }
-            Tab::Export => self.show_generic(ui, "Export"),
+            Tab::Export => {
+                self.export.show(ui);
+            }
             Tab::Scan => self.show_generic(ui, "Scan"),
         }
     }
