@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-18 22:25 | **Last Commit:** `HEAD` desktop: keep section bodies inside the scroll
+**Last Updated:** 2026-11-18 22:35 | **Last Commit:** `HEAD` desktop: allocate the slider row it paints
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.

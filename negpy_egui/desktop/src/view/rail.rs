@@ -182,17 +182,17 @@ impl RailState {
 
     fn show_roll(&mut self, ui: &mut Ui) {
         self.show_analysis(ui);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_setup(ui);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Raw Decode", 0);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Optics", 0);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Calibration", 3);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Metering", 0);
-        ui.add_space(f32::from(Theme::default().space_sm));
+        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Roll Analysis", 3);
     }
 
@@ -372,7 +372,6 @@ impl RailState {
     }
 
     fn show_collapsed(&mut self, ui: &mut Ui, title: &str, modified: usize) {
-        ui.add_space(f32::from(Theme::default().space_sm));
         let mut section = CollapsibleSection::new(title).with_guide();
         section.modified = modified;
         if title == "Calibration" {
