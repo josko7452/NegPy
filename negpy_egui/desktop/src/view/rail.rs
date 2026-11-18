@@ -19,6 +19,8 @@ use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 
+pub mod library;
+
 /// The rail's fixed width at the golden window.
 pub const RAIL_WIDTH: f32 = 514.0;
 /// The search field's height under the tab strip.
@@ -38,6 +40,7 @@ pub struct RailState {
     pub grade: CompactSlider,
     pub shadow_density: CompactSlider,
     pub highlight_density: CompactSlider,
+    pub library: library::LibraryState,
 }
 
 impl RailState {
@@ -82,6 +85,7 @@ impl RailState {
             highlight_density: CompactSlider::new(
                 SliderSpec::new(-1.0, 1.0, 0.01, 2).with_default(0.0),
             ),
+            library: library::LibraryState::default(),
         }
     }
 
@@ -130,17 +134,15 @@ impl RailState {
 
     fn show_body(&mut self, ui: &mut Ui) {
         match self.tab {
-            Tab::Library => self.show_library(ui),
+            Tab::Library => {
+                self.library.show(ui);
+            }
             Tab::Roll => self.show_roll(ui),
             Tab::Frame => self.show_frame(ui),
             Tab::Metadata => self.show_generic(ui, "Metadata"),
             Tab::Export => self.show_generic(ui, "Export"),
             Tab::Scan => self.show_generic(ui, "Scan"),
         }
-    }
-
-    fn show_library(&mut self, ui: &mut Ui) {
-        self.show_generic(ui, "Library");
     }
 
     fn show_generic(&mut self, ui: &mut Ui, title: &str) {
