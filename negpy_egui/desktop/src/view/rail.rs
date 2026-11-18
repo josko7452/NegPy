@@ -20,6 +20,7 @@ use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 
 pub mod frame_geometry;
+pub mod frame_tone;
 pub mod library;
 
 /// The rail's fixed width at the golden window.
@@ -43,6 +44,7 @@ pub struct RailState {
     pub highlight_density: CompactSlider,
     pub library: library::LibraryState,
     pub geometry: frame_geometry::GeometryState,
+    pub exposure: frame_tone::ExposureState,
 }
 
 impl RailState {
@@ -89,6 +91,7 @@ impl RailState {
             ),
             library: library::LibraryState::default(),
             geometry: frame_geometry::GeometryState::default(),
+            exposure: frame_tone::ExposureState::default(),
         }
     }
 
@@ -188,17 +191,23 @@ impl RailState {
             self.frame_subtab.current = picked;
         }
         ui.add_space(f32::from(Theme::default().space_sm));
-        if self.frame_subtab.current_key() == "geometry" {
-            self.geometry.show(ui);
-        } else {
-            let cards = frame_cards(self.frame_subtab.current_key());
-            if !cards.is_empty() {
-                let _ = TabSummary::new(cards.len()).show(ui);
+        match self.frame_subtab.current_key() {
+            "geometry" => {
+                self.geometry.show(ui);
             }
-            ui.add_space(f32::from(Theme::default().space_sm));
-            for title in cards {
-                self.show_collapsed(ui, title, 0);
+            "tone" => {
+                self.exposure.show(ui);
+            }
+            key => {
+                let cards = frame_cards(key);
+                if !cards.is_empty() {
+                    let _ = TabSummary::new(cards.len()).show(ui);
+                }
                 ui.add_space(f32::from(Theme::default().space_sm));
+                for title in cards {
+                    self.show_collapsed(ui, title, 0);
+                    ui.add_space(f32::from(Theme::default().space_sm));
+                }
             }
         }
     }
