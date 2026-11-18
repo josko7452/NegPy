@@ -268,6 +268,22 @@ fn paint_shell(
     } else {
         rail_width
     };
+    let search = Rect::from_min_max(
+        egui::pos2(screen.right() - rail_width - margin, screen.top() + margin),
+        egui::pos2(
+            screen.right() - margin,
+            screen.top() + margin + crate::view::rail::SEARCH_HEIGHT,
+        ),
+    );
+    let mut search_ui = egui::Ui::new(
+        painter.ctx().clone(),
+        "top-bar-search".into(),
+        egui::UiBuilder::new()
+            .max_rect(search)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    search_ui.set_width(search.width());
+    crate::view::rail::paint_search(&mut search_ui, &Theme::default());
     let rail = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),

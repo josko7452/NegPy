@@ -137,9 +137,6 @@ impl RailState {
             self.tab = Tab::ALL[index];
             switched = Some(self.tab);
         }
-        inner.add_space(f32::from(theme.space_sm));
-        paint_search(&mut inner, &theme);
-        inner.add_space(f32::from(theme.space_sm));
         let body = Rect::from_min_max(
             egui::pos2(rect.left(), inner.cursor().top()),
             egui::pos2(rect.right(), rect.bottom()),
@@ -508,7 +505,8 @@ impl RailState {
     }
 }
 
-fn paint_search(ui: &mut Ui, theme: &Theme) {
+/// Paint the Find field the top bar puts over the rail.
+pub fn paint_search(ui: &mut Ui, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(
         Vec2::new(ui.available_width(), SEARCH_HEIGHT),
         Sense::hover(),
