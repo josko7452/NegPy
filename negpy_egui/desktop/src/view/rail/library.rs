@@ -8,8 +8,8 @@ use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 use crate::styles::icons::Icon;
 use crate::styles::layout::TOOLBAR_BUTTON_HEIGHT;
 use crate::styles::theme::Theme;
+use crate::view::widgets::collapsible::{CollapsibleSection, card};
 use crate::view::widgets::flat_rows::{FlatRow, paint_pill};
-use crate::view::widgets::tab_header::TabSummary;
 
 const ROLL_ROW: f32 = 46.0;
 
@@ -77,54 +77,57 @@ impl LibraryState {
     /// Paint the tab and return the Roll the user opened.
     pub fn show(&mut self, ui: &mut Ui) -> Option<String> {
         let theme = Theme::default();
-        let summary = TabSummary::new(0).without_apply().titled("Library");
-        let _ = summary.show(ui);
-        ui.add_space(f32::from(theme.space_sm));
-
-        ui.horizontal(|ui| {
-            let height = TOOLBAR_BUTTON_HEIGHT;
-            let (filter, _) = ui.allocate_exact_size(
-                Vec2::new(ui.available_width() - 210.0, height),
-                Sense::hover(),
-            );
-            paint_field(ui, filter, &theme);
-            ui.painter().text(
-                filter.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
-                Align2::LEFT_CENTER,
-                Icon::Search.glyph(),
-                FontId::proportional(f32::from(theme.font_size_header)),
-                theme.text_hint,
-            );
-            ui.painter().text(
-                filter.left_center() + Vec2::new(30.0, 0.0),
-                Align2::LEFT_CENTER,
-                "Filter rolls...",
-                FontId::proportional(f32::from(theme.font_size_base)),
-                theme.text_hint,
-            );
-            ui.add_space(f32::from(theme.space_sm));
-            paint_small_button(ui, "Name", 66.0, &theme);
-            ui.add_space(f32::from(theme.space_sm));
-            paint_small_button(ui, "Import", 76.0, &theme);
-            ui.add_space(f32::from(theme.space_sm));
-            paint_small_button(ui, Icon::Menu.glyph(), TOOLBAR_BUTTON_HEIGHT, &theme);
+        let mut section = CollapsibleSection::new("Library").with_guide();
+        section.expanded = true;
+        let (_, result) = section.show(ui, |ui| {
+            card(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let height = TOOLBAR_BUTTON_HEIGHT;
+                    let (filter, _) = ui.allocate_exact_size(
+                        Vec2::new(ui.available_width() - 210.0, height),
+                        Sense::hover(),
+                    );
+                    paint_field(ui, filter, &theme);
+                    ui.painter().text(
+                        filter.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
+                        Align2::LEFT_CENTER,
+                        Icon::Search.glyph(),
+                        FontId::proportional(f32::from(theme.font_size_header)),
+                        theme.text_hint,
+                    );
+                    ui.painter().text(
+                        filter.left_center() + Vec2::new(30.0, 0.0),
+                        Align2::LEFT_CENTER,
+                        "Filter rolls...",
+                        FontId::proportional(f32::from(theme.font_size_base)),
+                        theme.text_hint,
+                    );
+                    ui.add_space(f32::from(theme.space_sm));
+                    paint_small_button(ui, "Name", 66.0, &theme);
+                    ui.add_space(f32::from(theme.space_sm));
+                    paint_small_button(ui, "Import", 76.0, &theme);
+                    ui.add_space(f32::from(theme.space_sm));
+                    paint_small_button(ui, Icon::Menu.glyph(), TOOLBAR_BUTTON_HEIGHT, &theme);
+                });
+                ui.add_space(f32::from(theme.space_sm));
+                let mut opened = None;
+                for row in &self.rolls {
+                    let mut flat = FlatRow::new(row.name.clone(), row.detail.clone());
+                    flat.current = row.open;
+                    let response = flat.show(ui, ROLL_ROW);
+                    if row.open {
+                        let rect = response.response.rect;
+                        let right = rect.right() - f32::from(theme.space_xl);
+                        paint_pill(ui.painter(), right, rect.center().y, "Open", true);
+                    }
+                    if response.response.clicked() {
+                        opened = Some(row.name.clone());
+                    }
+                }
+                opened
+            })
         });
-        ui.add_space(f32::from(theme.space_sm));
-
-        let mut opened = None;
-        for row in &self.rolls {
-            let mut flat = FlatRow::new(row.name.clone(), row.detail.clone());
-            flat.current = row.open;
-            let response = flat.show(ui, ROLL_ROW);
-            if row.open {
-                let rect = response.response.rect;
-                let right = rect.right() - f32::from(theme.space_xl);
-                paint_pill(ui.painter(), right, rect.center().y, "Open", true);
-            }
-            if response.response.clicked() {
-                opened = Some(row.name.clone());
-            }
-        }
+        let opened = result.flatten();
         ui.add_space(f32::from(theme.space_xl));
         ui.painter().text(
             egui::pos2(ui.cursor().left(), ui.cursor().top() + 8.0),
