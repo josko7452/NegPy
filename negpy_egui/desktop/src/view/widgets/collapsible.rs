@@ -4,7 +4,7 @@
 //! The body is the only place a panel puts its controls, and the card is the only
 //! reset affordance.
 
-use eframe::egui::{self, Align2, FontId, Rect, RichText, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align2, CornerRadius, FontId, Rect, RichText, Sense, Stroke, Ui, Vec2};
 
 use crate::styles::icons::Icon;
 use crate::styles::layout::{HEADER_BUTTON_SIZE, HEADER_HEIGHT};
@@ -66,10 +66,23 @@ impl CollapsibleSection {
             Vec2::new(ui.available_width(), HEADER_HEIGHT),
             Sense::click(),
         );
-        ui.painter().rect_filled(header, 0.0, theme.bg_header);
+        let top = CornerRadius {
+            nw: theme.radius_md,
+            ne: theme.radius_md,
+            sw: if self.expanded { 0 } else { theme.radius_md },
+            se: if self.expanded { 0 } else { theme.radius_md },
+        };
+        ui.painter().rect_filled(header, top, theme.bg_header);
         ui.painter().line_segment(
             [header.left_bottom(), header.right_bottom()],
             Stroke::new(1.0_f32, theme.border_primary),
+        );
+        let edge = Rect::from_min_max(header.min, egui::pos2(header.max.x, header.max.y - 1.0));
+        ui.painter().rect_stroke(
+            edge,
+            top,
+            Stroke::new(1.0_f32, theme.border_primary),
+            egui::StrokeKind::Inside,
         );
         let chevron = if self.expanded {
             Icon::ChevronDown
@@ -110,6 +123,7 @@ impl CollapsibleSection {
             egui::pos2(header.left(), header.bottom()),
             Vec2::new(header.width(), 0.0),
         );
+        let background = ui.painter().add(egui::Shape::Noop);
         let mut child = ui.new_child(
             egui::UiBuilder::new()
                 .id_salt((&self.title, "body"))
@@ -125,10 +139,26 @@ impl CollapsibleSection {
         } else {
             0.0
         };
-        ui.advance_cursor_after_rect(Rect::from_min_size(
-            body_rect.min,
-            Vec2::new(body_rect.width(), height),
-        ));
+        let body_rect = Rect::from_min_size(body_rect.min, Vec2::new(body_rect.width(), height));
+        ui.advance_cursor_after_rect(body_rect);
+        let bottom = CornerRadius {
+            nw: 0,
+            ne: 0,
+            sw: theme.radius_md,
+            se: theme.radius_md,
+        };
+        ui.painter().set(
+            background,
+            egui::Shape::Vec(vec![
+                egui::Shape::rect_filled(body_rect, bottom, theme.bg_card),
+                egui::Shape::rect_stroke(
+                    body_rect,
+                    bottom,
+                    Stroke::new(1.0_f32, theme.border_primary),
+                    egui::StrokeKind::Inside,
+                ),
+            ]),
+        );
         (response, Some(result))
     }
 }
