@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 19:00 | **Last Commit:** `pending` desktop: build the Optics card
+**Last Updated:** 2026-11-19 19:25 | **Last Commit:** `pending` desktop: build the Metering card
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,13 +19,14 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: give the Metering card its controls.
-2. [ ] E5: wire the Use Average toggles.
-3. [ ] E5: run the full workspace tests after the commit pass.
-4. [ ] E5: update the ledger after the final pass.
+1. [ ] E5: wire the Use Average toggles.
+2. [ ] E5: run the full workspace tests after the commit pass.
+3. [ ] E5: update the ledger after the final pass.
+4. [ ] E5: stop at ten commits.
 
 ## Completed (Recent)
-- `pending` desktop: build the Optics card.
+- `pending` desktop: build the Metering card.
+- `76487cb6` desktop: build the Optics card.
 - `6a84944a` desktop: build the Raw Decode card.
 - `7a8166a2` desktop: share the bundled fixture.
 - `6268316a` desktop: read the Roll Analysis baseline.
@@ -33,13 +34,14 @@ anything whose only gain is a closer score.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 126 library tests. Optics tests
-  cover the profile list, selected profile, distortion step and painting.
+- `cargo test -p negpy-desktop` passes: 130 library tests. Metering tests
+  cover the backend defaults, channel choice, folds and painting.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - Roll capture: total 0.700, layout 0.731. The card reads the stored roll
   name; the copied golden profile shows w9, the live profile shows vv9.
+- Metering and the three new cards render in the Roll stack.
 - Light Table capture: total 0.708, layout 0.685. Tile metrics stay deferred.
 
 ## Constraints / Gotchas

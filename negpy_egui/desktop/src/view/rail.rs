@@ -27,6 +27,7 @@ pub mod frame_tone;
 pub mod history;
 pub mod library;
 pub mod metadata;
+pub mod metering;
 pub mod optics;
 pub mod raw_decode;
 pub mod roll_analysis;
@@ -63,6 +64,7 @@ pub struct RailState {
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
     pub optics: optics::OpticsState,
+    pub metering: metering::MeteringState,
 }
 
 impl RailState {
@@ -130,6 +132,7 @@ impl RailState {
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
             optics: optics::OpticsState::default(),
+            metering: metering::MeteringState::default(),
         }
     }
 
@@ -227,6 +230,8 @@ impl RailState {
         self.raw_decode.show(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
         self.optics.show(ui);
+        ui.add_space(f32::from(Theme::default().space_lg));
+        self.metering.show(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Calibration", 3);
         ui.add_space(f32::from(Theme::default().space_lg));
