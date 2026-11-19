@@ -9,9 +9,8 @@ use eframe::egui::{self, ViewportBuilder};
 use negpy_desktop::app::NegFeApp;
 use negpy_desktop::capture::{self, CaptureSize};
 use negpy_desktop::fixture::{CaptureEntry, GoldenManifest, ReferenceFixture};
-use negpy_desktop::frame_source::{
-    FrameImage, frame_path, load_display_frame, load_strip, placeholder, stored_history,
-};
+use negpy_desktop::frame_source::FrameImage;
+use negpy_desktop::launch::load_manifest_state;
 
 #[derive(Clone, Debug)]
 struct Options {
@@ -39,9 +38,7 @@ fn main() -> eframe::Result {
         std::process::exit(2);
     });
     std::fs::create_dir_all(&options.output).unwrap();
-    let frame = load_frame(&manifest, &reference);
-    let strip = load_roll_strip(&manifest, &reference, &frame);
-    let history = load_history(&manifest, &reference);
+    let (frame, strip, history, prints) = load_manifest_state(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -64,59 +61,10 @@ fn main() -> eframe::Result {
                 frame,
                 strip,
                 history,
+                prints,
             )))
         }),
     )
-}
-
-fn load_frame(manifest: &GoldenManifest, reference: &ReferenceFixture) -> FrameImage {
-    let path = frame_path(manifest.frame_folder(), &reference.fixture.frame);
-    let profile = manifest.profile_dir();
-    path.as_deref()
-        .and_then(
-            |path| match load_display_frame(path, profile.as_deref(), 1600) {
-                Ok(frame) => Some(frame),
-                Err(error) => {
-                    eprintln!("{error}");
-                    None
-                }
-            },
-        )
-        .unwrap_or_else(|| placeholder(1600, 1200))
-}
-
-fn load_roll_strip(
-    manifest: &GoldenManifest,
-    reference: &ReferenceFixture,
-    frame: &FrameImage,
-) -> Vec<FrameImage> {
-    let Some(folder) = manifest.frame_folder() else {
-        return vec![frame.clone()];
-    };
-    let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
-    let profile = manifest.profile_dir();
-    let strip = load_strip(&folder, current.as_deref(), profile.as_deref(), 320, 12);
-    if strip.is_empty() {
-        vec![frame.clone()]
-    } else {
-        strip
-    }
-}
-
-fn load_history(
-    manifest: &GoldenManifest,
-    reference: &ReferenceFixture,
-) -> (
-    Vec<negpy_backend::session::workspace::HistoryRow>,
-    Vec<String>,
-) {
-    let Some(folder) = manifest.frame_folder() else {
-        return (Vec::new(), Vec::new());
-    };
-    let Some(path) = frame_path(Some(folder), &reference.fixture.frame) else {
-        return (Vec::new(), Vec::new());
-    };
-    stored_history(manifest.profile_dir().as_deref(), &path)
 }
 
 struct CaptureApp {
@@ -144,10 +92,8 @@ impl CaptureApp {
         output: PathBuf,
         frame: FrameImage,
         strip: Vec<FrameImage>,
-        history: (
-            Vec<negpy_backend::session::workspace::HistoryRow>,
-            Vec<String>,
-        ),
+        history: Vec<negpy_backend::session::workspace::HistoryRow>,
+        prints: Vec<String>,
     ) -> Self {
         let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
@@ -158,7 +104,7 @@ impl CaptureApp {
         );
         app.set_frame(frame.clone());
         app.set_strip(strip.clone());
-        app.set_history(&history.0, &history.1);
+        app.set_history(&history, &prints);
         Self {
             manifest,
             reference,
@@ -166,7 +112,7 @@ impl CaptureApp {
             app,
             frame,
             strip,
-            history,
+            history: (history, prints),
             index: 0,
             requested: false,
             wrote_manifest: false,
