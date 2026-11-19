@@ -2,6 +2,9 @@
 
 use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
+use negpy_backend::domain::models::geometry::{AutocropMode, with_auto_crop};
+
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
@@ -114,13 +117,74 @@ impl Default for GeometryState {
 }
 
 impl GeometryState {
+    /// Replace the controls with the geometry values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let geometry = &edit.config.geometry;
+        self.crop.auto_crop = geometry.crop_from_auto;
+        self.crop.draw = geometry.crop_rect.is_some() && !geometry.crop_from_auto;
+        self.crop.mode.current = usize::from(geometry.autocrop_mode == AutocropMode::Film);
+        self.crop.square_first = geometry.autocrop_square;
+        self.crop.offset.set_value(geometry.autocrop_offset as f64);
+        self.crop
+            .rebate_trim
+            .set_value(geometry.autocrop_rebate_trim * 100.0);
+        self.straighten
+            .fine_rotation
+            .set_value(geometry.fine_rotation);
+        self.straighten.crop_empty = !geometry.crop_to_valid;
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        let geometry = &mut edit.config.geometry;
+        let auto_crop = self.crop.auto_crop;
+        let draw = self.crop.draw;
+        let mode = if self.crop.mode.current == 1 {
+            AutocropMode::Film
+        } else {
+            AutocropMode::Image
+        };
+        let offset = self.crop.offset.value.round() as i64;
+        let rebate = self.crop.rebate_trim.value / 100.0;
+        let crop_to_valid = !self.straighten.crop_empty;
+        let changed = geometry.crop_from_auto != auto_crop
+            || (geometry.crop_rect.is_some() != draw)
+            || geometry.autocrop_mode != mode
+            || geometry.autocrop_square != self.crop.square_first
+            || geometry.autocrop_offset != offset
+            || (geometry.autocrop_rebate_trim - rebate).abs() > 1e-9
+            || (geometry.fine_rotation - self.straighten.fine_rotation.value).abs() > 1e-9
+            || geometry.crop_to_valid != crop_to_valid;
+        if auto_crop != geometry.crop_from_auto {
+            edit.config = with_auto_crop(edit.config.clone(), auto_crop);
+        } else if !auto_crop && draw != geometry.crop_rect.is_some() {
+            geometry.crop_rect = if draw {
+                Some(vec![0.0, 0.0, 1.0, 1.0])
+            } else {
+                None
+            };
+        }
+        let geometry = &mut edit.config.geometry;
+        geometry.autocrop_mode = mode;
+        geometry.autocrop_square = self.crop.square_first;
+        geometry.autocrop_offset = offset;
+        geometry.autocrop_rebate_trim = rebate;
+        geometry.fine_rotation = self.straighten.fine_rotation.value;
+        geometry.crop_to_valid = crop_to_valid;
+        changed
+    }
+
     /// Paint the page. Returns whether a control changed the edit.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let mut changed = TabSummary::new(2).show(ui) != Default::default();
         ui.add_space(f32::from(Theme::default().space_sm));
         changed |= self.show_crop(ui);
         ui.add_space(f32::from(Theme::default().space_sm));
         changed |= self.show_straighten(ui);
+        if changed {
+            self.store(edit);
+        }
         changed
     }
 
@@ -303,10 +367,31 @@ mod tests {
     fn the_geometry_page_paints_on_a_context() {
         let ctx = egui::Context::default();
         let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn a_loaded_edit_fills_the_geometry_page_and_stores_it() {
+        let mut edit = FrameEdit::default();
+        edit.config.geometry.fine_rotation = 1.5;
+        edit.config.geometry.crop_from_auto = true;
+        edit.config.geometry.autocrop_mode = AutocropMode::Film;
+        edit.config.geometry.autocrop_square = true;
+        edit.config.geometry.autocrop_offset = 7;
+        edit.config.geometry.crop_to_valid = true;
+        let mut state = GeometryState::default();
+        state.load(&edit);
+        assert!(state.crop.auto_crop);
+        assert_eq!(state.crop.mode.current_label(), "Film edge");
+        assert!(state.crop.square_first);
+        assert_eq!(state.crop.offset.value, 7.0);
+        assert!(!state.straighten.crop_empty);
+        assert!((state.straighten.fine_rotation.value - 1.5).abs() < 1e-9);
+        assert!(!state.store(&mut edit));
     }
 }

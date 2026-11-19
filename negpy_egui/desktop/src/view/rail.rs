@@ -248,7 +248,7 @@ impl RailState {
         self.show_roll_analysis(ui, edit);
     }
 
-    fn show_frame(&mut self, ui: &mut Ui, _edit: &mut FrameEdit) {
+    fn show_frame(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
         self.show_analysis(ui);
         ui.add_space(f32::from(Theme::default().space_sm));
         let subtabs = frame_subtabs();
@@ -261,7 +261,9 @@ impl RailState {
         ui.add_space(f32::from(Theme::default().space_sm));
         match self.frame_subtab.current_key() {
             "geometry" => {
-                self.geometry.show(ui);
+                if self.geometry.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             "tone" => {
                 self.exposure.show(ui);
