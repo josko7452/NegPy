@@ -10,7 +10,7 @@ use eframe::egui::{
 use crate::app::{Tab, ViewState};
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
-use crate::styles::templates::{ActionRank, action_with_icon, section_subheader};
+use crate::styles::templates::{ActionRank, action_with_icon, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -527,29 +527,11 @@ impl RailState {
             }
             ui.add_space(f32::from(theme.space_sm));
             ui.horizontal(|ui| {
-                let _ = action_with_icon(
-                    ui,
-                    Icon::Circle,
-                    "Luma",
-                    ActionRank::Normal,
-                    "Average the roll's luma",
-                );
+                let _ = labeled_toggle(ui, "Luma", &mut self.roll_analysis.use_luma);
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = action_with_icon(
-                    ui,
-                    Icon::Circle,
-                    "Color",
-                    ActionRank::Normal,
-                    "Average the roll's color",
-                );
+                let _ = labeled_toggle(ui, "Color", &mut self.roll_analysis.use_color);
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = action_with_icon(
-                    ui,
-                    Icon::Circle,
-                    "Cast",
-                    ActionRank::Normal,
-                    "Average the roll's cast",
-                );
+                let _ = labeled_toggle(ui, "Cast", &mut self.roll_analysis.use_cast);
             });
         });
     }
