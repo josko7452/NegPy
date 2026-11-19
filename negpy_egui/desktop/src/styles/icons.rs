@@ -46,6 +46,11 @@ pub enum Icon {
     Redo,
     Wrench,
     GridFour,
+    LockOpen,
+    LockSimple,
+    ArrowsHorizontal,
+    ArrowsVertical,
+    ListDashes,
 }
 
 impl Icon {
@@ -90,6 +95,11 @@ impl Icon {
             Self::Redo => phosphor::ARROW_U_UP_RIGHT,
             Self::Wrench => phosphor::WRENCH,
             Self::GridFour => phosphor::SQUARES_FOUR,
+            Self::LockOpen => phosphor::LOCK_OPEN,
+            Self::LockSimple => phosphor::LOCK_SIMPLE,
+            Self::ArrowsHorizontal => phosphor::ARROWS_HORIZONTAL,
+            Self::ArrowsVertical => phosphor::ARROWS_VERTICAL,
+            Self::ListDashes => phosphor::LIST_DASHES,
         }
     }
 }

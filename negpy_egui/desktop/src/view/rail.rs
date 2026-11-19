@@ -10,7 +10,7 @@ use eframe::egui::{
 use crate::app::{Tab, ViewState};
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
-use crate::styles::templates::{ActionRank, action_with_icon, labeled_action, section_subheader};
+use crate::styles::templates::{ActionRank, action_with_icon, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};

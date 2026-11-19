@@ -316,10 +316,7 @@ fn paint_shell(
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
     );
     painter.text(
-        egui::pos2(
-            screen.right() - RAIL_WIDTH - margin - 18.0,
-            top.center().y,
-        ),
+        egui::pos2(screen.right() - RAIL_WIDTH - margin - 18.0, top.center().y),
         egui::Align2::RIGHT_CENTER,
         "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
         egui::FontId::proportional(12.0),
@@ -500,7 +497,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
         );
     };
 
-    let mode = Rect::from_min_size(egui::pos2(x, top), Vec2::new(136.0, row_height));
+    let mode = Rect::from_min_size(egui::pos2(x, top), Vec2::new(146.0, row_height));
     track(painter, mode);
     let segment = mode.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
     let photo = Rect::from_min_size(
@@ -546,7 +543,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     );
     x = mode.right() + 8.0;
 
-    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(148.0, row_height));
+    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(172.0, row_height));
     track(painter, navigation);
     let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
     flat(
@@ -593,13 +590,13 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     );
     x = zoom.right() + 8.0;
 
-    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(152.0, row_height));
+    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(160.0, row_height));
     track(painter, geometry);
     for (index, icon) in [
         Icon::RotateLeft,
         Icon::RotateRight,
-        Icon::FlipHorizontal,
-        Icon::FlipVertical,
+        Icon::LockSimple,
+        Icon::LockOpen,
     ]
     .iter()
     .enumerate()
@@ -705,6 +702,10 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     flat(painter, roll_average, Icon::Film, theme.text_secondary);
     x = roll_average.right() + 6.0;
 
+    let trailing = Rect::from_min_size(
+        egui::pos2(toolbar.right() - 8.0 - 108.0, top),
+        Vec2::new(108.0, row_height),
+    );
     let primary = Rect::from_min_size(egui::pos2(x, top), Vec2::new(154.0, row_height));
     painter.rect_filled(primary, 4.0, theme.bg_primary);
     painter.rect_stroke(
@@ -735,17 +736,24 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
         Icon::ChevronDown,
         theme.text_on_accent,
     );
-    x = primary.right() + 8.0;
 
-    let frames = Rect::from_min_size(egui::pos2(x, top), Vec2::new(72.0, row_height));
-    track(painter, frames);
-    for (index, icon) in [Icon::Grid, Icon::Menu, Icon::Sliders].iter().enumerate() {
+    track(painter, trailing);
+    for (index, icon) in [
+        Icon::Grid,
+        Icon::ListDashes,
+        Icon::Sliders,
+        Icon::ChevronDown,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let width = 26.0;
         let button = Rect::from_min_size(
             egui::pos2(
-                frames.left() + BAR_TRACK_PAD + index as f32 * 23.0,
-                frames.top() + BAR_TRACK_PAD,
+                trailing.left() + BAR_TRACK_PAD + index as f32 * width,
+                trailing.top() + BAR_TRACK_PAD,
             ),
-            Vec2::new(23.0, BAR_TRACK_BUTTON_HEIGHT),
+            Vec2::new(width, BAR_TRACK_BUTTON_HEIGHT),
         );
         flat(
             painter,
@@ -757,8 +765,14 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
                 theme.text_secondary
             },
         );
+        if index == 1 {
+            painter.circle_filled(
+                egui::pos2(button.center().x, button.center().y - 6.0),
+                2.5,
+                theme.status_success,
+            );
+        }
     }
-    let _ = frames.right();
 }
 
 #[cfg(test)]
