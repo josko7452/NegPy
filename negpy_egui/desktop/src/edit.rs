@@ -58,6 +58,14 @@ impl FrameEdit {
         self.dirty = true;
     }
 
+    /// The same config with no save target, for a capture.
+    #[must_use]
+    pub fn read_only(mut self) -> Self {
+        self.source = None;
+        self.dirty = false;
+        self
+    }
+
     /// Whether a control changed the config since the last save.
     #[must_use]
     pub fn is_dirty(&self) -> bool {

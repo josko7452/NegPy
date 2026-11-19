@@ -2,6 +2,7 @@
 
 use std::path::PathBuf;
 
+use crate::edit::FrameEdit;
 use crate::fixture::{GoldenManifest, ReferenceFixture};
 use crate::frame_source::{
     FrameImage, frame_path, load_display_frame, load_strip, placeholder, stored_history,
@@ -101,6 +102,30 @@ pub fn load_manual_state(
         },
     );
     (frame, strip, history.0, history.1, roll_analysis)
+}
+
+/// The edit of the frame a manual launch shows.
+#[must_use]
+pub fn load_manual_edit(options: &LaunchOptions, reference: &ReferenceFixture) -> FrameEdit {
+    let Some(folder) = options.frame_folder() else {
+        return FrameEdit::default();
+    };
+    let Some(path) = frame_path(Some(folder), &reference.fixture.frame) else {
+        return FrameEdit::default();
+    };
+    FrameEdit::load(options.profile_dir().as_deref(), &path)
+}
+
+/// The edit of the frame a manifest capture shows, read without saving.
+#[must_use]
+pub fn load_manifest_edit(manifest: &GoldenManifest, reference: &ReferenceFixture) -> FrameEdit {
+    let Some(folder) = manifest.frame_folder() else {
+        return FrameEdit::default();
+    };
+    let Some(path) = frame_path(Some(folder), &reference.fixture.frame) else {
+        return FrameEdit::default();
+    };
+    FrameEdit::load(manifest.profile_dir().as_deref(), &path).read_only()
 }
 
 /// Load the frame and strip a manifest capture shows.

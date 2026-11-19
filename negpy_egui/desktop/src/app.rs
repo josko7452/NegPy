@@ -245,12 +245,13 @@ impl NegFeApp {
                     let rail_rect = rail_rect(screen);
                     let mut rail =
                         std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
-                    let switched = rail.show(ui, rail_rect);
+                    let switched = rail.show(ui, rail_rect, &mut self.edit);
                     self.view.tab = rail.tab;
                     self.rail = rail;
                     if let Some(tab) = switched {
                         self.view.tab = tab;
                     }
+                    let _ = self.edit.save();
                 });
             return;
         }
@@ -268,12 +269,13 @@ impl NegFeApp {
             ui.painter().rect_filled(screen, 0.0, surface());
             let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture, &strip_textures);
             let mut rail = std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
-            let switched = rail.show(ui, rail_rect);
+            let switched = rail.show(ui, rail_rect, &mut self.edit);
             self.view.tab = rail.tab;
             self.rail = rail;
             if let Some(tab) = switched {
                 self.view.tab = tab;
             }
+            let _ = self.edit.save();
         });
     }
 

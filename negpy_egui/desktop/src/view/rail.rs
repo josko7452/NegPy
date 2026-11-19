@@ -8,6 +8,7 @@ use eframe::egui::{
 };
 
 use crate::app::{Tab, ViewState};
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, action_with_icon, labeled_toggle, section_subheader};
@@ -137,7 +138,7 @@ impl RailState {
     }
 
     /// Paint the rail into `rect` and return whether the user chose another tab.
-    pub fn show(&mut self, ui: &mut Ui, rect: Rect) -> Option<Tab> {
+    pub fn show(&mut self, ui: &mut Ui, rect: Rect, edit: &mut FrameEdit) -> Option<Tab> {
         let theme = Theme::default();
         let mut inner = ui.new_child(
             egui::UiBuilder::new()
@@ -176,7 +177,7 @@ impl RailState {
             .auto_shrink([false, false])
             .show(&mut body_ui, |ui| {
                 ui.add_space(f32::from(theme.space_sm));
-                self.show_body(ui, footer_y);
+                self.show_body(ui, footer_y, edit);
                 ui.add_space(f32::from(theme.space_xl));
             });
         if footer_height > 0.0 {
@@ -203,13 +204,13 @@ impl RailState {
         switched
     }
 
-    fn show_body(&mut self, ui: &mut Ui, footer_y: f32) {
+    fn show_body(&mut self, ui: &mut Ui, footer_y: f32, edit: &mut FrameEdit) {
         match self.tab {
             Tab::Library => {
                 self.library.show(ui, Some(footer_y));
             }
-            Tab::Roll => self.show_roll(ui),
-            Tab::Frame => self.show_frame(ui),
+            Tab::Roll => self.show_roll(ui, edit),
+            Tab::Frame => self.show_frame(ui, edit),
             Tab::Metadata => {
                 self.metadata.show(ui);
             }
@@ -222,7 +223,7 @@ impl RailState {
         }
     }
 
-    fn show_roll(&mut self, ui: &mut Ui) {
+    fn show_roll(&mut self, ui: &mut Ui, _edit: &mut FrameEdit) {
         self.show_analysis(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_setup(ui);
@@ -240,7 +241,7 @@ impl RailState {
         self.show_collapsed(ui, "Roll Analysis", 3);
     }
 
-    fn show_frame(&mut self, ui: &mut Ui) {
+    fn show_frame(&mut self, ui: &mut Ui, _edit: &mut FrameEdit) {
         self.show_analysis(ui);
         ui.add_space(f32::from(Theme::default().space_sm));
         let subtabs = frame_subtabs();

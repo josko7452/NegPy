@@ -10,7 +10,7 @@ use negpy_desktop::app::NegFeApp;
 use negpy_desktop::capture::{self, CaptureSize};
 use negpy_desktop::fixture::{CaptureEntry, GoldenManifest, ReferenceFixture};
 use negpy_desktop::frame_source::FrameImage;
-use negpy_desktop::launch::load_manifest_state;
+use negpy_desktop::launch::{load_manifest_edit, load_manifest_state};
 
 #[derive(Clone, Debug)]
 struct Options {
@@ -39,6 +39,7 @@ fn main() -> eframe::Result {
     });
     std::fs::create_dir_all(&options.output).unwrap();
     let (frame, strip, history, prints, roll_analysis) = load_manifest_state(&manifest, &reference);
+    let edit = load_manifest_edit(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -63,6 +64,7 @@ fn main() -> eframe::Result {
                 history,
                 prints,
                 roll_analysis,
+                edit,
             )))
         }),
     )
@@ -84,6 +86,7 @@ struct CaptureApp {
         Vec<String>,
     ),
     roll_analysis: negpy_desktop::view::rail::roll_analysis::RollAnalysisState,
+    edit: negpy_desktop::edit::FrameEdit,
     viewport: Option<CaptureSize>,
 }
 
@@ -97,6 +100,7 @@ impl CaptureApp {
         history: Vec<negpy_backend::session::workspace::HistoryRow>,
         prints: Vec<String>,
         roll_analysis: negpy_desktop::view::rail::roll_analysis::RollAnalysisState,
+        edit: negpy_desktop::edit::FrameEdit,
     ) -> Self {
         let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
@@ -109,6 +113,7 @@ impl CaptureApp {
         app.set_strip(strip.clone());
         app.set_history(&history, &prints);
         app.set_roll_analysis(roll_analysis.clone());
+        app.set_edit(edit.clone());
         Self {
             manifest,
             reference,
@@ -118,6 +123,7 @@ impl CaptureApp {
             strip,
             history: (history, prints),
             roll_analysis,
+            edit,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -145,6 +151,7 @@ impl CaptureApp {
             app.set_strip(self.strip.clone());
             app.set_history(&self.history.0, &self.history.1);
             app.set_roll_analysis(self.roll_analysis.clone());
+            app.set_edit(self.edit.clone());
             self.app = app;
         }
     }

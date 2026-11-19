@@ -19,8 +19,10 @@ fn main() -> eframe::Result {
     });
     let (frame, strip, history, prints, roll_analysis) =
         launch::load_manual_state(&options, &reference);
+    let edit = launch::load_manual_edit(&options, &reference);
     let mut app = NegFeApp::new(&reference);
     app.set_frame(frame);
+    app.set_edit(edit);
     app.set_strip(strip);
     app.set_history(&history, &prints);
     app.set_roll_analysis(roll_analysis);
