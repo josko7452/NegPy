@@ -1,24 +1,23 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 07:45 | **Last Commit:** `HEAD` desktop: group the canvas toolbar like the reference
+**Last Updated:** 2026-11-19 07:58 | **Last Commit:** `HEAD` desktop: fill the top bar status line
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 Ten-commit session in progress; E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: match the top bar copy and spacing.
-2. [ ] E5: bring the Export rail to the reference structure.
-3. [ ] E5: bring the Scan rail to the reference structure.
+1. [ ] E5: bring the Export rail to the reference structure.
+2. [ ] E5: bring the Scan rail to the reference structure.
+3. [ ] E5: tighten the Metadata rail cards.
 
 ## Completed (Recent)
-- `HEAD` desktop: group the canvas toolbar like the reference.
+- `HEAD` desktop: fill the top bar status line.
+- `335984e5` desktop: group the canvas toolbar like the reference.
 - `056977a6` desktop: show the roll in the Film Strip.
-- `5a364f3a` desktop: open the Frame capture sub-tab.
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- The toolbar group order and widths now follow the reference. The band
-  still fails its thresholds; its structure remains the next gap.
+- Top bar passes its region thresholds. Layout 0.608, geometry 0.758.
 - Full workspace tests run after commit 10.
 
 ## Constraints / Gotchas

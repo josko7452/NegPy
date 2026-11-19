@@ -532,6 +532,13 @@ pub fn paint_search(ui: &mut Ui, theme: &Theme) {
         FontId::proportional(f32::from(theme.font_size_base)),
         theme.text_hint,
     );
+    ui.painter().text(
+        rect.right_center() - Vec2::new(f32::from(theme.space_xl), 0.0),
+        Align2::RIGHT_CENTER,
+        "Ctrl+K",
+        FontId::proportional(f32::from(theme.font_size_small)),
+        theme.text_hint,
+    );
 }
 
 /// The rail's six main tabs.
