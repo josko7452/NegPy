@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 19:45 | **Last Commit:** `pending` desktop: wire the average toggles
+**Last Updated:** 2026-11-19 20:10 | **Last Commit:** `HEAD` desktop: close the ten-commit batch
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,13 +19,14 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: run the full workspace verification.
-2. [ ] E5: close the ledger at ten commits.
-3. [ ] Next session: connect the new card fields to the saved edit.
-4. [ ] Next session: continue the remaining Roll cards.
+1. [ ] Next session: connect the new card fields to the saved edit.
+2. [ ] Next session: continue the remaining Roll cards.
+3. [ ] Next session: revisit the Light Table tile metrics.
+4. [ ] Next session: continue the shell gaps.
 
 ## Completed (Recent)
-- `pending` desktop: wire the average toggles.
+- `HEAD` desktop: close the ten-commit batch.
+- `5de4ba4f` desktop: wire the average toggles.
 - `1a78a6c5` desktop: build the Metering card.
 - `76487cb6` desktop: build the Optics card.
 - `6a84944a` desktop: build the Raw Decode card.
@@ -35,8 +36,8 @@ anything whose only gain is a closer score.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 131 library tests. Average-toggle
-  tests cover the saved luma, color and cast state.
+- `cargo test --workspace` passes: 131 desktop library tests and 1 capture
+  test. The average-toggle tests cover the saved luma, color and cast state.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
