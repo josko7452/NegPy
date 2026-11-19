@@ -220,6 +220,23 @@ impl NegFeApp {
             })
             .collect();
         let screen = ctx.screen_rect();
+        if self.view.view == "light_table" {
+            egui::CentralPanel::default()
+                .frame(Frame::NONE.fill(theme.bg_panel))
+                .show(ctx, |ui| {
+                    crate::view::light_table::paint(ui, screen, &strip_textures, 0);
+                    let rail_rect = rail_rect(screen);
+                    let mut rail =
+                        std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
+                    let switched = rail.show(ui, rail_rect);
+                    self.view.tab = rail.tab;
+                    self.rail = rail;
+                    if let Some(tab) = switched {
+                        self.view.tab = tab;
+                    }
+                });
+            return;
+        }
         if self.view.contact_sheet {
             egui::CentralPanel::default()
                 .frame(Frame::NONE.fill(theme.bg_panel))
@@ -270,6 +287,22 @@ impl NegFeApp {
     }
 }
 
+/// The right rail's bounds for a window size.
+#[must_use]
+pub fn rail_rect(screen: Rect) -> Rect {
+    let margin = 8.0;
+    let body_top = screen.top() + TOP_ROW_HEIGHT + 8.0;
+    let rail_width = if screen.width() >= 1800.0 {
+        RAIL_WIDTH
+    } else {
+        RAIL_WIDTH.min((screen.width() * 0.27).max(420.0))
+    };
+    Rect::from_min_max(
+        egui::pos2(screen.right() - rail_width - margin, body_top),
+        egui::pos2(screen.right() - margin, screen.bottom() - margin),
+    )
+}
+
 impl eframe::App for NegFeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.draw(ctx);
@@ -296,32 +329,7 @@ fn paint_shell(
     thumbnails: &[(egui::TextureId, Vec2)],
 ) -> Rect {
     let margin = 8.0;
-    let top = Rect::from_min_max(
-        screen.min + Vec2::new(margin, margin),
-        egui::pos2(screen.right() - margin, screen.top() + TOP_ROW_HEIGHT),
-    );
-    let top = Rect::from_min_max(
-        screen.min + Vec2::new(margin, margin),
-        egui::pos2(
-            screen.right() - margin,
-            top.bottom() + Vec2::new(0.0, margin).y,
-        ),
-    );
-    painter.rect_filled(top, 0.0, surface());
-    painter.text(
-        top.left_center() + Vec2::new(f32::from(Theme::default().space_xl), 0.0),
-        egui::Align2::LEFT_CENTER,
-        "P5080635.ORF · 7792 x 10388 px",
-        egui::FontId::proportional(12.0),
-        Color32::from_rgb(0xbc, 0xbc, 0xbc),
-    );
-    painter.text(
-        egui::pos2(screen.right() - RAIL_WIDTH - margin - 18.0, top.center().y),
-        egui::Align2::RIGHT_CENTER,
-        "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
-        egui::FontId::proportional(12.0),
-        Color32::from_rgb(0xbc, 0xbc, 0xbc),
-    );
+    paint_top_bar(painter, screen);
 
     let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
     let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
@@ -448,6 +456,39 @@ fn paint_shell(
     painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
     paint_toolbar(painter, toolbar);
     rail
+}
+
+/// The top bar's bounds, from the window edge to the rail.
+#[must_use]
+pub fn top_bar_rect(screen: Rect) -> Rect {
+    let margin = 8.0;
+    Rect::from_min_max(
+        screen.min + Vec2::new(margin, margin),
+        egui::pos2(
+            screen.right() - margin,
+            screen.top() + TOP_ROW_HEIGHT + margin,
+        ),
+    )
+}
+
+/// Paint the file name and the current recipe over `screen`.
+pub fn paint_top_bar(painter: &egui::Painter, screen: Rect) {
+    let top = top_bar_rect(screen);
+    painter.rect_filled(top, 0.0, surface());
+    painter.text(
+        top.left_center() + Vec2::new(f32::from(Theme::default().space_xl), 0.0),
+        egui::Align2::LEFT_CENTER,
+        "P5080635.ORF · 7792 x 10388 px",
+        egui::FontId::proportional(12.0),
+        Color32::from_rgb(0xbc, 0xbc, 0xbc),
+    );
+    painter.text(
+        egui::pos2(screen.right() - RAIL_WIDTH - 26.0, top.center().y),
+        egui::Align2::RIGHT_CENTER,
+        "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
+        egui::FontId::proportional(12.0),
+        Color32::from_rgb(0xbc, 0xbc, 0xbc),
+    );
 }
 
 fn cover_rect(outer: Rect, content: Vec2) -> Rect {

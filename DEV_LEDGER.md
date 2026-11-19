@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 16:45 | **Last Commit:** `pending` desktop: give Scan its source icons
+**Last Updated:** 2026-11-19 17:10 | **Last Commit:** `pending` desktop: build the Light Table view
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,23 +19,24 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: Light Table rows at usable density, not golden tile sizes.
-2. [ ] E5: Roll Analysis card: real roll name and baseline state.
-3. [ ] E5: capture the Rust matrix and score it against `golden/tall/`.
-4. [ ] E5: pick the next shell gap from the golden matrix.
+1. [ ] E5: Roll Analysis card: real roll name and baseline state.
+2. [ ] E5: capture the Rust matrix and score it against `golden/tall/`.
+3. [ ] E5: pick the next shell gap from the golden matrix.
+4. [ ] E5: run the full workspace tests after the commit pass.
 
 ## Completed (Recent)
-- `pending` desktop: give Scan its source icons.
+- `pending` desktop: build the Light Table view.
+- `bbea3e1c` desktop: give Scan its source icons.
 - `bd0c815b` desktop: add the negfe launch target.
-- `57b104ef` desktop: match the canvas bar groups.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 114 library tests. Scan tests cover
-  source order and the camera default; launch tests cover parsing.
+- `cargo test -p negpy-desktop` passes: 116 library tests. Light Table tests
+  cover grid columns and an empty roll; Scan and launch tests pass.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
-- Golden scores after the prior commit set: 0.672 to 0.843.
+- Light Table capture: total 0.708, layout 0.685. The grid and bar render;
+  tile size and strip metrics stay deferred.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
