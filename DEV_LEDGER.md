@@ -1,24 +1,24 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 08:36 | **Last Commit:** `HEAD` desktop: open Scan on the camera rig
+**Last Updated:** 2026-11-19 08:54 | **Last Commit:** `HEAD` desktop: align the Metadata shot rows
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 Ten-commit session in progress; E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: tighten the Metadata rail cards.
-2. [ ] E5: match the Frame geometry card rows.
+1. [ ] E5: match the Frame geometry card rows.
+2. [ ] E5: tighten the Library and Frame History rails.
 3. [ ] E5: reproduce frame captures after the rail fixes.
 
 ## Completed (Recent)
-- `HEAD` desktop: open Scan on the camera rig.
+- `HEAD` desktop: align the Metadata shot rows.
+- `a9b8e0e6` desktop: open Scan on the camera rig.
 - `fd019cf9` desktop: card the Export file form.
-- `0f8ca17c` desktop: fill the top bar status line.
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- Scan layout rose from 0.574 to 0.660. Camera mode hides the three
-  scanner-only cards and shows the Output roll controls.
+- Metadata Shot layout rose from 0.652 to 0.687. Rail geometry rose
+  from 0.553 to 0.594.
 - Full workspace tests run after commit 10.
 
 ## Constraints / Gotchas

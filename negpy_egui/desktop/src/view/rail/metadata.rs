@@ -7,6 +7,7 @@ use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
+use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
@@ -157,46 +158,68 @@ impl MetadataState {
 
     fn show_shot(&mut self, ui: &mut Ui) -> bool {
         let mut changed = TabSummary::new(3).show(ui) != Default::default();
+        let columns = RowColumns::new();
         let (gear_open, gear_changed) = metadata_card(ui, "Analog Gear", true, |ui| {
             let _ = hint(ui, "Searches the gear that you declared as your own.");
             let mut gear_changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Camera");
+            field_row(ui, columns, "Camera", |ui| {
                 gear_changed |= self.camera.show(ui);
             });
-            ui.horizontal(|ui| {
-                ui.label("Lens");
+            field_row(ui, columns, "Lens", |ui| {
                 gear_changed |= self.lens.show(ui);
             });
-            ui.horizontal(|ui| {
-                ui.label("Film stock");
+            field_row(ui, columns, "Film stock", |ui| {
                 gear_changed |= self.film_stock.show(ui);
             });
-            let _ = labeled_action(ui, "Clear", ActionRank::Normal);
-            let _ = labeled_action(ui, "Infer from Folder Name", ActionRank::Normal);
+            ui.horizontal(|ui| {
+                let width = (ui.available_width() - f32::from(Theme::default().space_sm)) / 2.0;
+                ui.add_sized(
+                    Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                    egui::Button::new("Clear")
+                        .fill(Theme::default().bg_input)
+                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                );
+                ui.add_sized(
+                    Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                    egui::Button::new("Infer from Folder Name")
+                        .fill(Theme::default().bg_input)
+                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                );
+            });
             gear_changed
         });
         let _ = gear_open;
         changed |= gear_changed;
         let (capture_open, capture_changed) = metadata_card(ui, "Capture", true, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Date");
-                let _ = ui.text_edit_singleline(&mut self.capture_date);
+            field_row(ui, columns, "Date", |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.capture_date)
+                        .hint_text("YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DD HH:MM"),
+                );
             });
-            ui.horizontal(|ui| {
-                ui.label("Place");
-                let _ = ui.text_edit_singleline(&mut self.place);
+            field_row(ui, columns, "Place", |ui| {
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.place)
+                        .hint_text("Pick on a map, or paste coordinates"),
+                );
             });
             false
         });
         let _ = capture_open;
         changed |= capture_changed;
         let (exposure_open, exposure_changed) = metadata_card(ui, "Exposure", true, |ui| {
-            let _ = hint(ui, "The exposure of the original shot.");
-            ui.horizontal(|ui| {
-                ui.label("Exposure");
-                let _ = ui.text_edit_singleline(&mut self.exposure);
-                let _ = ui.add(egui::Button::new("Lock"));
+            let _ = hint(
+                ui,
+                "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.",
+            );
+            field_row(ui, columns, "Exposure", |ui| {
+                ui.add(egui::TextEdit::singleline(&mut self.exposure).hint_text("—"));
+                let _ = ui.add_sized(
+                    Vec2::splat(DEFAULT_BUTTON_HEIGHT),
+                    egui::Button::new("🔒")
+                        .fill(Theme::default().bg_input)
+                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                );
             });
             false
         });
@@ -310,20 +333,21 @@ impl MetadataState {
 }
 
 fn preview_row(ui: &mut Ui, label: &str, value: &str) {
+    let theme = Theme::default();
     ui.horizontal(|ui| {
         ui.add_sized(
-            Vec2::new(78.0, DEFAULT_BUTTON_HEIGHT),
+            Vec2::new(84.0, 18.0),
             egui::Label::new(
                 RichText::new(label)
-                    .color(Theme::default().text_hint)
-                    .size(f32::from(Theme::default().font_size_small)),
+                    .color(theme.text_secondary)
+                    .size(f32::from(theme.font_size_small)),
             )
             .halign(egui::Align::Max),
         );
         let _ = ui.label(
             RichText::new(value)
-                .color(Theme::default().text_primary)
-                .size(f32::from(Theme::default().font_size_small)),
+                .color(theme.text_primary)
+                .size(f32::from(theme.font_size_small)),
         );
     });
 }
