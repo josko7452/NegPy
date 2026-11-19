@@ -13,6 +13,7 @@ use crate::styles::layout::TOP_ROW_HEIGHT;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
 use crate::view::rail::{RAIL_WIDTH, RailState};
+use std::path::Path;
 
 /// The visible tab of the right rail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
@@ -177,6 +178,11 @@ impl NegFeApp {
             texture: None,
             strip_textures: Vec::new(),
         }
+    }
+
+    /// Load the Library from the profile the app reads and saves.
+    pub fn set_profile(&mut self, profile: Option<&Path>) {
+        self.rail.library = crate::view::rail::library::LibraryState::load(profile);
     }
 
     /// Show a decoded frame on the canvas.

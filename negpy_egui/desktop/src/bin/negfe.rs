@@ -21,6 +21,7 @@ fn main() -> eframe::Result {
         launch::load_manual_state(&options, &reference);
     let edit = launch::load_manual_edit(&options, &reference);
     let mut app = NegFeApp::new(&reference);
+    app.set_profile(options.profile_dir().as_deref());
     app.set_frame(frame);
     app.set_edit(edit);
     app.set_strip(strip);

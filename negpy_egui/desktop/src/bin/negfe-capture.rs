@@ -101,6 +101,7 @@ impl CaptureApp {
             &manifest.captures[0].view,
             manifest.captures[0].scroll,
         );
+        app.set_profile(manifest.profile_dir().as_deref());
         app.set_frame(frame.clone());
         app.set_strip(strip.clone());
         app.set_history(&history, &prints);
