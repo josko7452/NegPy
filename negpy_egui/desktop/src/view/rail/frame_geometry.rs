@@ -13,6 +13,8 @@ use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::tab_header::TabSummary;
 
 /// The crop options in the Crop card.
+const TOGGLE_CHIP_HEIGHT: f32 = 40.0;
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CropState {
     pub draw: bool,
@@ -131,8 +133,10 @@ impl GeometryState {
         section.show(ui, |ui| {
             let _ = card(ui, |ui| {
                 ui.add_space(f32::from(theme.space_md));
-                let (row, _) =
-                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
+                let (row, _) = ui.allocate_exact_size(
+                    Vec2::new(ui.available_width(), TOGGLE_CHIP_HEIGHT),
+                    Sense::hover(),
+                );
                 let half = (row.width() - f32::from(theme.space_md)) / 2.0;
                 let draw = Rect::from_min_size(row.min, Vec2::new(half, row.height()));
                 let auto_crop = Rect::from_min_size(
@@ -162,7 +166,7 @@ impl GeometryState {
                         egui::StrokeKind::Inside,
                     );
                     ui.painter().text(
-                        rect.center(),
+                        rect.center() - Vec2::new(0.0, 1.0),
                         Align2::CENTER_CENTER,
                         label,
                         FontId::proportional(f32::from(theme.font_size_base)),
@@ -187,7 +191,7 @@ impl GeometryState {
                     self.crop.auto_crop = !self.crop.auto_crop;
                     changed = true;
                 }
-                ui.add_space(f32::from(theme.space_sm));
+                ui.add_space(f32::from(theme.space_md));
                 field_row(ui, columns, "Ratio", |ui| {
                     changed |= self.crop.ratio.show(ui);
                 });
