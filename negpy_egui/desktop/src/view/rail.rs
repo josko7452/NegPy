@@ -138,6 +138,22 @@ impl RailState {
         }
     }
 
+    /// Select the tab and page a capture or a launch asks for, keeping every card's state.
+    pub fn select_view(&mut self, view: &ViewState) {
+        self.tab = view.tab;
+        match view.tab {
+            Tab::Frame => {
+                self.frame_subtab = SubTabState::new(
+                    &frame_subtabs(),
+                    (!view.subtab.is_empty()).then_some(view.subtab.as_str()),
+                );
+            }
+            Tab::Metadata => self.metadata.show_subtab(&view.subtab),
+            Tab::Export => self.export.show_subtab(&view.subtab),
+            _ => {}
+        }
+    }
+
     /// Paint the rail into `rect` and return whether the user chose another tab.
     pub fn show(&mut self, ui: &mut Ui, rect: Rect, edit: &mut FrameEdit) -> Option<Tab> {
         let theme = Theme::default();

@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 23:10 | **Last Commit:** `HEAD` desktop: close the card-binding batch
+**Last Updated:** 2026-11-19 23:25 | **Last Commit:** pending desktop: keep the rail state between captures
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -15,7 +15,8 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 
 ## Next Steps (Ordered)
 1. [ ] Bind the Export and Metadata cards to the frame edit.
-2. [ ] Revisit the Light Table tile metrics.
+2. [ ] Load the Library rows from the saved roll store.
+3. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
 - `HEAD` desktop: close the card-binding batch.

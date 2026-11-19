@@ -79,14 +79,6 @@ struct CaptureApp {
     requested: bool,
     wrote_manifest: bool,
     frames: usize,
-    frame: FrameImage,
-    strip: Vec<FrameImage>,
-    history: (
-        Vec<negpy_backend::session::workspace::HistoryRow>,
-        Vec<String>,
-    ),
-    roll_analysis: negpy_desktop::view::rail::roll_analysis::RollAnalysisState,
-    edit: negpy_desktop::edit::FrameEdit,
     viewport: Option<CaptureSize>,
 }
 
@@ -119,11 +111,6 @@ impl CaptureApp {
             reference,
             output,
             app,
-            frame,
-            strip,
-            history: (history, prints),
-            roll_analysis,
-            edit,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -140,19 +127,13 @@ impl CaptureApp {
         self.index += 1;
         self.requested = false;
         if let Some(entry) = self.manifest.captures.get(self.index) {
-            let mut app = NegFeApp::for_capture(
+            self.app.select_view(
                 &entry.group,
                 &entry.tab,
                 &entry.subtab,
                 &entry.view,
                 entry.scroll,
             );
-            app.set_frame(self.frame.clone());
-            app.set_strip(self.strip.clone());
-            app.set_history(&self.history.0, &self.history.1);
-            app.set_roll_analysis(self.roll_analysis.clone());
-            app.set_edit(self.edit.clone());
-            self.app = app;
         }
     }
 

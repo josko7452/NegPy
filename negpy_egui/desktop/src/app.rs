@@ -191,6 +191,14 @@ impl NegFeApp {
         self.edit = edit;
     }
 
+    /// Move to the tab and page a capture entry asks for, without rebuilding the rail.
+    pub fn select_view(&mut self, group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) {
+        let texture_size = self.view.texture_size;
+        self.view = ViewState::from_capture(group, tab, subtab, view, scroll);
+        self.view.texture_size = texture_size;
+        self.rail.select_view(&self.view);
+    }
+
     /// Show the roll's thumbnails in the Film Strip.
     pub fn set_strip(&mut self, strip: Vec<FrameImage>) {
         self.strip_textures.clear();
@@ -243,11 +251,8 @@ impl NegFeApp {
                 .show(ctx, |ui| {
                     crate::view::light_table::paint(ui, screen, &strip_textures, 0);
                     let rail_rect = rail_rect(screen);
-                    let mut rail =
-                        std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
-                    let switched = rail.show(ui, rail_rect, &mut self.edit);
-                    self.view.tab = rail.tab;
-                    self.rail = rail;
+                    let switched = self.rail.show(ui, rail_rect, &mut self.edit);
+                    self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
                         self.view.tab = tab;
                     }
@@ -268,10 +273,8 @@ impl NegFeApp {
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
             let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture, &strip_textures);
-            let mut rail = std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
-            let switched = rail.show(ui, rail_rect, &mut self.edit);
-            self.view.tab = rail.tab;
-            self.rail = rail;
+            let switched = self.rail.show(ui, rail_rect, &mut self.edit);
+            self.view.tab = self.rail.tab;
             if let Some(tab) = switched {
                 self.view.tab = tab;
             }
@@ -861,6 +864,17 @@ mod tests {
         assert_eq!(view.tab, Tab::Frame);
         assert_eq!(view.subtab, "tone");
         assert_eq!(view.scroll, 250);
+    }
+
+    #[test]
+    fn selecting_a_capture_keeps_the_rail_state() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.rail.library.filter = "kept".to_string();
+        app.select_view("frame", "tone", "", "canvas", 0.0);
+        assert_eq!(app.view.tab, Tab::Frame);
+        assert_eq!(app.rail.frame_subtab.current_key(), "tone");
+        assert_eq!(app.rail.library.filter, "kept");
     }
 
     #[test]
