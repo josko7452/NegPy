@@ -141,12 +141,17 @@ impl RailState {
             egui::pos2(rect.left(), inner.cursor().top()),
             egui::pos2(rect.right(), rect.bottom()),
         );
+        let footer_height = if self.tab == Tab::Export { 52.0 } else { 0.0 };
+        let scroll_body = Rect::from_min_max(
+            body.min,
+            egui::pos2(body.right(), body.bottom() - footer_height),
+        );
         let mut body_ui = ui.new_child(
             egui::UiBuilder::new()
-                .max_rect(body)
+                .max_rect(scroll_body)
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
-        body_ui.set_width(body.width());
+        body_ui.set_width(scroll_body.width());
         ScrollArea::vertical()
             .id_salt(("rail", self.tab))
             .auto_shrink([false, false])
@@ -155,6 +160,27 @@ impl RailState {
                 self.show_body(ui);
                 ui.add_space(f32::from(theme.space_xl));
             });
+        if footer_height > 0.0 {
+            let footer = Rect::from_min_max(
+                egui::pos2(body.left(), body.bottom() - footer_height),
+                body.max,
+            );
+            let mut footer_ui = ui.new_child(
+                egui::UiBuilder::new()
+                    .max_rect(footer.shrink2(Vec2::new(
+                        f32::from(theme.space_xl),
+                        f32::from(theme.space_sm),
+                    )))
+                    .layout(egui::Layout::top_down(egui::Align::Min)),
+            );
+            footer_ui.set_width(footer.width() - 2.0 * f32::from(theme.space_xl));
+            let _ = crate::view::widgets::split_action::split_action(
+                &mut footer_ui,
+                Icon::Export,
+                "Export Roll",
+                crate::styles::templates::ActionRank::Primary,
+            );
+        }
         switched
     }
 

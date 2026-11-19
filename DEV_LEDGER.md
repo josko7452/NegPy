@@ -1,23 +1,24 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 07:58 | **Last Commit:** `HEAD` desktop: fill the top bar status line
+**Last Updated:** 2026-11-19 08:16 | **Last Commit:** `HEAD` desktop: card the Export file form
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 Ten-commit session in progress; E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: bring the Export rail to the reference structure.
-2. [ ] E5: bring the Scan rail to the reference structure.
-3. [ ] E5: tighten the Metadata rail cards.
+1. [ ] E5: bring the Scan rail to the reference structure.
+2. [ ] E5: tighten the Metadata rail cards.
+3. [ ] E5: match the Frame geometry card rows.
 
 ## Completed (Recent)
-- `HEAD` desktop: fill the top bar status line.
+- `HEAD` desktop: card the Export file form.
+- `0f8ca17c` desktop: fill the top bar status line.
 - `335984e5` desktop: group the canvas toolbar like the reference.
-- `056977a6` desktop: show the roll in the Film Strip.
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- Top bar passes its region thresholds. Layout 0.608, geometry 0.758.
+- Export File layout rose from 0.586 to 0.702. The rail geometry is
+  0.676 and the action now sits in the rail footer.
 - Full workspace tests run after commit 10.
 
 ## Constraints / Gotchas

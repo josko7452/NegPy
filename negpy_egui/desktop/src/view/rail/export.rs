@@ -5,11 +5,11 @@ use eframe::egui::Ui;
 use crate::styles::icons::Icon;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
-use crate::view::widgets::collapsible::hint;
+use crate::view::widgets::collapsible::{card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
+use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
-use crate::view::widgets::split_action::split_action;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
 use crate::view::widgets::tab_header::TabSummary;
@@ -125,39 +125,62 @@ impl ExportState {
             3 => self.show_alongside(ui),
             _ => false,
         };
-        ui.add_space(f32::from(Theme::default().space_md));
-        let _ = split_action(ui, Icon::Export, "Export Roll", ActionRank::Primary);
         changed
     }
 
     fn show_file(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
         let mut changed = false;
-        let _ = section_subheader(ui, "OUTPUT INTENT");
-        changed |= self.intent.show(ui).is_some();
-        let _ = section_subheader(ui, "FORMAT");
-        field_combo(ui, "Format", &mut self.format, &mut changed);
-        changed |= self.jpeg_quality.show(ui, "JPEG Quality").1;
-        changed |= labeled_toggle(ui, "Progressive", &mut self.progressive).clicked();
-        let _ = section_subheader(ui, "SIZE");
-        changed |= self.resolution.show(ui).is_some();
-        changed |= self.long_edge.show(ui, "Long edge").1;
-        field_combo(ui, "Paper ratio", &mut self.paper_ratio, &mut changed);
-        let _ = section_subheader(ui, "COLOR MANAGEMENT");
-        field_combo(ui, "Input ICC", &mut self.input_icc, &mut changed);
-        field_combo(ui, "Export profile", &mut self.export_profile, &mut changed);
-        let _ = section_subheader(ui, "DESTINATION");
-        field_combo(ui, "Folder", &mut self.destination, &mut changed);
-        ui.horizontal(|ui| {
-            ui.label("Subfolder");
-            let _ = ui.text_edit_singleline(&mut self.subfolder);
+        let columns = RowColumns::new();
+        let _ = card(ui, |ui| {
+            let _ = section_subheader(ui, "Output Intent");
+            changed |= self.intent.show(ui).is_some();
+            ui.add_space(f32::from(theme.space_lg));
+            let _ = section_subheader(ui, "Format");
+            field_combo(ui, columns, "Format", &mut self.format, &mut changed);
+            ui.add_space(f32::from(theme.space_md));
+            changed |= self.jpeg_quality.show(ui, "JPEG Quality").1;
+            changed |= labeled_toggle(ui, "Progressive", &mut self.progressive).clicked();
+            ui.add_space(f32::from(theme.space_lg));
+            let _ = section_subheader(ui, "Size");
+            ui.add_space(f32::from(theme.space_md));
+            field_row(ui, columns, "Resolution", |ui| {
+                changed |= self.resolution.show(ui).is_some();
+            });
+            ui.add_space(f32::from(theme.space_md));
+            changed |= self.long_edge.show(ui, "Long edge").1;
+            ui.add_space(f32::from(theme.space_md));
+            field_combo(
+                ui,
+                columns,
+                "Paper ratio",
+                &mut self.paper_ratio,
+                &mut changed,
+            );
+            ui.add_space(f32::from(theme.space_lg));
+            let _ = section_subheader(ui, "Color Management");
+            ui.add_space(f32::from(theme.space_md));
+            field_combo(ui, columns, "Input ICC", &mut self.input_icc, &mut changed);
+            ui.add_space(f32::from(theme.space_md));
+            field_combo(
+                ui,
+                columns,
+                "Export profile",
+                &mut self.export_profile,
+                &mut changed,
+            );
+            ui.add_space(f32::from(theme.space_lg));
+            let _ = section_subheader(ui, "Destination");
+            ui.add_space(f32::from(theme.space_md));
+            field_combo(ui, columns, "Folder", &mut self.destination, &mut changed);
+            ui.add_space(f32::from(theme.space_md));
+            entry_row(ui, columns, "Subfolder", &mut self.subfolder);
+            ui.add_space(f32::from(theme.space_md));
+            entry_row(ui, columns, "Filename", &mut self.filename);
+            ui.add_space(f32::from(theme.space_md));
+            changed |=
+                labeled_toggle(ui, "Overwrite Existing Files", &mut self.overwrite).clicked();
         });
-        ui.horizontal(|ui| {
-            ui.label("Filename");
-            let _ = ui.text_edit_singleline(&mut self.filename);
-        });
-        changed |= labeled_toggle(ui, "Overwrite Existing Files", &mut self.overwrite).clicked();
-        ui.add_space(f32::from(theme.space_sm));
         changed
     }
 
@@ -191,10 +214,22 @@ impl ExportState {
     }
 }
 
-fn field_combo(ui: &mut Ui, label: &str, combo: &mut StepCombo, changed: &mut bool) {
-    ui.horizontal(|ui| {
-        ui.label(label);
+fn field_combo(
+    ui: &mut Ui,
+    columns: RowColumns,
+    label: &str,
+    combo: &mut StepCombo,
+    changed: &mut bool,
+) {
+    field_row(ui, columns, label, |ui| {
+        ui.set_max_width(ui.available_width());
         *changed |= combo.show(ui);
+    });
+}
+
+fn entry_row(ui: &mut Ui, columns: RowColumns, label: &str, value: &mut String) {
+    field_row(ui, columns, label, |ui| {
+        ui.add(egui::TextEdit::singleline(value).desired_width(ui.available_width()));
     });
 }
 
