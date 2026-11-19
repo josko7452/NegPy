@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 22:52 | **Last Commit:** `HEAD` desktop: refresh the Library rolls
+**Last Updated:** 2026-11-19 23:12 | **Last Commit:** `HEAD` desktop: justify the Light Table rows
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,11 +14,12 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Add the Roll Setup import of source folders.
-2. [ ] Revisit the Light Table tile metrics.
+1. [ ] Load the Light Table strip from the open roll, not one frame.
+2. [ ] Add the Roll Setup import of source folders.
 
 ## Completed (Recent)
-- `HEAD` desktop: refresh the Library rolls.
+- `HEAD` desktop: justify the Light Table rows.
+- `96c75264` desktop: refresh the Library rolls.
 - `d1bec40b` desktop: sort the Library rows.
 - `89192452` desktop: wire the Library Import menu.
 - `5bfe2236` backend: store the proof condition in session settings.
@@ -62,5 +63,7 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Run the app with `cd negpy_egui && cargo run --release --bin negfe`.
 - Manual profile `/home/bruno/Dokumenty/NegPy`; roll `vv9`.
 - A capture can rasterize mid-scroll and under-score the rail.
+- The Light Table capture shows one frame because the manifest names one frame;
+  the golden shows the whole roll.
 - Generated captures stay untracked under `tests/gui/actual/`.
 - `negfe` is the manual target; `negfe-capture` is the fixed matrix.

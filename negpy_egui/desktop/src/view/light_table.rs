@@ -11,30 +11,32 @@ use crate::view::widgets::marks;
 pub const GRID_MARGIN: f32 = 8.0;
 /// The gap between frame cells.
 pub const CELL_GAP: f32 = 8.0;
-/// The frame's shape inside each cell, the reference frame's landscape ratio.
-pub const CELL_ASPECT: f32 = 1.2;
+/// A cell's target width, one frame pitch on the Light Table.
+pub const CELL_TARGET: f32 = 220.0;
 
 /// The grid geometry for `count` frames at `width`.
 #[must_use]
-pub fn grid(count: usize, area: Rect, cell_width: f32) -> Vec<Rect> {
-    if count == 0 || cell_width <= 0.0 {
+pub fn grid(count: usize, area: Rect, aspects: &[f32]) -> Vec<Rect> {
+    if count == 0 || area.width() <= 0.0 {
         return Vec::new();
     }
-    let columns = ((area.width() + CELL_GAP) / (cell_width + CELL_GAP))
-        .floor()
-        .max(1.0) as usize;
-    let cell_height = cell_width / CELL_ASPECT;
+    let columns = (((area.width() + CELL_GAP) / (CELL_TARGET + CELL_GAP)).floor() as usize).max(1);
+    let width =
+        ((area.width() - CELL_GAP * (columns.saturating_sub(1)) as f32) / columns as f32).max(1.0);
     let mut cells = Vec::with_capacity(count);
-    for index in 0..count {
-        let column = index % columns;
-        let row = index / columns;
-        cells.push(Rect::from_min_size(
-            egui::pos2(
-                area.left() + column as f32 * (cell_width + CELL_GAP),
-                area.top() + row as f32 * (cell_height + CELL_GAP),
-            ),
-            Vec2::new(cell_width, cell_height),
-        ));
+    let mut top = area.top();
+    for start in (0..count).step_by(columns) {
+        let end = (start + columns).min(count);
+        let row = &aspects[start..end];
+        let aspect = row.iter().copied().sum::<f32>() / row.len().max(1) as f32;
+        let height = (width / aspect.max(0.05)).max(1.0);
+        for column in 0..(end - start) {
+            cells.push(Rect::from_min_size(
+                egui::pos2(area.left() + column as f32 * (width + CELL_GAP), top),
+                Vec2::new(width, height),
+            ));
+        }
+        top += height + CELL_GAP;
     }
     cells
 }
@@ -57,8 +59,11 @@ pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)],
     ui.painter()
         .rect_filled(grid_area, 0.0, theme.canvas_bg_dark_grey);
 
-    let cell_width = ((grid_area.width() - CELL_GAP) / 2.0).floor();
-    let cells = grid(strip.len(), grid_area, cell_width);
+    let aspects: Vec<f32> = strip
+        .iter()
+        .map(|(_, size)| (size.x / size.y.max(1.0)).max(0.05))
+        .collect();
+    let cells = grid(strip.len(), grid_area, &aspects);
     for (index, cell) in cells.iter().enumerate() {
         if !grid_area.intersects(*cell) {
             continue;
@@ -73,7 +78,7 @@ pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)],
         ui.painter()
             .rect_filled(cell.shrink(1.0), 0.0, Color32::BLACK);
         if let Some((texture, size)) = strip.get(index) {
-            let content = fitted_rect(cell.shrink(1.0), *size);
+            let content = cover_rect(cell.shrink(1.0), *size);
             ui.painter().with_clip_rect(cell.shrink(1.0)).image(
                 *texture,
                 content,
@@ -105,11 +110,11 @@ pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)],
     paint_bar(ui, bar, strip.len());
 }
 
-fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
+fn cover_rect(outer: Rect, content: Vec2) -> Rect {
     if content.x <= 0.0 || content.y <= 0.0 {
         return outer;
     }
-    let scale = (outer.width() / content.x).min(outer.height() / content.y);
+    let scale = (outer.width() / content.x).max(outer.height() / content.y);
     Rect::from_center_size(outer.center(), content * scale)
 }
 
@@ -187,15 +192,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_grid_uses_two_columns_at_the_reference_width() {
+    fn a_grid_justifies_each_row_to_the_reference_width() {
         let area = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(1350.0, 1300.0));
-        let cells = grid(4, area, (area.width() - CELL_GAP) / 2.0);
-        assert_eq!(cells.len(), 4);
-        assert_eq!(
-            cells[0].left(),
-            cells[1].left() - cells[0].width() - CELL_GAP
-        );
-        assert!(cells[2].top() > cells[0].bottom());
+        let cells = grid(7, area, &[1.2; 7]);
+        assert_eq!(cells.len(), 7);
+        let columns = (0..7)
+            .take_while(|index| cells[*index].top() == cells[0].top())
+            .count();
+        assert!(columns >= 2);
+        assert!((cells[columns - 1].right() - area.right()).abs() < 0.01);
+        assert_eq!(cells[columns].left(), cells[0].left());
+        assert!(cells[columns].top() >= cells[0].bottom() + CELL_GAP);
     }
 
     #[test]
@@ -204,9 +211,26 @@ mod tests {
             grid(
                 0,
                 Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::splat(10.0)),
-                5.0
+                &[]
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn a_wide_row_keeps_the_frame_shape_and_fills_the_width() {
+        let area = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(1350.0, 1300.0));
+        let cells = grid(2, area, &[1.2, 1.2]);
+        let width = cells[0].width();
+        assert!(((width / cells[0].height()) - 1.2).abs() < 0.01);
+        assert_eq!(cells[1].left(), cells[0].right() + CELL_GAP);
+    }
+
+    #[test]
+    fn a_cover_crop_fills_the_cell_without_letterboxing() {
+        let cell = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(100.0, 50.0));
+        let content = cover_rect(cell, Vec2::new(100.0, 100.0));
+        assert!(content.width() >= cell.width());
+        assert!(content.height() >= cell.height());
     }
 }
