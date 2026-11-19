@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 17:40 | **Last Commit:** `pending` desktop: read the Roll Analysis baseline
+**Last Updated:** 2026-11-19 18:10 | **Last Commit:** `pending` desktop: share the bundled fixture
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,19 +19,20 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: capture the Rust matrix and score it against `golden/tall/`.
-2. [ ] E5: pick the next shell gap from the golden matrix.
-3. [ ] E5: run the full workspace tests after the commit pass.
-4. [ ] E5: update the ledger after the scoring pass.
+1. [ ] E5: give the Raw Decode card its controls.
+2. [ ] E5: give the Optics card its controls.
+3. [ ] E5: give the Metering card its controls.
+4. [ ] E5: wire the Use Average toggles.
 
 ## Completed (Recent)
-- `pending` desktop: read the Roll Analysis baseline.
+- `pending` desktop: share the bundled fixture.
+- `6268316a` desktop: read the Roll Analysis baseline.
 - `ac6877fd` desktop: build the Light Table view.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 118 library tests. Roll Analysis tests
-  cover a saved roll name and an empty process.
+- `cargo test -p negpy-desktop` passes: 119 library tests. Fixture tests
+  cover the bundled reference file.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.

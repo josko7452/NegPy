@@ -1,7 +1,5 @@
 //! Open the NegFe shell for manual use.
 
-use std::path::PathBuf;
-
 use eframe::egui::ViewportBuilder;
 use negpy_desktop::app::NegFeApp;
 use negpy_desktop::fixture::ReferenceFixture;
@@ -15,9 +13,7 @@ fn main() -> eframe::Result {
             std::process::exit(2);
         }
     };
-    let fixture_path =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tests/gui/reference_roll.json");
-    let reference = ReferenceFixture::read(&fixture_path).unwrap_or_else(|error| {
+    let reference = ReferenceFixture::bundled().unwrap_or_else(|error| {
         eprintln!("{error}");
         std::process::exit(2);
     });

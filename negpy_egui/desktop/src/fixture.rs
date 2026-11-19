@@ -222,6 +222,12 @@ impl ReferenceFixture {
         serde_json::from_str(&text)
             .map_err(|error| format!("Could not parse {}: {error}", path.display()))
     }
+
+    /// The fixture state shipped with the golden capture set.
+    pub fn bundled() -> Result<Self, String> {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../tests/gui/reference_roll.json");
+        Self::read(&path)
+    }
 }
 
 #[cfg(test)]
@@ -307,5 +313,12 @@ mod tests {
         assert_eq!(fixture.fixture.tab, "roll");
         assert_eq!(fixture.fixture.strip.height, 248);
         assert!(fixture.fixture.analysis.log);
+    }
+
+    #[test]
+    fn the_bundled_fixture_reads() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        assert_eq!(fixture.fixture.frame, "P5080635.ORF");
+        assert_eq!(fixture.window.width, 1920);
     }
 }
