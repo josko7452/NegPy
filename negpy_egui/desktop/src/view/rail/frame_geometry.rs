@@ -1,11 +1,14 @@
 //! The Frame tab's Geometry page: the crop and the frame's own straightening.
 
-use eframe::egui::{RichText, Ui};
+use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
+use crate::styles::icons::Icon;
+use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
+use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::tab_header::TabSummary;
 
@@ -121,40 +124,79 @@ impl GeometryState {
 
     fn show_crop(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
+        let columns = RowColumns::new();
         let mut section = CollapsibleSection::new("Crop").with_guide();
         section.modified = usize::from(self.crop.auto_crop || self.crop.draw);
         let mut changed = false;
         section.show(ui, |ui| {
             let _ = card(ui, |ui| {
-                ui.horizontal(|ui| {
-                    changed |= labeled_toggle(ui, "Draw", &mut self.crop.draw).clicked();
-                    changed |= labeled_toggle(ui, "Auto Crop", &mut self.crop.auto_crop).clicked();
-                });
-                ui.add_space(f32::from(theme.space_sm));
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Ratio")
-                            .color(theme.text_secondary)
-                            .size(f32::from(theme.font_size_base)),
+                ui.add_space(f32::from(theme.space_md));
+                let (row, _) =
+                    ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), Sense::hover());
+                let half = (row.width() - f32::from(theme.space_md)) / 2.0;
+                let draw = Rect::from_min_size(row.min, Vec2::new(half, row.height()));
+                let auto_crop = Rect::from_min_size(
+                    egui::pos2(draw.right() + f32::from(theme.space_md), row.top()),
+                    Vec2::new(half, row.height()),
+                );
+                for (rect, label, on) in [
+                    (draw, "Draw", self.crop.draw),
+                    (auto_crop, "Auto Crop", self.crop.auto_crop),
+                ] {
+                    ui.painter().rect_filled(
+                        rect,
+                        4.0,
+                        if on { theme.bg_checked } else { theme.bg_input },
                     );
+                    ui.painter().rect_stroke(
+                        rect,
+                        4.0,
+                        Stroke::new(
+                            1.0_f32,
+                            if on {
+                                theme.border_checked
+                            } else {
+                                theme.border_primary
+                            },
+                        ),
+                        egui::StrokeKind::Inside,
+                    );
+                    ui.painter().text(
+                        rect.center(),
+                        Align2::CENTER_CENTER,
+                        label,
+                        FontId::proportional(f32::from(theme.font_size_base)),
+                        if on {
+                            theme.text_primary
+                        } else {
+                            theme.text_secondary
+                        },
+                    );
+                }
+                if ui
+                    .interact(draw, ui.id().with("crop-draw"), Sense::click())
+                    .clicked()
+                {
+                    self.crop.draw = !self.crop.draw;
+                    changed = true;
+                }
+                if ui
+                    .interact(auto_crop, ui.id().with("crop-auto"), Sense::click())
+                    .clicked()
+                {
+                    self.crop.auto_crop = !self.crop.auto_crop;
+                    changed = true;
+                }
+                ui.add_space(f32::from(theme.space_sm));
+                field_row(ui, columns, "Ratio", |ui| {
                     changed |= self.crop.ratio.show(ui);
                 });
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Guide")
-                            .color(theme.text_secondary)
-                            .size(f32::from(theme.font_size_base)),
-                    );
+                field_row(ui, columns, "Guide", |ui| {
                     changed |= self.crop.guide.show(ui);
                 });
                 self.crop.settings_open = true;
                 let _ = section_subheader(ui, "AUTO CROP SETTINGS");
-                ui.horizontal(|ui| {
-                    ui.label(
-                        RichText::new("Mode")
-                            .color(theme.text_secondary)
-                            .size(f32::from(theme.font_size_base)),
-                    );
+                field_row(ui, columns, "Mode", |ui| {
                     changed |= self.crop.mode.show(ui);
                 });
                 let (_, offset) = self.crop.offset.show(ui, "Crop Offset");
@@ -183,6 +225,41 @@ impl GeometryState {
         section.show(ui, |ui| {
             let _ = card(ui, |ui| {
                 let _ = section_subheader(ui, "ROTATE AND FLIP");
+                ui.horizontal(|ui| {
+                    ui.add_space(ui.available_width() - 4.0 * (DEFAULT_BUTTON_HEIGHT + 6.0));
+                    for (index, icon) in [
+                        Icon::RotateLeft,
+                        Icon::RotateRight,
+                        Icon::FlipHorizontal,
+                        Icon::FlipVertical,
+                    ]
+                    .iter()
+                    .enumerate()
+                    {
+                        let (rect, _) = ui.allocate_exact_size(
+                            Vec2::splat(DEFAULT_BUTTON_HEIGHT),
+                            Sense::hover(),
+                        );
+                        ui.painter().rect_filled(rect, 4.0, theme.bg_input);
+                        ui.painter().rect_stroke(
+                            rect,
+                            4.0,
+                            Stroke::new(1.0_f32, theme.border_primary),
+                            egui::StrokeKind::Inside,
+                        );
+                        ui.painter().text(
+                            rect.center(),
+                            Align2::CENTER_CENTER,
+                            icon.glyph(),
+                            FontId::proportional(f32::from(theme.font_size_base)),
+                            if index == 3 {
+                                theme.text_primary
+                            } else {
+                                theme.text_secondary
+                            },
+                        );
+                    }
+                });
                 ui.horizontal(|ui| {
                     changed |= labeled_toggle(ui, "Level", &mut self.straighten.level).clicked();
                     let _ = labeled_action(ui, "Square to Film", ActionRank::Normal);

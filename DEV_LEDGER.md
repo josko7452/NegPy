@@ -1,24 +1,24 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 08:54 | **Last Commit:** `HEAD` desktop: align the Metadata shot rows
+**Last Updated:** 2026-11-19 09:12 | **Last Commit:** `HEAD` desktop: align the Geometry crop rows
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
 Ten-commit session in progress; E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: match the Frame geometry card rows.
-2. [ ] E5: tighten the Library and Frame History rails.
+1. [ ] E5: tighten the Library and Frame History rails.
+2. [ ] E5: give Geometry its taller toggle chips.
 3. [ ] E5: reproduce frame captures after the rail fixes.
 
 ## Completed (Recent)
-- `HEAD` desktop: align the Metadata shot rows.
+- `HEAD` desktop: align the Geometry crop rows.
+- `1681c90f` desktop: align the Metadata shot rows.
 - `a9b8e0e6` desktop: open Scan on the camera rig.
-- `fd019cf9` desktop: card the Export file form.
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- Metadata Shot layout rose from 0.652 to 0.687. Rail geometry rose
-  from 0.553 to 0.594.
+- Frame Geometry layout rose from 0.675 to 0.698. The Crop rows share
+  the field column; Straighten shows the rotation group.
 - Full workspace tests run after commit 10.
 
 ## Constraints / Gotchas
