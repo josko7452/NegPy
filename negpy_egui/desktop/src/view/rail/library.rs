@@ -20,6 +20,7 @@ use crate::styles::layout::TOOLBAR_BUTTON_HEIGHT;
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card};
 use crate::view::widgets::flat_rows::{FlatRow, paint_pill};
+use crate::view::widgets::sort_button::{SortButton, SortChange, SortOrder};
 
 const ROLL_ROW: f32 = 46.0;
 
@@ -29,6 +30,7 @@ pub struct RollRow {
     pub id: String,
     pub name: String,
     pub detail: String,
+    pub sort_date: i64,
     pub mode: Option<egui::Color32>,
     pub open: bool,
 }
@@ -41,6 +43,7 @@ impl RollRow {
             id: String::new(),
             name: name.into(),
             detail: detail.into(),
+            sort_date: 0,
             mode: None,
             open: false,
         }
@@ -66,6 +69,7 @@ impl RollRow {
 pub struct LibraryState {
     pub rolls: Vec<RollRow>,
     pub filter: String,
+    pub sort: SortButton,
     profile: Option<PathBuf>,
     status: String,
 }
@@ -75,6 +79,7 @@ impl Default for LibraryState {
         Self {
             rolls: Vec::new(),
             filter: String::new(),
+            sort: library_sort("name", false),
             profile: None,
             status: String::new(),
         }
@@ -92,16 +97,25 @@ impl LibraryState {
         let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
         let gear = GearLibrary::load(Path::new(&app.gear_dir), &resource_path("gear"));
         let composites = saved_composites(&mut repo);
-        let rows = rolls::all_rolls_sorted(&repo)
+        let mut rows: Vec<RollRow> = rolls::all_rolls_sorted(&repo)
             .into_iter()
             .map(|(roll_id, entry)| {
                 let frames = roll_frame_count(&entry, &composites);
-                RollRow::new(roll_name(&entry), roll_detail(&entry, frames, &gear)).with_id(roll_id)
+                let mut row = RollRow::new(roll_name(&entry), roll_detail(&entry, frames, &gear))
+                    .with_id(roll_id);
+                row.sort_date = entry
+                    .get("created_at")
+                    .and_then(serde_json::Value::as_f64)
+                    .unwrap_or(0.0) as i64;
+                row
             })
             .collect();
+        let (order, descending) = saved_sort(&repo);
+        sort_rows(&mut rows, order, descending);
         Self {
             rolls: rows,
             filter: String::new(),
+            sort: library_sort(order, descending),
             profile: Some(profile.to_path_buf()),
             status: String::new(),
         }
@@ -137,6 +151,7 @@ impl LibraryState {
         Self {
             rolls: rows,
             filter: String::new(),
+            sort: library_sort("name", false),
             profile: None,
             status: String::new(),
         }
@@ -146,6 +161,27 @@ impl LibraryState {
     #[must_use]
     pub fn status(&self) -> &str {
         &self.status
+    }
+
+    /// Order the roll list and save the choice, as Python's Library sort does.
+    pub fn set_sort(&mut self, order: &'static str, descending: bool) {
+        self.sort.show_order(order, descending);
+        sort_rows(&mut self.rolls, order, descending);
+        let Some(profile) = &self.profile else {
+            return;
+        };
+        let app = AppConfig::for_user_dir(profile);
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        if repo.initialize().is_err() {
+            return;
+        }
+        let mut settings = serde_json::Map::new();
+        settings.insert("library_sort_order".to_string(), serde_json::json!(order));
+        settings.insert(
+            "library_sort_descending".to_string(),
+            serde_json::json!(descending),
+        );
+        let _ = repo.save_global_settings(&settings);
     }
 
     /// Import one folder as a roll, or its subfolders as separate rolls.
@@ -201,7 +237,13 @@ impl LibraryState {
                             .margin(Vec2::new(f32::from(theme.space_xl), 8.0)),
                     );
                     ui.add_space(f32::from(theme.space_sm));
-                    paint_small_button(ui, "Name", 66.0, &theme);
+                    if let Some(change) = self.sort.show(ui, "Sort the roll list") {
+                        let (order, descending) = match change {
+                            SortChange::Order(order) => (order, self.sort.descending),
+                            SortChange::Direction(descending) => (self.sort.order, descending),
+                        };
+                        self.set_sort(order, descending);
+                    }
                     ui.add_space(f32::from(theme.space_sm));
                     import = Some(small_button(ui, "Import", 76.0, &theme));
                     ui.add_space(f32::from(theme.space_sm));
@@ -302,6 +344,49 @@ fn roll_photos(detail: &str) -> i64 {
         .next()
         .and_then(|first| first.parse().ok())
         .unwrap_or(0)
+}
+
+fn library_sort(order: &'static str, descending: bool) -> SortButton {
+    let mut sort = SortButton::new(vec![
+        SortOrder::new("name", "Name"),
+        SortOrder::new("date", "Date"),
+    ]);
+    sort.show_order(order, descending);
+    sort
+}
+
+fn saved_sort(repo: &StorageRepository) -> (&'static str, bool) {
+    let value = |key: &str| repo.global_setting(key).ok().flatten();
+    let order = match value("library_sort_order")
+        .and_then(|value| value.as_str().map(str::to_string))
+        .as_deref()
+    {
+        Some("date") => "date",
+        Some(_) => "name",
+        None => match value("file_sort_order")
+            .and_then(|value| value.as_str().map(str::to_string))
+            .as_deref()
+        {
+            Some("date") => "date",
+            _ => "name",
+        },
+    };
+    let descending = value("library_sort_descending")
+        .or_else(|| value("file_sort_descending"))
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false);
+    (order, descending)
+}
+
+fn sort_rows(rows: &mut [RollRow], order: &str, descending: bool) {
+    if order == "date" {
+        rows.sort_by_key(|row| row.sort_date);
+    } else {
+        rows.sort_by_key(|row| row.name.to_lowercase());
+    }
+    if descending {
+        rows.reverse();
+    }
 }
 
 fn roll_frame_count(
@@ -530,6 +615,38 @@ mod tests {
         assert!(state.import(&dir.path().join("photos"), true));
         assert_eq!(state.rolls.len(), 2);
         assert_eq!(state.status(), "Imported 2 rolls.");
+    }
+
+    #[test]
+    fn the_name_sort_orders_rows_and_saves_the_choice() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = LibraryState::load(Some(dir.path()));
+        state.rolls = vec![
+            RollRow::new("w10", "1 photo"),
+            RollRow::new("w2", "1 photo"),
+        ];
+        state.set_sort("name", false);
+        assert_eq!(state.rolls[0].name, "w10");
+        let app = AppConfig::for_user_dir(dir.path());
+        let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        assert_eq!(
+            repo.global_setting("library_sort_order").unwrap(),
+            Some(serde_json::json!("name"))
+        );
+        assert_eq!(
+            repo.global_setting("library_sort_descending").unwrap(),
+            Some(serde_json::json!(false))
+        );
+    }
+
+    #[test]
+    fn the_date_sort_puts_the_newest_roll_first_when_descending() {
+        let mut state = LibraryState::reference();
+        state.rolls[0].sort_date = 10;
+        state.rolls[1].sort_date = 20;
+        state.set_sort("date", true);
+        assert_eq!(state.rolls[0].sort_date, 20);
+        assert_eq!(state.rolls[1].sort_date, 10);
     }
 
     #[test]
