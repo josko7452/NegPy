@@ -219,6 +219,45 @@ impl LibraryState {
         true
     }
 
+    /// Rediscover rolls under every import source and re-read the row counts.
+    pub fn refresh(&mut self) -> bool {
+        let Some(profile) = self.profile.clone() else {
+            return false;
+        };
+        let app = AppConfig::for_user_dir(&profile);
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        if repo.initialize().is_err() {
+            self.status = "Could not open the library.".to_string();
+            return false;
+        }
+        let dropped = rolls::prune_filtered_rolls(&mut repo);
+        let before = rolls::all_rolls_sorted(&repo).len();
+        for source in rolls::import_sources(&repo) {
+            rolls::import_subfolders_as_rolls(&mut repo, &source, true);
+        }
+        let found = rolls::all_rolls_sorted(&repo).len().saturating_sub(before);
+        let status = match (found, dropped) {
+            (0, 0) => String::new(),
+            (found, 0) => format!("Found {}.", count_of(found as i64, "new roll", "new rolls")),
+            (0, dropped) => format!(
+                "Removed {}.",
+                count_of(dropped as i64, "filtered roll", "filtered rolls")
+            ),
+            (found, dropped) => format!(
+                "Found {}, removed {}.",
+                count_of(found as i64, "new roll", "new rolls"),
+                count_of(dropped as i64, "filtered roll", "filtered rolls")
+            ),
+        };
+        let filter = std::mem::take(&mut self.filter);
+        *self = Self {
+            filter,
+            status,
+            ..Self::load(Some(&profile))
+        };
+        found > 0 || dropped > 0
+    }
+
     /// Paint the tab and return the Roll the user opened.
     pub fn show(&mut self, ui: &mut Ui, footer_y: Option<f32>) -> Option<String> {
         let theme = Theme::default();
@@ -227,6 +266,7 @@ impl LibraryState {
         let (_, result) = section.show(ui, |ui| {
             card(ui, |ui| {
                 let mut import = None;
+                let mut more = None;
                 ui.horizontal(|ui| {
                     let height = TOOLBAR_BUTTON_HEIGHT;
                     let width = (ui.available_width() - 210.0).max(100.0);
@@ -247,9 +287,14 @@ impl LibraryState {
                     ui.add_space(f32::from(theme.space_sm));
                     import = Some(small_button(ui, "Import", 76.0, &theme));
                     ui.add_space(f32::from(theme.space_sm));
-                    paint_small_button(ui, Icon::Menu.glyph(), TOOLBAR_BUTTON_HEIGHT, &theme);
+                    more = Some(small_button(
+                        ui,
+                        Icon::Menu.glyph(),
+                        TOOLBAR_BUTTON_HEIGHT,
+                        &theme,
+                    ));
                 });
-                let picked = import.and_then(|import| import_menu(&import));
+                let picked = import.as_ref().and_then(import_menu);
                 if let Some(subfolders) = picked
                     && let Some(parent) = rfd::FileDialog::new()
                         .set_title(if subfolders {
@@ -260,6 +305,9 @@ impl LibraryState {
                         .pick_folder()
                 {
                     self.import(&parent, subfolders);
+                }
+                if more.as_ref().is_some_and(action_menu) {
+                    self.refresh();
                 }
                 ui.add_space(f32::from(theme.space_sm));
                 let needle = self.filter.trim().to_lowercase();
@@ -491,10 +539,6 @@ fn small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) -> egui::Re
     response
 }
 
-fn paint_small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) {
-    let _ = small_button(ui, label, width, theme);
-}
-
 fn import_menu(import: &egui::Response) -> Option<bool> {
     egui::Popup::menu(import)
         .show(|ui| {
@@ -510,6 +554,15 @@ fn import_menu(import: &egui::Response) -> Option<bool> {
         })
         .map(|response| response.inner)
         .flatten()
+}
+
+fn action_menu(more: &egui::Response) -> bool {
+    egui::Popup::menu(more)
+        .show(|ui| {
+            ui.set_min_width(180.0);
+            ui.button("Refresh").clicked()
+        })
+        .is_some_and(|response| response.inner)
 }
 
 #[cfg(test)]
@@ -647,6 +700,31 @@ mod tests {
         state.set_sort("date", true);
         assert_eq!(state.rolls[0].sort_date, 20);
         assert_eq!(state.rolls[1].sort_date, 10);
+    }
+
+    #[test]
+    fn a_refresh_finds_a_roll_added_under_an_import_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = dir.path().join("photos");
+        let first = parent.join("w1");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::write(first.join("frame.tif"), b"image").unwrap();
+        let mut state = LibraryState::load(Some(dir.path()));
+        assert!(state.import(&first, false));
+        let second = parent.join("w2");
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(second.join("frame.tif"), b"image").unwrap();
+        let app = AppConfig::for_user_dir(dir.path());
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        let mut sources = serde_json::Map::new();
+        sources.insert(
+            "roll_import_sources".to_string(),
+            serde_json::json!([parent.display().to_string()]),
+        );
+        repo.save_global_settings(&sources).unwrap();
+        assert!(state.refresh());
+        assert_eq!(state.rolls.len(), 2);
+        assert_eq!(state.status(), "Found 1 new roll.");
     }
 
     #[test]
