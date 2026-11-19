@@ -232,7 +232,9 @@ impl RailState {
             edit.mark_dirty();
         }
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.optics.show(ui);
+        if self.optics.show(ui, edit) {
+            edit.mark_dirty();
+        }
         ui.add_space(f32::from(Theme::default().space_lg));
         self.metering.show(ui);
         ui.add_space(f32::from(Theme::default().space_lg));

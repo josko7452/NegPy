@@ -2,6 +2,7 @@
 
 use eframe::egui::Ui;
 
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::templates::{ActionRank, action_with_icon, labeled_toggle, section_subheader};
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
@@ -68,15 +69,52 @@ impl OpticsState {
         self.profiles = profiles;
     }
 
+    /// Replace the controls with the lens and flat-field values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let geometry = &edit.config.geometry;
+        self.embedded_distortion = geometry.lens_distortion_from_metadata;
+        self.embedded_ca = geometry.lens_ca_from_metadata;
+        self.distortion.set_value(geometry.distortion_k1);
+        self.apply = edit.config.flatfield.apply;
+        self.profile = profile_combo(&self.profiles, &edit.config.flatfield.profile_id);
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&self, edit: &mut FrameEdit) -> bool {
+        let geometry = &mut edit.config.geometry;
+        let flatfield = &mut edit.config.flatfield;
+        let profile_id = self
+            .profiles
+            .get(self.profile.current)
+            .map_or_else(String::new, |profile| profile.id.clone());
+        let changed = geometry.lens_distortion_from_metadata != self.embedded_distortion
+            || geometry.lens_ca_from_metadata != self.embedded_ca
+            || (geometry.distortion_k1 - self.distortion.value).abs()
+                > self.distortion.spec.step * 0.5
+            || flatfield.apply != self.apply
+            || flatfield.profile_id != profile_id;
+        geometry.lens_distortion_from_metadata = self.embedded_distortion;
+        geometry.lens_ca_from_metadata = self.embedded_ca;
+        geometry.distortion_k1 = self.distortion.value;
+        flatfield.apply = self.apply;
+        flatfield.profile_id = profile_id;
+        changed
+    }
+
     /// Paint the card. Returns whether a control changed the edit.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let mut section = CollapsibleSection::new("Optics")
             .with_guide()
             .with_icon(Icon::Camera);
         section.expanded = self.open;
         let (_, result) = section.show(ui, |ui| card(ui, |ui| self.show_body(ui)));
         self.open = section.expanded;
-        result.unwrap_or(false)
+        let changed = result.unwrap_or(false);
+        if changed {
+            self.store(edit);
+        }
+        changed
     }
 
     fn show_body(&mut self, ui: &mut Ui) -> bool {
@@ -160,10 +198,42 @@ mod tests {
     fn the_card_paints_on_a_context() {
         let ctx = eframe::egui::Context::default();
         let mut state = OpticsState::default();
+        let mut edit = FrameEdit::default();
         let _ = ctx.run(eframe::egui::RawInput::default(), |ctx| {
             eframe::egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn a_loaded_edit_fills_the_optics_card_and_stores_it() {
+        let mut edit = FrameEdit::default();
+        edit.config.geometry.lens_distortion_from_metadata = true;
+        edit.config.geometry.lens_ca_from_metadata = true;
+        edit.config.geometry.distortion_k1 = 0.012;
+        edit.config.flatfield.apply = true;
+        edit.config.flatfield.profile_id = "p1".to_string();
+        let mut state = OpticsState::default();
+        state.set_profiles(
+            vec![
+                FlatFieldChoice {
+                    label: "None".to_string(),
+                    id: String::new(),
+                },
+                FlatFieldChoice {
+                    label: "Bare light".to_string(),
+                    id: "p1".to_string(),
+                },
+            ],
+            "p1",
+        );
+        state.load(&edit);
+        assert!(state.embedded_distortion);
+        assert!(state.embedded_ca);
+        assert!((state.distortion.value - 0.012).abs() < 1e-9);
+        assert!(state.apply);
+        assert_eq!(state.profile.current_label(), "Bare light");
+        assert!(!state.store(&mut edit));
     }
 }
