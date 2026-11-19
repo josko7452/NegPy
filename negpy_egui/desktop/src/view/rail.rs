@@ -19,6 +19,7 @@ use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
+use negpy_backend::domain::models::process::{ProcessMode, scan_setup_values, with_process_mode};
 
 pub mod export;
 pub mod frame_color;
@@ -226,7 +227,7 @@ impl RailState {
     fn show_roll(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
         self.show_analysis(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.show_setup(ui);
+        self.show_setup(ui, edit);
         ui.add_space(f32::from(Theme::default().space_lg));
         if self.raw_decode.show(ui, edit) {
             edit.mark_dirty();
@@ -407,15 +408,37 @@ impl RailState {
         });
     }
 
-    fn show_setup(&mut self, ui: &mut Ui) {
+    fn show_setup(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
         let theme = Theme::default();
+        self.process_mode.current = process_mode_index(edit.config.process.process_mode);
+        self.rig.current = usize::from(edit.config.process.linear_raw);
         self.setup.show(ui, |ui| {
             let _ = card(ui, |ui| {
-                let _ = self.process_mode.show(ui);
+                let mut changed = false;
+                if let Some(index) = self.process_mode.show(ui) {
+                    changed = true;
+                    let mode = [ProcessMode::C41, ProcessMode::BW, ProcessMode::E6]
+                        [index.min(2)];
+                    edit.config = with_process_mode(edit.config.clone(), mode);
+                }
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = self.rig.show(ui);
+                if let Some(index) = self.rig.show(ui) {
+                    changed = true;
+                    edit.config.process.linear_raw = index == 1;
+                }
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = self.light.show(ui);
+                if let Some(index) = self.light.show(ui) {
+                    changed = true;
+                    let (linear_raw, paper) = scan_setup_values(
+                        if self.rig.current == 1 { "scanner" } else { "camera" },
+                        if index == 1 { "narrowband" } else { "white" },
+                    );
+                    edit.config.process.linear_raw = linear_raw;
+                    edit.config.exposure.paper_profile = paper.to_string();
+                }
+                if changed {
+                    edit.mark_dirty();
+                }
                 ui.add_space(f32::from(theme.space_sm));
                 let _ = hint(
                     ui,
@@ -606,6 +629,14 @@ impl RailState {
     }
 }
 
+fn process_mode_index(mode: ProcessMode) -> usize {
+    match mode {
+        ProcessMode::C41 => 0,
+        ProcessMode::BW => 1,
+        ProcessMode::E6 => 2,
+    }
+}
+
 /// Paint the Find field the top bar puts over the rail.
 pub fn paint_search(ui: &mut Ui, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(
@@ -736,5 +767,15 @@ mod tests {
         assert_eq!(RailState::for_view(&view).metadata.page, 1);
         let view = ViewState::from_capture("export", "", "proof", "canvas", 0.0);
         assert_eq!(RailState::for_view(&view).export.page, 1);
+    }
+
+    #[test]
+    fn the_setup_modes_map_to_their_stored_values() {
+        assert_eq!(process_mode_index(ProcessMode::C41), 0);
+        assert_eq!(process_mode_index(ProcessMode::BW), 1);
+        assert_eq!(process_mode_index(ProcessMode::E6), 2);
+        let (linear_raw, paper) = scan_setup_values("camera", "narrowband");
+        assert!(linear_raw);
+        assert_eq!(paper, "pakon");
     }
 }
