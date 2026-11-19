@@ -145,6 +145,7 @@ pub struct NegFeApp {
     pub rail: RailState,
     pub edit: FrameEdit,
     pub proof: ProofSettings,
+    pub profile: Option<std::path::PathBuf>,
     settings: Option<negpy_backend::infrastructure::storage::repository::StorageRepository>,
     pub frame: Option<FrameImage>,
     pub strip: Vec<FrameImage>,
@@ -162,6 +163,7 @@ impl NegFeApp {
             view,
             edit: FrameEdit::default(),
             proof: ProofSettings::default(),
+            profile: None,
             settings: None,
             frame: None,
             strip: Vec::new(),
@@ -179,6 +181,7 @@ impl NegFeApp {
             view,
             edit: FrameEdit::default(),
             proof: ProofSettings::default(),
+            profile: None,
             settings: None,
             frame: None,
             strip: Vec::new(),
@@ -193,6 +196,7 @@ impl NegFeApp {
         let Some(profile) = profile else {
             return;
         };
+        self.profile = Some(profile.to_path_buf());
         let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
         let gear = negpy_backend::features::metadata::gear::GearLibrary::load(
             Path::new(&app.gear_dir),

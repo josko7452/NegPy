@@ -7,6 +7,8 @@ use crate::fixture::{GoldenManifest, ReferenceFixture};
 use crate::frame_source::{
     FrameImage, frame_path, load_display_frame, load_strip, placeholder, stored_history,
 };
+use negpy_backend::kernel::system::paths::default_user_dir;
+use negpy_backend::session::startup::prepare_user_directory_with_probe;
 
 /// The profile and folder a manual launch reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,6 +54,17 @@ impl LaunchOptions {
         self.profile.clone().filter(|path| path.is_dir())
     }
 
+    /// The profile the shell reads and writes, or `None` when the user declined a
+    /// data folder. An explicit `--profile` wins; otherwise the default user directory
+    /// resolves, as the Python startup does.
+    #[must_use]
+    pub fn resolve_profile(&self) -> Option<PathBuf> {
+        self.profile_dir().or_else(|| {
+            let dir = default_user_dir();
+            dir.is_dir().then_some(dir)
+        })
+    }
+
     /// The folder when it exists.
     #[must_use]
     pub fn frame_folder(&self) -> Option<PathBuf> {
@@ -59,10 +72,59 @@ impl LaunchOptions {
     }
 }
 
+/// Prepare the data folder on Windows, then resolve the profile the shell reads.
+///
+/// A declined folder returns `None`: the shell then runs without a store, as it does
+/// when the user gives no profile on a platform with no preflight.
+#[must_use]
+pub fn startup_profile(options: &LaunchOptions) -> Option<PathBuf> {
+    if prepare_user_directory() {
+        options.resolve_profile()
+    } else {
+        None
+    }
+}
+
+/// Run the Windows data-folder preflight with the native picker and message box. A
+/// non-Windows platform needs no preflight.
+fn prepare_user_directory() -> bool {
+    let platform = if cfg!(windows) {
+        "win32"
+    } else {
+        std::env::consts::OS
+    };
+    let mut choose = |source: &std::path::Path, _suggested: &std::path::Path| {
+        rfd::FileDialog::new()
+            .set_title("NegPy data folder")
+            .set_directory(source)
+            .pick_folder()
+    };
+    let mut message = |text: &str, error: bool| {
+        let dialog = rfd::MessageDialog::new()
+            .set_title("NegPy data folder")
+            .set_description(text)
+            .set_buttons(rfd::MessageButtons::Ok);
+        let dialog = if error {
+            dialog.set_level(rfd::MessageLevel::Error)
+        } else {
+            dialog.set_level(rfd::MessageLevel::Info)
+        };
+        dialog.show();
+    };
+    prepare_user_directory_with_probe(
+        platform,
+        &default_user_dir(),
+        &negpy_backend::kernel::system::user_directory::ensure_writable,
+        &mut choose,
+        &mut message,
+    )
+}
+
 /// Load the state a manual launch shows.
 #[must_use]
 pub fn load_manual_state(
     options: &LaunchOptions,
+    profile: Option<&std::path::Path>,
     reference: &ReferenceFixture,
 ) -> (
     FrameImage,
@@ -71,7 +133,6 @@ pub fn load_manual_state(
     Vec<String>,
     crate::view::rail::roll_analysis::RollAnalysisState,
 ) {
-    let profile = options.profile_dir();
     let Some(folder) = options.frame_folder() else {
         return (
             placeholder(1600, 1200),
@@ -84,36 +145,34 @@ pub fn load_manual_state(
     let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
     let frame = current
         .as_deref()
-        .and_then(|path| load_display_frame(path, profile.as_deref(), 1600).ok())
+        .and_then(|path| load_display_frame(path, profile, 1600).ok())
         .unwrap_or_else(|| placeholder(1600, 1200));
-    let strip = load_strip(&folder, current.as_deref(), profile.as_deref(), 320, 12);
+    let strip = load_strip(&folder, current.as_deref(), profile, 320, 12);
     let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
-        |path| stored_history(profile.as_deref(), path),
+        |path| stored_history(profile, path),
     );
     let roll_analysis = current.as_deref().map_or_else(
         crate::view::rail::roll_analysis::RollAnalysisState::default,
-        |path| {
-            crate::view::rail::roll_analysis::RollAnalysisState::load(
-                profile.as_deref(),
-                path,
-                None,
-            )
-        },
+        |path| crate::view::rail::roll_analysis::RollAnalysisState::load(profile, path, None),
     );
     (frame, strip, history.0, history.1, roll_analysis)
 }
 
 /// The edit of the frame a manual launch shows.
 #[must_use]
-pub fn load_manual_edit(options: &LaunchOptions, reference: &ReferenceFixture) -> FrameEdit {
+pub fn load_manual_edit(
+    options: &LaunchOptions,
+    profile: Option<&std::path::Path>,
+    reference: &ReferenceFixture,
+) -> FrameEdit {
     let Some(folder) = options.frame_folder() else {
         return FrameEdit::default();
     };
     let Some(path) = frame_path(Some(folder), &reference.fixture.frame) else {
         return FrameEdit::default();
     };
-    FrameEdit::load(options.profile_dir().as_deref(), &path)
+    FrameEdit::load(profile, &path)
 }
 
 /// The edit of the frame a manifest capture shows, read without saving.
@@ -218,9 +277,29 @@ mod tests {
             profile: None,
             folder: Some(PathBuf::from("/missing/folder")),
         };
-        let (frame, strip, _, _, _) = load_manual_state(&options, &fixture);
+        let (frame, strip, _, _, _) = load_manual_state(&options, None, &fixture);
         assert!(frame.is_rgb());
         assert!(strip.is_empty());
+    }
+
+    #[test]
+    fn an_explicit_profile_wins_over_the_default() {
+        let dir = tempfile::tempdir().unwrap();
+        let options = LaunchOptions {
+            profile: Some(dir.path().to_path_buf()),
+            folder: None,
+        };
+        assert_eq!(options.resolve_profile(), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn a_missing_profile_falls_back_to_the_user_directory() {
+        let options = LaunchOptions {
+            profile: Some(PathBuf::from("/missing/profile")),
+            folder: None,
+        };
+        let resolved = options.resolve_profile().unwrap();
+        assert_eq!(resolved, default_user_dir());
     }
 
     #[test]
