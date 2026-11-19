@@ -9,7 +9,9 @@ use eframe::egui::{self, ViewportBuilder};
 use negpy_desktop::app::NegFeApp;
 use negpy_desktop::capture::{self, CaptureSize};
 use negpy_desktop::fixture::{CaptureEntry, GoldenManifest, ReferenceFixture};
-use negpy_desktop::frame_source::{FrameImage, frame_path, load_display_frame, placeholder};
+use negpy_desktop::frame_source::{
+    FrameImage, frame_path, load_display_frame, load_strip, placeholder,
+};
 
 #[derive(Clone, Debug)]
 struct Options {
@@ -38,6 +40,7 @@ fn main() -> eframe::Result {
     });
     std::fs::create_dir_all(&options.output).unwrap();
     let frame = load_frame(&manifest, &reference);
+    let strip = load_roll_strip(&manifest, &reference, &frame);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -58,6 +61,7 @@ fn main() -> eframe::Result {
                 reference,
                 options.output,
                 frame,
+                strip,
             )))
         }),
     )
@@ -79,6 +83,24 @@ fn load_frame(manifest: &GoldenManifest, reference: &ReferenceFixture) -> FrameI
         .unwrap_or_else(|| placeholder(1600, 1200))
 }
 
+fn load_roll_strip(
+    manifest: &GoldenManifest,
+    reference: &ReferenceFixture,
+    frame: &FrameImage,
+) -> Vec<FrameImage> {
+    let Some(folder) = manifest.frame_folder() else {
+        return vec![frame.clone()];
+    };
+    let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
+    let profile = manifest.profile_dir();
+    let strip = load_strip(&folder, current.as_deref(), profile.as_deref(), 320, 12);
+    if strip.is_empty() {
+        vec![frame.clone()]
+    } else {
+        strip
+    }
+}
+
 struct CaptureApp {
     manifest: GoldenManifest,
     reference: ReferenceFixture,
@@ -89,6 +111,7 @@ struct CaptureApp {
     wrote_manifest: bool,
     frames: usize,
     frame: FrameImage,
+    strip: Vec<FrameImage>,
     viewport: Option<CaptureSize>,
 }
 
@@ -98,6 +121,7 @@ impl CaptureApp {
         reference: ReferenceFixture,
         output: PathBuf,
         frame: FrameImage,
+        strip: Vec<FrameImage>,
     ) -> Self {
         let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
@@ -107,12 +131,14 @@ impl CaptureApp {
             manifest.captures[0].scroll,
         );
         app.set_frame(frame.clone());
+        app.set_strip(strip.clone());
         Self {
             manifest,
             reference,
             output,
             app,
             frame,
+            strip,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -137,6 +163,7 @@ impl CaptureApp {
                 entry.scroll,
             );
             app.set_frame(self.frame.clone());
+            app.set_strip(self.strip.clone());
             self.app = app;
         }
     }

@@ -141,7 +141,9 @@ pub struct NegFeApp {
     pub view: ViewState,
     pub rail: RailState,
     pub frame: Option<FrameImage>,
+    pub strip: Vec<FrameImage>,
     texture: Option<TextureHandle>,
+    strip_textures: Vec<TextureHandle>,
 }
 
 impl NegFeApp {
@@ -153,7 +155,9 @@ impl NegFeApp {
             rail: RailState::for_view(&view),
             view,
             frame: None,
+            strip: Vec::new(),
             texture: None,
+            strip_textures: Vec::new(),
         }
     }
 
@@ -165,7 +169,9 @@ impl NegFeApp {
             rail: RailState::for_view(&view),
             view,
             frame: None,
+            strip: Vec::new(),
             texture: None,
+            strip_textures: Vec::new(),
         }
     }
 
@@ -174,6 +180,12 @@ impl NegFeApp {
         self.view.texture_size = Some(Vec2::new(frame.width as f32, frame.height as f32));
         self.texture = None;
         self.frame = Some(frame);
+    }
+
+    /// Show the roll's thumbnails in the Film Strip.
+    pub fn set_strip(&mut self, strip: Vec<FrameImage>) {
+        self.strip_textures.clear();
+        self.strip = strip;
     }
 
     /// Paint the shell regions for this frame.
@@ -186,6 +198,18 @@ impl NegFeApp {
         style.visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, theme.border_primary);
         ctx.set_style(style);
         let texture = self.texture_for(ctx).map(|texture| texture.id());
+        self.ensure_strip_textures(ctx);
+        let strip_textures: Vec<(egui::TextureId, Vec2)> = self
+            .strip_textures
+            .iter()
+            .zip(self.strip.iter())
+            .map(|(texture, frame)| {
+                (
+                    texture.id(),
+                    Vec2::new(frame.width as f32, frame.height as f32),
+                )
+            })
+            .collect();
         let screen = ctx.screen_rect();
         if self.view.contact_sheet {
             egui::CentralPanel::default()
@@ -199,7 +223,7 @@ impl NegFeApp {
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
-            let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture);
+            let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture, &strip_textures);
             let mut rail = std::mem::replace(&mut self.rail, RailState::for_view(&self.view));
             let switched = rail.show(ui, rail_rect);
             self.view.tab = rail.tab;
@@ -219,6 +243,21 @@ impl NegFeApp {
             self.texture = Some(ctx.load_texture("fixture-frame", image, TextureOptions::LINEAR));
         }
         self.texture.as_ref()
+    }
+
+    fn ensure_strip_textures(&mut self, ctx: &egui::Context) {
+        if self.strip_textures.len() == self.strip.len() {
+            return;
+        }
+        self.strip_textures = self
+            .strip
+            .iter()
+            .filter(|frame| frame.is_rgb())
+            .map(|frame| {
+                let image = egui::ColorImage::from_rgb([frame.width, frame.height], &frame.pixels);
+                ctx.load_texture(frame.name.clone(), image, TextureOptions::LINEAR)
+            })
+            .collect();
     }
 }
 
@@ -245,6 +284,7 @@ fn paint_shell(
     screen: Rect,
     view: &ViewState,
     frame: Option<egui::TextureId>,
+    thumbnails: &[(egui::TextureId, Vec2)],
 ) -> Rect {
     let margin = 8.0;
     let top = Rect::from_min_max(
@@ -339,23 +379,24 @@ fn paint_shell(
                 Vec2::new(tile_width, tiles.height() - 2.0 * inset),
             );
             painter.rect_filled(tile, 0.0, Color32::from_rgb(0x17, 0x15, 0x16));
-            if let Some(texture) = frame {
-                painter.image(
-                    texture,
-                    tile,
+            if let Some((texture, size)) = thumbnails.get(index) {
+                let content = cover_rect(tile, *size);
+                painter.with_clip_rect(tile).image(
+                    *texture,
+                    content,
                     Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
                     Color32::WHITE,
                 );
             }
             let border = if index == 0 {
-                theme.border_checked
+                theme.error
             } else {
                 theme.border_color
             };
             painter.rect_stroke(
                 tile,
                 0.0,
-                Stroke::new(if index == 0 { 3.0 } else { 1.0_f32 }, border),
+                Stroke::new(if index == 0 { 4.0 } else { 1.0_f32 }, border),
                 egui::StrokeKind::Inside,
             );
             let dot = egui::pos2(tile.right() - 7.0, tile.top() + 7.0);
@@ -391,6 +432,14 @@ fn paint_shell(
     painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
     paint_toolbar(painter, toolbar);
     rail
+}
+
+fn cover_rect(outer: Rect, content: Vec2) -> Rect {
+    if content.x <= 0.0 || content.y <= 0.0 {
+        return outer;
+    }
+    let scale = (outer.width() / content.x).max(outer.height() / content.y);
+    Rect::from_center_size(outer.center(), content * scale)
 }
 
 fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
