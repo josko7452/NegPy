@@ -48,9 +48,16 @@ pub struct ExportState {
     pub overwrite: bool,
     pub soft_proof: bool,
     pub proof_profile: StepCombo,
+    pub proof_intent: StepCombo,
+    pub proof_black_point: bool,
+    pub proof_paper_white: bool,
+    pub proof_ink_black: bool,
+    pub proof_gamut_warning: bool,
     pub presets: Vec<String>,
     pub contact_sheet: bool,
     pub alongside: bool,
+    pub sidecars: bool,
+    pub sidecar_path: String,
 }
 
 impl Default for ExportState {
@@ -100,13 +107,20 @@ impl Default for ExportState {
             filename: "{{ original_name }}".to_string(),
             overwrite: false,
             soft_proof: false,
-            proof_profile: StepCombo::new(vec![
-                Choice::new("Use Export profile"),
-                Choice::new("Printer profile"),
+            proof_profile: StepCombo::new(vec![Choice::new("Use Export profile")]),
+            proof_intent: choice_combo(&[
+                ("Relative Colorimetric", "relative_colorimetric"),
+                ("Perceptual", "perceptual"),
             ]),
+            proof_black_point: false,
+            proof_paper_white: false,
+            proof_ink_black: false,
+            proof_gamut_warning: false,
             presets: vec!["No presets yet".to_string()],
             contact_sheet: true,
             alongside: false,
+            sidecars: false,
+            sidecar_path: String::new(),
         }
     }
 }
@@ -134,6 +148,14 @@ impl ExportState {
         self.subfolder = export.output_subfolder.clone();
         self.filename = export.filename_pattern.clone();
         self.overwrite = export.overwrite;
+        self.soft_proof = export.soft_proof_enabled;
+        self.proof_intent.pick(&export.proof_intent);
+        self.proof_black_point = export.proof_black_point;
+        self.proof_paper_white = export.proof_paper_white;
+        self.proof_ink_black = export.proof_ink_black;
+        self.proof_gamut_warning = export.proof_gamut_warning;
+        self.sidecars = export.export_sidecars_enabled;
+        self.sidecar_path = export.contact_sheet_output_path.clone();
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -155,6 +177,14 @@ impl ExportState {
             output_subfolder: self.subfolder.clone(),
             filename_pattern: self.filename.clone(),
             overwrite: self.overwrite,
+            soft_proof_enabled: self.soft_proof,
+            proof_intent: self.proof_intent.current_value().to_string(),
+            proof_black_point: self.proof_black_point,
+            proof_paper_white: self.proof_paper_white,
+            proof_ink_black: self.proof_ink_black,
+            proof_gamut_warning: self.proof_gamut_warning,
+            export_sidecars_enabled: self.sidecars,
+            contact_sheet_output_path: self.sidecar_path.clone(),
             ..export.clone()
         };
         edit.config.exposure.render_intent = if self.intent.current == 1 {
@@ -260,8 +290,14 @@ impl ExportState {
         let mut changed = labeled_toggle(ui, "Soft Proof", &mut self.soft_proof).clicked();
         ui.horizontal(|ui| {
             ui.label("Proof profile");
-            changed |= self.proof_profile.show(ui);
+            changed |= self.proof_intent.show(ui);
         });
+        changed |=
+            labeled_toggle(ui, "Black Point Compensation", &mut self.proof_black_point).clicked();
+        changed |=
+            labeled_toggle(ui, "Simulate Paper White", &mut self.proof_paper_white).clicked();
+        changed |= labeled_toggle(ui, "Simulate Ink Black", &mut self.proof_ink_black).clicked();
+        changed |= labeled_toggle(ui, "Gamut Warning", &mut self.proof_gamut_warning).clicked();
         let _ = hint(ui, "The printer or paper profile to preview.");
         changed
     }
@@ -279,10 +315,18 @@ impl ExportState {
     }
 
     fn show_alongside(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = labeled_toggle(ui, "Contact Sheet", &mut self.contact_sheet).clicked();
-        changed |= labeled_toggle(ui, "Alongside Exports", &mut self.alongside).clicked();
-        let _ = hint(ui, "Save a sheet and the matching files together.");
-        changed
+        let changed = labeled_toggle(ui, "Save Sidecar on Export", &mut self.sidecars).clicked();
+        entry_row(
+            ui,
+            RowColumns::new(),
+            "Contact sheet folder",
+            &mut self.sidecar_path,
+        );
+        let _ = hint(
+            ui,
+            "Leave the folder empty to follow the export destination.",
+        );
+        changed | labeled_toggle(ui, "Alongside Exports", &mut self.alongside).clicked()
     }
 }
 
@@ -358,6 +402,26 @@ mod tests {
             ExportResolutionMode::TargetPx
         );
         assert_eq!(export.export_target_long_edge_px, 4000);
+    }
+
+    #[test]
+    fn the_export_proof_and_sidecar_fields_round_trip() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.page = 1;
+        state.soft_proof = true;
+        state.proof_intent.pick("perceptual");
+        state.proof_black_point = true;
+        state.sidecars = true;
+        state.sidecar_path = "/tmp/sheets".to_string();
+        assert!(state.store(&mut edit));
+        let export = &edit.config.export;
+        assert!(export.soft_proof_enabled);
+        assert_eq!(export.proof_intent, "perceptual");
+        assert!(export.proof_black_point);
+        assert!(export.export_sidecars_enabled);
+        assert_eq!(export.contact_sheet_output_path, "/tmp/sheets");
     }
 
     #[test]
