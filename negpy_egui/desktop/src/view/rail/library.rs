@@ -7,7 +7,12 @@ use std::path::Path;
 
 use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 use negpy_backend::domain::types::AppConfig;
+use negpy_backend::features::metadata::gear::GearLibrary;
 use negpy_backend::infrastructure::storage::repository::StorageRepository;
+use negpy_backend::kernel::system::paths::resource_path;
+use negpy_backend::kernel::system::text::{count_of, short_date};
+use negpy_backend::services::assets::composites::{frame_count, saved_composites};
+use negpy_backend::services::assets::library::folder_image_paths;
 use negpy_backend::services::assets::rolls;
 
 use crate::styles::icons::Icon;
@@ -80,13 +85,18 @@ impl LibraryState {
             return Self::default();
         };
         let app = AppConfig::for_user_dir(profile);
-        let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
-        let rolls = rolls::all_rolls_sorted(&repo)
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        let gear = GearLibrary::load(Path::new(&app.gear_dir), &resource_path("gear"));
+        let composites = saved_composites(&mut repo);
+        let rows = rolls::all_rolls_sorted(&repo)
             .into_iter()
-            .map(|(roll_id, entry)| RollRow::new(roll_name(&entry), "").with_id(roll_id))
+            .map(|(roll_id, entry)| {
+                let frames = roll_frame_count(&entry, &composites);
+                RollRow::new(roll_name(&entry), roll_detail(&entry, frames, &gear)).with_id(roll_id)
+            })
             .collect();
         Self {
-            rolls,
+            rolls: rows,
             filter: String::new(),
         }
     }
@@ -194,6 +204,80 @@ impl LibraryState {
     }
 }
 
+fn roll_frame_count(
+    entry: &serde_json::Value,
+    composites: &serde_json::Map<String, serde_json::Value>,
+) -> usize {
+    let paths: Vec<String> =
+        if entry.get("kind").and_then(serde_json::Value::as_str) == Some("folder") {
+            let excluded: Vec<String> = entry
+                .get("excluded_paths")
+                .and_then(serde_json::Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default();
+            let folder = entry
+                .get("folder_path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default();
+            folder_image_paths(Path::new(folder))
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .filter(|path| !excluded.iter().any(|excluded| excluded == path))
+                .collect()
+        } else {
+            entry
+                .get("member_paths")
+                .and_then(serde_json::Value::as_array)
+                .map(|paths| {
+                    paths
+                        .iter()
+                        .filter_map(serde_json::Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
+                .unwrap_or_default()
+        };
+    frame_count(&paths, composites, &serde_json::Map::new())
+}
+
+fn roll_detail(entry: &serde_json::Value, frames: usize, gear: &GearLibrary) -> String {
+    let defaults = entry.get("defaults").and_then(serde_json::Value::as_object);
+    let mut parts = vec![count_of(frames as i64, "photo", "photos")];
+    if let Some(mode) = defaults
+        .and_then(|defaults| defaults.get("process_mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        parts.push(match mode {
+            "B&W Negative" | "B&W" => "B&W".to_string(),
+            "Transparency" | "E-6" => "Slide".to_string(),
+            _ => "Color".to_string(),
+        });
+    }
+    if let Some(stock) = defaults
+        .and_then(|defaults| defaults.get("film_stock_id"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|id| !id.is_empty())
+        .and_then(|id| gear.film_stock(id))
+    {
+        parts.push(stock.full_film_label());
+    }
+    if let Some(scenes) = entry.get("scenes").and_then(serde_json::Value::as_array)
+        && !scenes.is_empty()
+    {
+        parts.push(count_of(scenes.len() as i64, "scene", "scenes"));
+    }
+    if let Some(created) = entry.get("created_at").and_then(serde_json::Value::as_f64) {
+        parts.push(short_date(created));
+    }
+    parts.join(" · ")
+}
+
 fn roll_name(entry: &serde_json::Value) -> String {
     entry
         .get("name")
@@ -245,14 +329,35 @@ mod tests {
     #[test]
     fn the_library_reads_the_saved_rolls() {
         let dir = tempfile::tempdir().unwrap();
+        let photos = dir.path().join("photos/w1");
+        std::fs::create_dir_all(&photos).unwrap();
+        std::fs::write(photos.join("frame.tif"), b"image").unwrap();
         let app = AppConfig::for_user_dir(dir.path());
         let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
         repo.initialize().unwrap();
-        rolls::recognize_folder(&mut repo, "/photos/w1", Some("w1"));
+        let roll = rolls::recognize_folder(&mut repo, &photos.display().to_string(), Some("w1"));
+        let mut store = serde_json::Map::new();
+        store.insert(
+            rolls::ROLLS_KEY.to_string(),
+            serde_json::json!({
+                roll.clone(): {
+                    "kind": "folder",
+                    "name": "w1",
+                    "folder_path": photos.display().to_string(),
+                    "created_at": 1_700_000_000.0,
+                    "defaults": {"process_mode": "B&W Negative"}
+                }
+            }),
+        );
+        repo.save_global_settings(&store).unwrap();
         let state = LibraryState::load(Some(dir.path()));
         assert_eq!(state.rolls.len(), 1);
         assert_eq!(state.rolls[0].name, "w1");
-        assert!(!state.rolls[0].id.is_empty());
+        assert_eq!(state.rolls[0].id, roll);
+        assert_eq!(
+            state.rolls[0].detail,
+            format!("1 photo · B&W · {}", short_date(1_700_000_000.0))
+        );
     }
 
     #[test]

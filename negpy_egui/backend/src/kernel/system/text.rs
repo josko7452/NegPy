@@ -42,6 +42,25 @@ pub fn count_of(count: i64, singular: &str, plural_form: &str) -> String {
     format!("{count} {}", plural(count, singular, plural_form))
 }
 
+/// A stored timestamp as the Library prints it: `d MMM`, or `d MMM yyyy` outside this year.
+#[must_use]
+pub fn short_date(seconds: f64) -> String {
+    use chrono::Datelike;
+    if !seconds.is_finite() {
+        return String::new();
+    }
+    let Some(timestamp) = chrono::DateTime::from_timestamp(seconds as i64, 0) else {
+        return String::new();
+    };
+    let date = timestamp.naive_utc().date();
+    let today = chrono::Utc::now().naive_utc().date();
+    if date.year() == today.year() {
+        date.format("%d %b").to_string()
+    } else {
+        date.format("%d %b %Y").to_string()
+    }
+}
+
 /// A byte count in the largest unit that keeps it under 1024.
 pub fn human_bytes(n: f64) -> String {
     let mut size = n;
@@ -71,4 +90,15 @@ fn round_half_even(value: f64, places: u32) -> f64 {
     let scaled = value * factor;
     let rounded = scaled.round_ties_even();
     rounded / factor
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_stored_date_uses_the_short_month() {
+        assert_eq!(short_date(1_700_000_000.0), "14 Nov 2023");
+        assert_eq!(short_date(f64::NAN), "");
+    }
 }

@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 23:35 | **Last Commit:** `51d209af` desktop: keep the rail state between captures
+**Last Updated:** 2026-11-19 23:55 | **Last Commit:** `561c7d0c` desktop: load the Library from the roll store
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,12 +14,12 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Show the Roll detail line from photos, film mode, stock and date.
-2. [ ] Bind the Export and Metadata cards to the frame edit.
-3. [ ] Revisit the Light Table tile metrics.
+1. [ ] Bind the Export and Metadata cards to the frame edit.
+2. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` desktop: load the Library rows from the roll store.
+- `HEAD` desktop: show the roll detail line from the store.
+- `561c7d0c` desktop: load the Library rows from the roll store.
 - `51d209af` desktop: keep the rail state between captures.
 - `e7ffaaa1` desktop: close the card-binding batch.
 - `2f091ced` desktop: bind the Finish page to the edit.
