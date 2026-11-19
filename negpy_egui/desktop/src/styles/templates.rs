@@ -5,6 +5,8 @@
 
 use eframe::egui::{self, Align, Color32, FontId, RichText, Sense, Stroke, Ui, Vec2};
 
+use crate::styles::icons::Icon;
+
 use super::layout::{
     BAR_BUTTON_HEIGHT, FIELD_LABEL_WIDTH, HEADER_BUTTON_SIZE, HEADER_HEIGHT, ICON_BUTTON_WIDTH,
 };
@@ -60,6 +62,32 @@ pub fn labeled_action(ui: &mut Ui, label: &str, rank: ActionRank) -> egui::Respo
         .stroke(Stroke::new(1.0_f32, border))
         .min_size(Vec2::new(0.0, super::layout::DEFAULT_BUTTON_HEIGHT));
     ui.add(button)
+}
+
+/// One-shot action with a leading icon, the reference's `labeled_action(icon, text, tip)`.
+pub fn action_with_icon(
+    ui: &mut Ui,
+    icon: Icon,
+    label: &str,
+    rank: ActionRank,
+    tooltip: &str,
+) -> egui::Response {
+    let theme = Theme::default();
+    let (fill, border, text) = match rank {
+        ActionRank::Normal => (theme.bg_input, theme.border_primary, theme.text_primary),
+        ActionRank::Primary => (
+            theme.bg_primary,
+            theme.border_checked_hover,
+            theme.text_on_accent,
+        ),
+    };
+    let button = egui::Button::new(
+        RichText::new(icon_text(&format!("{} {label}", icon.glyph()))).color(text),
+    )
+    .fill(fill)
+    .stroke(Stroke::new(1.0_f32, border))
+    .min_size(Vec2::new(0.0, super::layout::DEFAULT_BUTTON_HEIGHT));
+    ui.add(button).on_hover_text(tooltip)
 }
 
 /// Checkable row toggle. The checked chip is the warm surface, never a bright accent.

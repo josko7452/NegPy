@@ -10,7 +10,7 @@ use eframe::egui::{
 use crate::app::{Tab, ViewState};
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
-use crate::styles::templates::{ActionRank, labeled_action, section_subheader};
+use crate::styles::templates::{ActionRank, action_with_icon, labeled_action, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -87,14 +87,17 @@ impl RailState {
             setup,
             process_mode: SegmentedChoice {
                 labels: &["Color", "B&W", "Slide"],
+                icons: &[Some(Icon::Folder), None, Some(Icon::Film)],
                 current: 0,
             },
             rig: SegmentedChoice {
                 labels: &["Camera", "Film Scanner"],
+                icons: &[Some(Icon::Image), Some(Icon::Scan)],
                 current: 0,
             },
             light: SegmentedChoice {
                 labels: &["White Light", "Narrowband Light"],
+                icons: &[None, Some(Icon::Circle)],
                 current: 0,
             },
             density: CompactSlider::new(SliderSpec::new(0.0, 2.0, 0.01, 2).with_default(1.08)),
@@ -425,9 +428,21 @@ impl RailState {
             ui.horizontal(|ui| {
                 let _ = section_subheader(ui, "ROLLS");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let _ = labeled_action(ui, "Use Frame", ActionRank::Normal);
+                    let _ = action_with_icon(
+                        ui,
+                        Icon::PickFrames,
+                        "Use Frame",
+                        ActionRank::Normal,
+                        "Use this frame as the roll's analysis reference",
+                    );
                     ui.add_space(f32::from(theme.space_sm));
-                    let _ = labeled_action(ui, "Reanalyze", ActionRank::Normal);
+                    let _ = action_with_icon(
+                        ui,
+                        Icon::Circle,
+                        "Reanalyze",
+                        ActionRank::Normal,
+                        "Measure the roll again from its frames",
+                    );
                 });
             });
             ui.add_space(f32::from(theme.space_sm));
@@ -464,7 +479,13 @@ impl RailState {
             ui.horizontal(|ui| {
                 let _ = section_subheader(ui, "SCENES");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let _ = labeled_action(ui, "Detect", ActionRank::Normal);
+                    let _ = action_with_icon(
+                        ui,
+                        Icon::Circle,
+                        "Detect",
+                        ActionRank::Normal,
+                        "Find the scenes the selected frames belong to",
+                    );
                 });
             });
             let _ = hint(
@@ -480,11 +501,29 @@ impl RailState {
             );
             ui.add_space(f32::from(theme.space_sm));
             ui.horizontal(|ui| {
-                let _ = labeled_action(ui, "Luma", ActionRank::Normal);
+                let _ = action_with_icon(
+                    ui,
+                    Icon::Circle,
+                    "Luma",
+                    ActionRank::Normal,
+                    "Average the roll's luma",
+                );
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = labeled_action(ui, "Color", ActionRank::Normal);
+                let _ = action_with_icon(
+                    ui,
+                    Icon::Circle,
+                    "Color",
+                    ActionRank::Normal,
+                    "Average the roll's color",
+                );
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = labeled_action(ui, "Cast", ActionRank::Normal);
+                let _ = action_with_icon(
+                    ui,
+                    Icon::Circle,
+                    "Cast",
+                    ActionRank::Normal,
+                    "Average the roll's cast",
+                );
             });
         });
     }
