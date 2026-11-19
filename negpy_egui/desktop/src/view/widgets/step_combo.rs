@@ -13,6 +13,8 @@ use crate::styles::theme::Theme;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Choice {
     pub label: String,
+    /// The stored value when it differs from the label, such as a gear id.
+    pub id: Option<String>,
     pub enabled: bool,
 }
 
@@ -22,6 +24,17 @@ impl Choice {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
+            id: None,
+            enabled: true,
+        }
+    }
+
+    /// An enabled choice that stores `id` instead of its label.
+    #[must_use]
+    pub fn with_id(label: impl Into<String>, id: impl Into<String>) -> Self {
+        Self {
+            label: label.into(),
+            id: Some(id.into()),
             enabled: true,
         }
     }
@@ -31,6 +44,7 @@ impl Choice {
     pub fn disabled(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
+            id: None,
             enabled: false,
         }
     }
@@ -60,6 +74,28 @@ impl StepCombo {
         self.choices
             .get(self.current)
             .map_or("", |choice| choice.label.as_str())
+    }
+
+    /// The current choice's stored value: its id when it has one, else its label.
+    #[must_use]
+    pub fn current_value(&self) -> &str {
+        self.choices
+            .get(self.current)
+            .map_or("", |choice| choice.id.as_deref().unwrap_or(&choice.label))
+    }
+
+    /// Make the choice whose stored value is `value` current.
+    pub fn pick(&mut self, value: &str) -> bool {
+        let Some(index) = self
+            .choices
+            .iter()
+            .position(|choice| choice.id.as_deref().unwrap_or(&choice.label) == value)
+        else {
+            return false;
+        };
+        let changed = index != self.current;
+        self.current = index;
+        changed
     }
 
     /// The neighboring active item, stepping past grayed rows and wrapping.
@@ -243,6 +279,18 @@ mod tests {
         let mut combo = StepCombo::new(vec![Choice::new("Only")]);
         assert_eq!(combo.step_target(1), None);
         assert!(!combo.step(-1));
+    }
+
+    #[test]
+    fn a_choice_stores_its_id_and_can_be_picked_by_it() {
+        let mut combo = StepCombo::new(vec![
+            Choice::new("Search..."),
+            Choice::with_id("Leica M-A", "cam-leica-ma"),
+        ]);
+        assert_eq!(combo.current_value(), "Search...");
+        assert!(combo.pick("cam-leica-ma"));
+        assert_eq!(combo.current_label(), "Leica M-A");
+        assert_eq!(combo.current_value(), "cam-leica-ma");
     }
 
     #[test]
