@@ -527,7 +527,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     );
     x = mode.right() + 8.0;
 
-    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(178.0, row_height));
+    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(148.0, row_height));
     track(painter, navigation);
     let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
     flat(
@@ -554,7 +554,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     );
     x = navigation.right() + 8.0;
 
-    let zoom = Rect::from_min_size(egui::pos2(x, top), Vec2::new(82.0, row_height));
+    let zoom = Rect::from_min_size(egui::pos2(x, top), Vec2::new(76.0, row_height));
     track(painter, zoom);
     painter.text(
         zoom.center() - Vec2::new(6.0, 0.0),
@@ -574,7 +574,7 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     );
     x = zoom.right() + 8.0;
 
-    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(184.0, row_height));
+    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(152.0, row_height));
     track(painter, geometry);
     for (index, icon) in [
         Icon::RotateLeft,
@@ -613,17 +613,43 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     }
     x = geometry.right() + 8.0;
 
-    for (icon, width) in [(Icon::Wrench, 72.0), (Icon::Undo, 36.0), (Icon::Redo, 36.0)] {
+    for (icon, width) in [(Icon::Wrench, 94.0), (Icon::Undo, 36.0), (Icon::Redo, 36.0)] {
         let button = Rect::from_min_size(egui::pos2(x, top), Vec2::new(width, row_height));
         track(painter, button);
+        if icon == Icon::Wrench {
+            flat(
+                painter,
+                Rect::from_min_size(button.min, Vec2::new(30.0, row_height)),
+                icon,
+                theme.text_primary,
+            );
+            painter.text(
+                button.left_center() + Vec2::new(34.0, 0.0),
+                egui::Align2::LEFT_CENTER,
+                "Tools",
+                egui::FontId::proportional(13.0),
+                theme.text_primary,
+            );
+            flat(
+                painter,
+                Rect::from_min_size(
+                    egui::pos2(button.right() - 26.0, button.top()),
+                    Vec2::new(24.0, row_height),
+                ),
+                Icon::ChevronDown,
+                theme.text_secondary,
+            );
+            x = button.right() + 8.0;
+            continue;
+        }
         flat(
             painter,
             button,
             icon,
-            if icon == Icon::Redo {
-                theme.text_muted
-            } else {
+            if icon == Icon::Undo {
                 theme.text_secondary
+            } else {
+                theme.text_muted
             },
         );
         x = button.right() + 6.0;
