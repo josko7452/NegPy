@@ -24,6 +24,7 @@ pub mod frame_color;
 pub mod frame_finish;
 pub mod frame_geometry;
 pub mod frame_tone;
+pub mod history;
 pub mod library;
 pub mod metadata;
 pub mod scan;
@@ -55,6 +56,7 @@ pub struct RailState {
     pub metadata: metadata::MetadataState,
     pub export: export::ExportState,
     pub scan: scan::ScanState,
+    pub history: history::HistoryState,
 }
 
 impl RailState {
@@ -115,6 +117,7 @@ impl RailState {
             metadata,
             export,
             scan: scan::ScanState::default(),
+            history: history::HistoryState::default(),
         }
     }
 
@@ -242,6 +245,9 @@ impl RailState {
             }
             "finish" => {
                 self.finish.show(ui);
+            }
+            "history" => {
+                self.history.show(ui);
             }
             key => {
                 let cards = frame_cards(key);
@@ -602,7 +608,7 @@ pub fn frame_cards(key: &str) -> &'static [&'static str] {
         "color" => &["Lab", "Alternative Processes", "Toning"],
         "finish" => &["Retouch", "Finishing"],
         "favourites" => &["Presets"],
-        "history" => &[],
+        "history" => &["Work Prints", "Edit History"],
         _ => &[],
     }
 }
