@@ -1,8 +1,8 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 20:10 | **Last Commit:** `HEAD` desktop: close the ten-commit batch
+**Last Updated:** 2026-11-19 21:05 | **Last Commit:** `HEAD` desktop: own the frame edit document
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
+Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
 
 ## UX Target (supersedes pixel parity)
 The goal is the same workflow, controls, order, grouping and density as
@@ -19,13 +19,15 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Next session: connect the new card fields to the saved edit.
-2. [ ] Next session: continue the remaining Roll cards.
-3. [ ] Next session: revisit the Light Table tile metrics.
-4. [ ] Next session: continue the shell gaps.
+1. [ ] Load and save the frame edit from the launch and canvas paths.
+2. [ ] Bind Raw Decode and Optics to the frame edit.
+3. [ ] Bind Metering and Roll Analysis to the frame edit.
+4. [ ] Bind the Roll Setup controls to the frame edit.
+5. [ ] Bind the Frame tab controls to the frame edit.
 
 ## Completed (Recent)
-- `HEAD` desktop: close the ten-commit batch.
+- `HEAD` desktop: own the frame edit document.
+- `cbd6bdbf` desktop: close the ten-commit batch.
 - `5de4ba4f` desktop: wire the average toggles.
 - `1a78a6c5` desktop: build the Metering card.
 - `76487cb6` desktop: build the Optics card.
@@ -36,8 +38,7 @@ anything whose only gain is a closer score.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- `cargo test --workspace` passes: 131 desktop library tests and 1 capture
-  test. The average-toggle tests cover the saved luma, color and cast state.
+- Targeted `cargo test -p negpy-desktop edit::tests` passed: 3 tests.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.

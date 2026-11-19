@@ -5,6 +5,7 @@
 
 use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
 
+use crate::edit::FrameEdit;
 use crate::fixture::ReferenceFixture;
 use crate::frame_source::FrameImage;
 use crate::styles::icons::Icon;
@@ -140,6 +141,7 @@ impl ViewState {
 pub struct NegFeApp {
     pub view: ViewState,
     pub rail: RailState,
+    pub edit: FrameEdit,
     pub frame: Option<FrameImage>,
     pub strip: Vec<FrameImage>,
     texture: Option<TextureHandle>,
@@ -154,6 +156,7 @@ impl NegFeApp {
         Self {
             rail: RailState::for_view(&view),
             view,
+            edit: FrameEdit::default(),
             frame: None,
             strip: Vec::new(),
             texture: None,
@@ -168,6 +171,7 @@ impl NegFeApp {
         Self {
             rail: RailState::for_view(&view),
             view,
+            edit: FrameEdit::default(),
             frame: None,
             strip: Vec::new(),
             texture: None,
@@ -180,6 +184,11 @@ impl NegFeApp {
         self.view.texture_size = Some(Vec2::new(frame.width as f32, frame.height as f32));
         self.texture = None;
         self.frame = Some(frame);
+    }
+
+    /// Set the edit the rail reads and writes.
+    pub fn set_edit(&mut self, edit: FrameEdit) {
+        self.edit = edit;
     }
 
     /// Show the roll's thumbnails in the Film Strip.

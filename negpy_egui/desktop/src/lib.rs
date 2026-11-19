@@ -2,6 +2,7 @@
 
 pub mod app;
 pub mod capture;
+pub mod edit;
 pub mod fixture;
 pub mod frame_source;
 pub mod launch;
