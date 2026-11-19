@@ -229,7 +229,9 @@ impl RailState {
             Tab::Roll => self.show_roll(ui, edit),
             Tab::Frame => self.show_frame(ui, edit),
             Tab::Metadata => {
-                self.metadata.show(ui);
+                if self.metadata.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             Tab::Export => {
                 self.export.show(ui);

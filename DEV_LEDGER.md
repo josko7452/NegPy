@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 00:10 | **Last Commit:** `c4beaa3e` desktop: show the roll detail line from the store
+**Last Updated:** 2026-11-20 00:30 | **Last Commit:** `0311b01e` desktop: filter the Library and count its rows
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,11 +14,13 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Bind the Export and Metadata cards to the frame edit.
-2. [ ] Revisit the Light Table tile metrics.
+1. [ ] Bind the Export page to the edit.
+2. [ ] Carry ids in the gear combos.
+3. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` desktop: filter the Library and count its rows.
+- `HEAD` desktop: bind the Metadata page to the edit.
+- `0311b01e` desktop: filter the Library and count its rows.
 - `c4beaa3e` desktop: show the roll detail line from the store.
 - `561c7d0c` desktop: load the Library rows from the roll store.
 - `51d209af` desktop: keep the rail state between captures.

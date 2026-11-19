@@ -1,7 +1,11 @@
 //! The Metadata tab: a pinned preview, then the Shot, Process, Presets and Gear pages.
 
 use eframe::egui::{self, Align2, FontId, Rect, RichText, Sense, Stroke, Ui, Vec2};
+use negpy_backend::domain::models::MetadataConfig;
+use negpy_backend::domain::models::metadata::{FORMAT_OPTIONS, format_label, format_value};
+use negpy_backend::features::metadata::capture::{format_dev_time, format_temperature};
 
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
@@ -76,14 +80,23 @@ impl Default for MetadataState {
                 Choice::new("Search processes..."),
                 Choice::new("D-76 stock"),
             ]),
-            film_format: StepCombo::new(vec![
-                Choice::new("35 mm"),
-                Choice::new("120"),
-                Choice::new("Other"),
-            ]),
+            film_format: StepCombo::new(
+                FORMAT_OPTIONS
+                    .iter()
+                    .map(|name| Choice::new(*name))
+                    .collect(),
+            ),
             developer: String::new(),
             dilution: String::new(),
-            push_pull: StepCombo::new(vec![Choice::new("Push / Pull")]),
+            push_pull: StepCombo::new(vec![
+                Choice::new("Push +3"),
+                Choice::new("Push +2"),
+                Choice::new("Push +1"),
+                Choice::new("Normal"),
+                Choice::new("Pull -1"),
+                Choice::new("Pull -2"),
+                Choice::new("Pull -3"),
+            ]),
             time: String::new(),
             temperature: String::new(),
             saved_setup: StepCombo::new(vec![
@@ -99,6 +112,62 @@ impl Default for MetadataState {
 }
 
 impl MetadataState {
+    /// Replace the controls with the metadata values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let config = &edit.config.metadata;
+        self.protect = config.protect_original_metadata;
+        self.capture_date = config.capture_date.clone();
+        self.place = join_place(config);
+        self.exposure = config.exposure_override.clone();
+        self.film_format.current = FORMAT_OPTIONS
+            .iter()
+            .position(|option| *option == format_label(&config.format))
+            .unwrap_or(0);
+        self.developer = config.developer.clone();
+        self.dilution = config.process_dilution.clone();
+        self.push_pull.current = push_pull_index(config.push_pull);
+        self.time = format_dev_time(config.process_time_seconds);
+        self.temperature = format_temperature(config.process_temperature_c);
+        self.scanning = config.scanning.clone();
+        self.capture_roll = config.capture_roll.clone();
+        self.capture_frame = config
+            .capture_frame
+            .map_or_else(String::new, |frame| frame.to_string());
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        let config = &mut edit.config.metadata;
+        let push_pull = PUSH_PULL_VALUES[self.push_pull.current.min(PUSH_PULL_VALUES.len() - 1)];
+        let format =
+            format_value(&FORMAT_OPTIONS[self.film_format.current.min(FORMAT_OPTIONS.len() - 1)])
+                .to_string();
+        let frame = self.capture_frame.trim().parse::<i64>().ok();
+        let place = parse_place(&self.place);
+        let next = MetadataConfig {
+            capture_date: self.capture_date.clone(),
+            exposure_override: self.exposure.clone(),
+            developer: self.developer.clone(),
+            process_dilution: self.dilution.clone(),
+            push_pull,
+            process_time_seconds: parse_dev_time(&self.time).or(config.process_time_seconds),
+            process_temperature_c: parse_temperature(&self.temperature)
+                .or(config.process_temperature_c),
+            scanning: self.scanning.clone(),
+            capture_roll: self.capture_roll.clone(),
+            capture_frame: frame,
+            protect_original_metadata: self.protect,
+            format,
+            location_city: place.0,
+            location_state: place.1,
+            location_country: place.2,
+            ..config.clone()
+        };
+        let changed = *config != next;
+        *config = next;
+        changed
+    }
+
     /// Select a sub-tab by its manifest key.
     pub fn show_subtab(&mut self, key: &str) {
         self.page = match key {
@@ -110,7 +179,8 @@ impl MetadataState {
     }
 
     /// Paint the tab. Returns whether the edit changed.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let mut changed = false;
         let mut preview = CollapsibleSection::new("Metadata Preview").with_guide();
         preview.expanded = self.preview_open;
@@ -153,7 +223,11 @@ impl MetadataState {
             3 => self.show_gear(ui),
             _ => false,
         };
-        changed | changed_page
+        changed |= changed_page;
+        if changed {
+            self.store(edit);
+        }
+        changed
     }
 
     fn show_shot(&mut self, ui: &mut Ui) -> bool {
@@ -332,6 +406,56 @@ impl MetadataState {
     }
 }
 
+const PUSH_PULL_VALUES: [i64; 7] = [3, 2, 1, 0, -1, -2, -3];
+
+fn push_pull_index(value: i64) -> usize {
+    PUSH_PULL_VALUES
+        .iter()
+        .position(|candidate| *candidate == value)
+        .unwrap_or(3)
+}
+
+fn join_place(config: &MetadataConfig) -> String {
+    [
+        &config.location_city,
+        &config.location_state,
+        &config.location_country,
+    ]
+    .iter()
+    .filter(|part| !part.is_empty())
+    .map(|part| (*part).clone())
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
+fn parse_place(text: &str) -> (String, String, String) {
+    let mut parts = text.split(',').map(str::trim);
+    (
+        parts.next().unwrap_or_default().to_string(),
+        parts.next().unwrap_or_default().to_string(),
+        parts.next().unwrap_or_default().to_string(),
+    )
+}
+
+fn parse_dev_time(text: &str) -> Option<i64> {
+    let text = text.trim();
+    if text.is_empty() {
+        return None;
+    }
+    if let Some((minutes, seconds)) = text.split_once(':') {
+        return Some(
+            minutes.trim().parse::<i64>().ok()? * 60 + seconds.trim().parse::<i64>().ok()?,
+        );
+    }
+    text.parse::<f64>()
+        .ok()
+        .map(|minutes| (minutes * 60.0).round() as i64)
+}
+
+fn parse_temperature(text: &str) -> Option<f64> {
+    text.trim().parse().ok()
+}
+
 fn preview_row(ui: &mut Ui, label: &str, value: &str) {
     let theme = Theme::default();
     ui.horizontal(|ui| {
@@ -383,8 +507,22 @@ mod tests {
         let state = MetadataState::default();
         assert_eq!(state.page, 0);
         assert!(state.preview_open);
-        assert_eq!(state.film_format.current_label(), "35 mm");
+        assert_eq!(state.film_format.current_label(), "—");
         assert_eq!(state.saved_process.current_label(), "Search processes...");
+    }
+
+    #[test]
+    fn the_metadata_tab_round_trips_the_edit() {
+        let mut state = MetadataState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.developer = "D-76".to_string();
+        state.push_pull.current = 0;
+        state.film_format.current = 1;
+        assert!(state.store(&mut edit));
+        assert_eq!(edit.config.metadata.developer, "D-76");
+        assert_eq!(edit.config.metadata.push_pull, 3);
+        assert_eq!(edit.config.metadata.format, "35mm");
     }
 
     #[test]
@@ -393,7 +531,8 @@ mod tests {
         let mut state = MetadataState::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                let mut edit = FrameEdit::default();
+                assert!(!state.show(ui, &mut edit));
             });
         });
     }
