@@ -17,6 +17,7 @@ use negpy_backend::render_engine::DarkroomEngine;
 use negpy_backend::services::assets::thumbnails::thumbnail_cache_key;
 use negpy_backend::services::rendering::display_frame::{DisplayFrame, render_display};
 use negpy_backend::services::rendering::import::oriented;
+use negpy_backend::session::workspace::{SessionFile, WorkspaceSession};
 
 /// The decoded, display-encoded reference frame.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,6 +62,43 @@ pub fn stored_config(profile: Option<&Path>, path: &Path) -> WorkspaceConfig {
         .ok()
         .flatten()
         .unwrap_or_default()
+}
+
+/// The frame's stored History rows and work-print names, for the panel.
+#[must_use]
+pub fn stored_history(
+    profile: Option<&Path>,
+    path: &Path,
+) -> (
+    Vec<negpy_backend::session::workspace::HistoryRow>,
+    Vec<String>,
+) {
+    let Some(profile) = profile else {
+        return (Vec::new(), Vec::new());
+    };
+    let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+    let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+    let Ok(hash) = file_hash(path) else {
+        return (Vec::new(), Vec::new());
+    };
+    let mut session = WorkspaceSession::new(
+        "capture",
+        repo,
+        LocalAssetStore::new(app.cache_dir, app.user_icc_dir, 256),
+    );
+    session.uploaded_files.push(SessionFile {
+        name: String::new(),
+        path: path.display().to_string(),
+        hash: hash.clone(),
+    });
+    let live = session.repository.load_file_settings(&hash).ok().flatten();
+    let index = session
+        .repository
+        .max_history_index(&hash)
+        .unwrap_or_default();
+    let rows = session.history_rows(live.as_ref().map(|config| (config, index)));
+    let prints = session.repository.work_prints(&hash).unwrap_or_default();
+    (rows, prints)
 }
 
 /// Decode `path` at a bounded proxy size and render its display frame.

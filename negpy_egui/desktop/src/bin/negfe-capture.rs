@@ -10,7 +10,7 @@ use negpy_desktop::app::NegFeApp;
 use negpy_desktop::capture::{self, CaptureSize};
 use negpy_desktop::fixture::{CaptureEntry, GoldenManifest, ReferenceFixture};
 use negpy_desktop::frame_source::{
-    FrameImage, frame_path, load_display_frame, load_strip, placeholder,
+    FrameImage, frame_path, load_display_frame, load_strip, placeholder, stored_history,
 };
 
 #[derive(Clone, Debug)]
@@ -41,6 +41,7 @@ fn main() -> eframe::Result {
     std::fs::create_dir_all(&options.output).unwrap();
     let frame = load_frame(&manifest, &reference);
     let strip = load_roll_strip(&manifest, &reference, &frame);
+    let history = load_history(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -62,6 +63,7 @@ fn main() -> eframe::Result {
                 options.output,
                 frame,
                 strip,
+                history,
             )))
         }),
     )
@@ -101,6 +103,22 @@ fn load_roll_strip(
     }
 }
 
+fn load_history(
+    manifest: &GoldenManifest,
+    reference: &ReferenceFixture,
+) -> (
+    Vec<negpy_backend::session::workspace::HistoryRow>,
+    Vec<String>,
+) {
+    let Some(folder) = manifest.frame_folder() else {
+        return (Vec::new(), Vec::new());
+    };
+    let Some(path) = frame_path(Some(folder), &reference.fixture.frame) else {
+        return (Vec::new(), Vec::new());
+    };
+    stored_history(manifest.profile_dir().as_deref(), &path)
+}
+
 struct CaptureApp {
     manifest: GoldenManifest,
     reference: ReferenceFixture,
@@ -112,6 +130,10 @@ struct CaptureApp {
     frames: usize,
     frame: FrameImage,
     strip: Vec<FrameImage>,
+    history: (
+        Vec<negpy_backend::session::workspace::HistoryRow>,
+        Vec<String>,
+    ),
     viewport: Option<CaptureSize>,
 }
 
@@ -122,6 +144,10 @@ impl CaptureApp {
         output: PathBuf,
         frame: FrameImage,
         strip: Vec<FrameImage>,
+        history: (
+            Vec<negpy_backend::session::workspace::HistoryRow>,
+            Vec<String>,
+        ),
     ) -> Self {
         let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
@@ -132,6 +158,7 @@ impl CaptureApp {
         );
         app.set_frame(frame.clone());
         app.set_strip(strip.clone());
+        app.set_history(&history.0, &history.1);
         Self {
             manifest,
             reference,
@@ -139,6 +166,7 @@ impl CaptureApp {
             app,
             frame,
             strip,
+            history,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -164,6 +192,7 @@ impl CaptureApp {
             );
             app.set_frame(self.frame.clone());
             app.set_strip(self.strip.clone());
+            app.set_history(&self.history.0, &self.history.1);
             self.app = app;
         }
     }

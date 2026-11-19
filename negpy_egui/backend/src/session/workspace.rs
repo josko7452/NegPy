@@ -10,6 +10,8 @@ use crate::domain::models::WorkspaceConfig;
 use crate::infrastructure::storage::local_asset_store::LocalAssetStore;
 use crate::infrastructure::storage::repository::StorageRepository;
 use crate::kernel::system::config::default_workspace_config;
+use crate::kernel::system::i18n::tr;
+use crate::session::settings_catalog::changed_settings;
 
 /// One file the session manages: its display name, path and content hash.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -17,6 +19,70 @@ pub struct SessionFile {
     pub name: String,
     pub path: String,
     pub hash: String,
+}
+
+/// One row of the History panel, newest first once sorted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HistoryRow {
+    pub index: i64,
+    pub name: String,
+    pub detail: String,
+    pub current: bool,
+    pub undone: bool,
+}
+
+/// A step's `(name, detail)`: the cards it changed, or one card and its controls.
+#[must_use]
+pub fn history_step_label(
+    prev: Option<&WorkspaceConfig>,
+    config: &WorkspaceConfig,
+) -> (String, String) {
+    let Some(prev) = prev else {
+        return (tr("As opened", &[]), String::new());
+    };
+    let changed = changed_settings(prev, config);
+    let mut cards: Vec<&str> = Vec::new();
+    for (card, _) in &changed {
+        if !cards.contains(card) {
+            cards.push(card);
+        }
+    }
+    if cards.is_empty() {
+        return ("—".to_string(), String::new());
+    }
+    if cards.len() > 1 {
+        return (first_two(&cards), String::new());
+    }
+    let mut controls: Vec<&str> = Vec::new();
+    for (_, control) in &changed {
+        if !control.is_empty() && *control != cards[0] && !controls.contains(control) {
+            controls.push(control);
+        }
+    }
+    (tr(cards[0], &[]), first_two(&controls))
+}
+
+fn first_two(names: &[&str]) -> String {
+    let shown = names
+        .iter()
+        .take(2)
+        .map(|name| tr(name, &[]))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.len() <= 2 {
+        shown
+    } else {
+        tr(
+            "{names} +{count}",
+            &[
+                ("names", crate::kernel::system::i18n::Arg::Str(&shown)),
+                (
+                    "count",
+                    crate::kernel::system::i18n::Arg::Int((names.len() - 2) as i64),
+                ),
+            ],
+        )
+    }
 }
 
 /// The files an open session holds, and the edit of the selected one.
@@ -121,6 +187,43 @@ impl WorkspaceSession {
     #[must_use]
     pub fn create_default_config(&self, default_export_dir: &str) -> WorkspaceConfig {
         default_workspace_config(default_export_dir)
+    }
+
+    /// The History panel's rows for the selected frame, newest first.
+    ///
+    /// The live top step may not be persisted yet, so `live` supplies it. A frame with no
+    /// file or no rows returns an empty list.
+    pub fn history_rows(&self, live: Option<(&WorkspaceConfig, i64)>) -> Vec<HistoryRow> {
+        let Some(file) = self.current_file() else {
+            return Vec::new();
+        };
+        let hash = file.hash.clone();
+        let Ok(stored) = self.repository.all_history(&hash) else {
+            return Vec::new();
+        };
+        let mut configs: std::collections::BTreeMap<i64, WorkspaceConfig> =
+            stored.into_iter().collect();
+        if let Some((config, index)) = live {
+            configs.insert(index, config.clone());
+        }
+        let max = configs.keys().next_back().copied().unwrap_or(0);
+        let current = live.map_or(max, |(_, index)| index);
+        let mut rows = Vec::new();
+        for index in 0..=max {
+            let Some(config) = configs.get(&index) else {
+                continue;
+            };
+            let (name, detail) = history_step_label(configs.get(&(index - 1)), config);
+            rows.push(HistoryRow {
+                index,
+                name,
+                detail,
+                current: index == current,
+                undone: index > current,
+            });
+        }
+        rows.reverse();
+        rows
     }
 
     /// The edit of `file_hash`, from memory then the database then the default.
@@ -258,5 +361,72 @@ mod tests {
         session.sync_files(&names, &[("upload.tif".to_string(), b"pixels".to_vec())]);
         assert_eq!(session.uploaded_files.len(), 1);
         assert!(session.uploaded_files[0].path.contains("session"));
+    }
+
+    #[test]
+    fn a_first_step_names_the_frame_as_opened() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("frame.tif");
+        std::fs::write(&photo, b"frame").unwrap();
+        let mut session = session(dir.path());
+        session.add_local_assets(std::slice::from_ref(&photo));
+        let config = session.active_settings("/tmp/export").unwrap();
+        session
+            .repository
+            .save_history_step(&session.uploaded_files[0].hash, 0, &config)
+            .unwrap();
+        let rows = session.history_rows(None);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].name, "As opened");
+        assert!(rows[0].current);
+        assert!(!rows[0].undone);
+    }
+
+    #[test]
+    fn a_live_step_overrides_the_stored_one_and_marks_undone_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("frame.tif");
+        std::fs::write(&photo, b"frame").unwrap();
+        let mut session = session(dir.path());
+        session.add_local_assets(std::slice::from_ref(&photo));
+        let hash = session.uploaded_files[0].hash.clone();
+        let opened = session.active_settings("/tmp/export").unwrap();
+        session
+            .repository
+            .save_history_step(&hash, 0, &opened)
+            .unwrap();
+        let mut graded = opened.clone();
+        graded.exposure.grade = 90.0;
+        session
+            .repository
+            .save_history_step(&hash, 1, &graded)
+            .unwrap();
+        let mut later = graded.clone();
+        later.exposure.density = 1.2;
+        session
+            .repository
+            .save_history_step(&hash, 2, &later)
+            .unwrap();
+        let rows = session.history_rows(Some((&graded, 1)));
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].index, 2);
+        assert!(rows[0].undone);
+        assert!(rows[1].current);
+        assert!(!rows[2].current);
+        assert!(!rows[2].undone);
+    }
+
+    #[test]
+    fn a_changed_step_names_the_card_and_its_control() {
+        let mut before = WorkspaceConfig::default();
+        before.exposure.grade = 1.0;
+        let mut after = before.clone();
+        after.exposure.grade = 2.0;
+        let (name, detail) = history_step_label(Some(&before), &after);
+        assert!(after.to_dict() != before.to_dict());
+        assert!(!name.is_empty());
+        let _ = detail;
+        let (name, _) = history_step_label(None, &after);
+        assert_eq!(name, "As opened");
     }
 }

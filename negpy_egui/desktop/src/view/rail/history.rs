@@ -2,6 +2,8 @@
 
 use eframe::egui::{self, Align2, FontId, Ui, Vec2};
 
+use negpy_backend::session::workspace::HistoryRow;
+
 use crate::styles::templates::ActionRank;
 use crate::styles::templates::labeled_action;
 use crate::styles::theme::Theme;
@@ -81,6 +83,23 @@ impl HistoryState {
             history_open: true,
             load_metadata: false,
         }
+    }
+
+    /// Replace the rows with a session's stored history, newest first.
+    pub fn load_session(&mut self, rows: &[HistoryRow], work_prints: &[String]) {
+        self.work_prints = work_prints.to_vec();
+        self.steps = rows
+            .iter()
+            .map(|row| {
+                let mut step = HistoryStep::new(
+                    u32::try_from(row.index).unwrap_or(0),
+                    row.name.clone(),
+                    row.detail.clone(),
+                );
+                step.current = row.current;
+                step
+            })
+            .collect();
     }
 
     /// Paint the page. Returns whether a control changed the session.
@@ -210,5 +229,38 @@ mod tests {
                 assert!(!state.show(ui));
             });
         });
+    }
+
+    #[test]
+    fn a_session_replaces_the_reference_rows() {
+        let mut state = HistoryState::default();
+        let rows = vec![
+            HistoryRow {
+                index: 2,
+                name: "Crop".to_string(),
+                detail: String::new(),
+                current: false,
+                undone: true,
+            },
+            HistoryRow {
+                index: 1,
+                name: "Tone".to_string(),
+                detail: "Density".to_string(),
+                current: true,
+                undone: false,
+            },
+            HistoryRow {
+                index: 0,
+                name: "As opened".to_string(),
+                detail: String::new(),
+                current: false,
+                undone: false,
+            },
+        ];
+        state.load_session(&rows, &["First print".to_string()]);
+        assert_eq!(state.steps.len(), 3);
+        assert_eq!(state.steps[0].number, 2);
+        assert!(state.steps[1].current);
+        assert_eq!(state.work_prints, vec!["First print".to_string()]);
     }
 }

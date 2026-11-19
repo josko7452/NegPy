@@ -188,6 +188,15 @@ impl NegFeApp {
         self.strip = strip;
     }
 
+    /// Show the frame's stored History rows and work-print names.
+    pub fn set_history(
+        &mut self,
+        rows: &[negpy_backend::session::workspace::HistoryRow],
+        work_prints: &[String],
+    ) {
+        self.rail.history.load_session(rows, work_prints);
+    }
+
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
         let theme = Theme::default();
