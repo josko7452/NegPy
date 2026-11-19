@@ -4,9 +4,7 @@ use std::path::PathBuf;
 
 use crate::edit::FrameEdit;
 use crate::fixture::{GoldenManifest, ReferenceFixture};
-use crate::frame_source::{
-    FrameImage, frame_path, load_display_frame, load_strip, placeholder, stored_history,
-};
+use crate::frame_source::{FrameImage, frame_path, load_display_frame, load_strip, stored_history};
 use negpy_backend::kernel::system::paths::default_user_dir;
 use negpy_backend::session::startup::prepare_user_directory_with_probe;
 
@@ -135,7 +133,7 @@ pub fn load_manual_state(
 ) {
     let Some(folder) = options.frame_folder() else {
         return (
-            placeholder(1600, 1200),
+            FrameImage::empty(),
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -146,7 +144,7 @@ pub fn load_manual_state(
     let frame = current
         .as_deref()
         .and_then(|path| load_display_frame(path, profile, 1600).ok())
-        .unwrap_or_else(|| placeholder(1600, 1200));
+        .unwrap_or_else(FrameImage::empty);
     let strip = load_strip(&folder, current.as_deref(), profile, 320, 12);
     let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
@@ -203,13 +201,13 @@ pub fn load_manifest_state(
     let frame = frame_path(manifest.frame_folder(), &reference.fixture.frame)
         .as_deref()
         .and_then(|path| load_display_frame(path, profile.as_deref(), 1600).ok())
-        .unwrap_or_else(|| placeholder(1600, 1200));
+        .unwrap_or_else(FrameImage::empty);
     let strip = manifest.frame_folder().map_or_else(
         || vec![frame.clone()],
         |folder| {
             let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
             let strip = load_strip(&folder, current.as_deref(), profile.as_deref(), 320, 12);
-            if strip.is_empty() {
+            if strip.is_empty() && frame.is_rgb() {
                 vec![frame.clone()]
             } else {
                 strip
@@ -251,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_folder_shows_the_placeholder() {
+    fn a_missing_folder_shows_the_empty_state() {
         let fixture = ReferenceFixture {
             name: "reference".to_string(),
             window: crate::fixture::ReferenceWindow {
@@ -278,7 +276,7 @@ mod tests {
             folder: Some(PathBuf::from("/missing/folder")),
         };
         let (frame, strip, _, _, _) = load_manual_state(&options, None, &fixture);
-        assert!(frame.is_rgb());
+        assert!(!frame.is_rgb());
         assert!(strip.is_empty());
     }
 

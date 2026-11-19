@@ -31,6 +31,18 @@ pub struct FrameImage {
 }
 
 impl FrameImage {
+    /// No frame. The shell paints its empty state instead of a photograph.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            name: String::new(),
+            path: None,
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+
     /// A frame ready for a texture upload.
     #[must_use]
     pub fn from_display(name: impl Into<String>, frame: DisplayFrame) -> Self {
@@ -53,7 +65,7 @@ impl FrameImage {
     /// Whether the buffer holds `width * height * 3` samples.
     #[must_use]
     pub fn is_rgb(&self) -> bool {
-        self.pixels.len() == self.width * self.height * 3
+        self.width > 0 && self.height > 0 && self.pixels.len() == self.width * self.height * 3
     }
 }
 
@@ -251,18 +263,6 @@ pub fn load_first_frame(
     None
 }
 
-/// A display frame of one flat color, for a capture with no decodable source.
-#[must_use]
-pub fn placeholder(width: usize, height: usize) -> FrameImage {
-    FrameImage {
-        name: "P5080635.ORF".to_string(),
-        path: None,
-        width,
-        height,
-        pixels: vec![0xa8; width * height * 3],
-    }
-}
-
 /// The frame path when the folder and the manifest frame name resolve to a file.
 #[must_use]
 pub fn frame_path(folder: Option<PathBuf>, frame: &str) -> Option<PathBuf> {
@@ -274,13 +274,6 @@ pub fn frame_path(folder: Option<PathBuf>, frame: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_placeholder_is_an_rgb_frame() {
-        let frame = placeholder(4, 3);
-        assert!(frame.is_rgb());
-        assert_eq!(frame.pixels.len(), 36);
-    }
 
     #[test]
     fn a_missing_folder_has_no_frame() {

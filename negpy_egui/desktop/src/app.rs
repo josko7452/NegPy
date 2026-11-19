@@ -369,7 +369,19 @@ impl NegFeApp {
         let root = Frame::NONE.fill(surface());
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
-            let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture, &strip_textures);
+            let label = self.frame_label();
+            let (rail_rect, import) = paint_shell(
+                ui,
+                screen,
+                &self.view,
+                texture,
+                &strip_textures,
+                self.has_frame(),
+                &label,
+            );
+            if import {
+                self.rail.library.import_with_picker(false);
+            }
             let proof = self.proof.clone();
             let switched = self
                 .rail
@@ -396,6 +408,23 @@ impl NegFeApp {
     fn open_requested_roll(&mut self) {
         if let Some(roll_id) = self.rail.library.take_open_request() {
             self.open_roll(&roll_id);
+        }
+    }
+
+    /// Whether a decoded frame is on the canvas.
+    #[must_use]
+    pub fn has_frame(&self) -> bool {
+        self.frame.as_ref().is_some_and(FrameImage::is_rgb)
+    }
+
+    /// The file name and size the top bar prints.
+    #[must_use]
+    pub fn frame_label(&self) -> String {
+        match &self.frame {
+            Some(frame) if frame.is_rgb() => {
+                format!("{} · {} x {} px", frame.name, frame.width, frame.height)
+            }
+            _ => "No frame open".to_string(),
         }
     }
 
@@ -461,14 +490,17 @@ fn line() -> Stroke {
 }
 
 fn paint_shell(
-    painter: &egui::Painter,
+    ui: &mut egui::Ui,
     screen: Rect,
     view: &ViewState,
     frame: Option<egui::TextureId>,
     thumbnails: &[(egui::TextureId, Vec2)],
-) -> Rect {
+    has_frame: bool,
+    label: &str,
+) -> (Rect, bool) {
+    let painter = ui.painter().clone();
     let margin = 8.0;
-    paint_top_bar(painter, screen);
+    paint_top_bar_with(&painter, screen, label);
 
     let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
     let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
@@ -497,7 +529,11 @@ fn paint_shell(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
     );
-    let strip_height = if view.strip_open { 239.0 } else { 0.0 };
+    let strip_height = if view.strip_open && has_frame {
+        239.0
+    } else {
+        0.0
+    };
     let toolbar_height = 52.0;
     let canvas_width = rail.left() - margin - (screen.left() + margin);
     let canvas_bottom = screen.bottom() - margin - toolbar_height - strip_height;
@@ -507,8 +543,13 @@ fn paint_shell(
     );
     painter.rect_filled(canvas_rect, 0.0, canvas());
 
-    let photo = fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0));
-    if let Some(texture) = frame {
+    let photo = if has_frame {
+        fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0))
+    } else {
+        canvas_rect
+    };
+    let mut import = false;
+    if let Some(texture) = frame.filter(|_| has_frame) {
         painter.image(
             texture,
             photo,
@@ -516,7 +557,7 @@ fn paint_shell(
             Color32::WHITE,
         );
     } else {
-        painter.rect_filled(photo, 0.0, Color32::from_rgb(0xa8, 0xa0, 0x90));
+        import = paint_empty_canvas(ui, photo);
     }
 
     if strip_height > 0.0 {
@@ -534,7 +575,9 @@ fn paint_shell(
         let tile_width = 210.0;
         let gap = 4.0;
         let inset = 4.0;
-        let count = ((tiles.width() - inset) / (tile_width + gap)).ceil() as usize + 1;
+        let count = thumbnails
+            .len()
+            .max(((tiles.width() - inset) / (tile_width + gap)).ceil() as usize);
         for index in 0..count {
             let left = tiles.left() + inset + index as f32 * (tile_width + gap);
             let tile = Rect::from_min_size(
@@ -593,8 +636,8 @@ fn paint_shell(
 
     painter.rect_filled(rail, 0.0, surface());
     painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
-    paint_toolbar(painter, toolbar);
-    rail
+    paint_toolbar(&painter, toolbar);
+    (rail, import)
 }
 
 /// The top bar's bounds, from the window edge to the rail.
@@ -612,12 +655,17 @@ pub fn top_bar_rect(screen: Rect) -> Rect {
 
 /// Paint the file name and the current recipe over `screen`.
 pub fn paint_top_bar(painter: &egui::Painter, screen: Rect) {
+    paint_top_bar_with(painter, screen, "P5080635.ORF · 7792 x 10388 px");
+}
+
+/// Paint the file name and the current recipe over `screen`.
+pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str) {
     let top = top_bar_rect(screen);
     painter.rect_filled(top, 0.0, surface());
     painter.text(
         top.left_center() + Vec2::new(f32::from(Theme::default().space_xl), 0.0),
         egui::Align2::LEFT_CENTER,
-        "P5080635.ORF · 7792 x 10388 px",
+        frame,
         egui::FontId::proportional(12.0),
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
     );
@@ -644,6 +692,44 @@ fn fitted_rect(outer: Rect, content: Vec2) -> Rect {
     }
     let scale = (outer.width() / content.x).min(outer.height() / content.y);
     Rect::from_center_size(outer.center(), content * scale)
+}
+
+/// Paint the first-run state: one line that says what to do and the Import action.
+/// Returns whether the user asked to open a folder as a roll.
+fn paint_empty_canvas(ui: &mut egui::Ui, area: Rect) -> bool {
+    let theme = Theme::default();
+    ui.painter().text(
+        area.center() - Vec2::new(0.0, 40.0),
+        egui::Align2::CENTER_CENTER,
+        "No roll is open",
+        egui::FontId::proportional(f32::from(theme.font_size_title)),
+        theme.text_primary,
+    );
+    ui.painter().text(
+        area.center() - Vec2::new(0.0, 10.0),
+        egui::Align2::CENTER_CENTER,
+        "Open a folder as a roll from the Library tab.",
+        egui::FontId::proportional(f32::from(theme.font_size_base)),
+        theme.text_secondary,
+    );
+    let action = Rect::from_center_size(
+        area.center() + Vec2::new(0.0, 40.0),
+        Vec2::new(220.0, crate::styles::layout::DEFAULT_BUTTON_HEIGHT),
+    );
+    let mut action_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(action)
+            .layout(egui::Layout::top_down(egui::Align::Min)),
+    );
+    action_ui.set_width(action.width());
+    crate::styles::templates::action_with_icon(
+        &mut action_ui,
+        Icon::Folder,
+        "Open folder as a roll…",
+        crate::styles::templates::ActionRank::Normal,
+        "Open a folder as a roll",
+    )
+    .clicked()
 }
 
 fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
@@ -965,6 +1051,24 @@ mod tests {
             assert_eq!(Tab::from_key(&tab.label().to_lowercase()), tab);
         }
         assert_eq!(Tab::from_key("unknown"), Tab::Roll);
+    }
+
+    #[test]
+    fn an_empty_shell_has_no_frame_label() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        assert!(!app.has_frame());
+        assert_eq!(app.frame_label(), "No frame open");
+        app.set_frame(crate::frame_source::FrameImage::from_display(
+            "frame.orf",
+            negpy_backend::services::rendering::display_frame::DisplayFrame::from_rgb(
+                4,
+                2,
+                vec![0x20; 24],
+            ),
+        ));
+        assert!(app.has_frame());
+        assert_eq!(app.frame_label(), "frame.orf · 4 x 2 px");
     }
 
     #[test]

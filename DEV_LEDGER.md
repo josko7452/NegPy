@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 00:05 | **Last Commit:** `HEAD` desktop: open the Library roll
+**Last Updated:** 2026-11-20 00:35 | **Last Commit:** `HEAD` desktop: paint the empty workspace
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Wiring audit is complete; close the
@@ -15,8 +15,8 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Add the no-roll empty state and remove the placeholder photograph.
-2. [ ] Add frame selection and navigation across strip, Light Table and bar.
+1. [ ] Add frame selection and navigation across strip, Light Table and bar.
+2. [ ] Re-render the canvas on edit changes through one coalesced request.
 3. [ ] Re-render the canvas on edit changes through one coalesced request.
 4. [ ] Feed real render metrics into Analysis and its readouts.
 5. [ ] Keep every section's open state in page state; test each header toggle.
@@ -26,7 +26,8 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 9. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
 
 ## Completed (Recent)
-- `HEAD` desktop: open the Library roll.
+- `HEAD` desktop: paint the empty workspace.
+- `1dacaff8` desktop: open the Library roll.
 - `2f578cec` desktop: resolve the launch profile.
 - `7b6f6e14` desktop: justify the Light Table rows.
 - `96c75264` desktop: refresh the Library rolls.

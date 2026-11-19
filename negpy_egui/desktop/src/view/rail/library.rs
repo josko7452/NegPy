@@ -89,6 +89,22 @@ impl Default for LibraryState {
 }
 
 impl LibraryState {
+    /// Run the folder picker and import the chosen folder. Returns whether a roll was
+    /// imported; the caller then opens the roll it names.
+    pub fn import_with_picker(&mut self, subfolders: bool) -> bool {
+        let Some(parent) = rfd::FileDialog::new()
+            .set_title(if subfolders {
+                "Import Subfolders as Rolls"
+            } else {
+                "Import Folder as a Roll"
+            })
+            .pick_folder()
+        else {
+            return false;
+        };
+        self.import(&parent, subfolders)
+    }
+
     /// The saved rolls of `profile`, in name order.
     #[must_use]
     pub fn load(profile: Option<&Path>) -> Self {
