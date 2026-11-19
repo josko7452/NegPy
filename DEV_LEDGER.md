@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 16:20 | **Last Commit:** `pending` desktop: add the negfe launch target
+**Last Updated:** 2026-11-19 16:45 | **Last Commit:** `pending` desktop: give Scan its source icons
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,18 +19,19 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: Scan source icons and section icon; keep the footer deferred.
-2. [ ] E5: Light Table rows at usable density, not golden tile sizes.
-3. [ ] E5: Roll Analysis card: real roll name and baseline state.
-4. [ ] E5: capture the Rust matrix and score it against `golden/tall/`.
+1. [ ] E5: Light Table rows at usable density, not golden tile sizes.
+2. [ ] E5: Roll Analysis card: real roll name and baseline state.
+3. [ ] E5: capture the Rust matrix and score it against `golden/tall/`.
+4. [ ] E5: pick the next shell gap from the golden matrix.
 
 ## Completed (Recent)
-- `pending` desktop: add the negfe launch target.
+- `pending` desktop: give Scan its source icons.
+- `bd0c815b` desktop: add the negfe launch target.
 - `57b104ef` desktop: match the canvas bar groups.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 113 library tests. The launch tests
-  cover argument and environment parsing and the missing-folder placeholder.
+- `cargo test -p negpy-desktop` passes: 114 library tests. Scan tests cover
+  source order and the camera default; launch tests cover parsing.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.

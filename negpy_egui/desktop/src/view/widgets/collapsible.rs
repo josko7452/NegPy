@@ -17,6 +17,7 @@ pub struct CollapsibleSection {
     pub expanded: bool,
     pub modified: usize,
     pub has_guide: bool,
+    pub icon: Option<Icon>,
 }
 
 impl CollapsibleSection {
@@ -28,6 +29,7 @@ impl CollapsibleSection {
             expanded: true,
             modified: 0,
             has_guide: false,
+            icon: None,
         }
     }
 
@@ -42,6 +44,13 @@ impl CollapsibleSection {
     #[must_use]
     pub fn with_guide(mut self) -> Self {
         self.has_guide = true;
+        self
+    }
+
+    /// Show a section icon before the title.
+    #[must_use]
+    pub fn with_icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
         self
     }
 
@@ -96,8 +105,19 @@ impl CollapsibleSection {
             FontId::proportional(f32::from(theme.font_size_small)),
             theme.text_secondary,
         );
+        let mut title_left = f32::from(theme.space_lg + theme.space_xl);
+        if let Some(icon) = self.icon {
+            ui.painter().text(
+                header.left_center() + Vec2::new(f32::from(theme.space_lg + theme.space_md), 0.0),
+                Align2::LEFT_CENTER,
+                icon.glyph(),
+                FontId::proportional(f32::from(theme.font_size_small)),
+                theme.text_hint,
+            );
+            title_left += 20.0;
+        }
         ui.painter().text(
-            header.left_center() + Vec2::new(f32::from(theme.space_lg + theme.space_xl), 0.0),
+            header.left_center() + Vec2::new(title_left, 0.0),
             Align2::LEFT_CENTER,
             self.display_title(),
             FontId::proportional(f32::from(theme.font_size_header)),

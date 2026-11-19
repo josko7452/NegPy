@@ -38,7 +38,11 @@ pub struct ScanState {
 impl Default for ScanState {
     fn default() -> Self {
         Self {
-            source: SegmentedChoice::new(&["Camera", "Film Scanner"]),
+            source: SegmentedChoice {
+                labels: &["Film Scanner", "Camera"],
+                icons: &[Some(Icon::CameraRotate), Some(Icon::Camera)],
+                current: 1,
+            },
             backend: StepCombo::new(vec![
                 Choice::new("Auto"),
                 Choice::new("SANE"),
@@ -81,7 +85,9 @@ impl ScanState {
     pub fn show(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
         let mut changed = false;
-        let mut summary = CollapsibleSection::new("Scanner").with_guide();
+        let mut summary = CollapsibleSection::new("Scanner")
+            .with_guide()
+            .with_icon(Icon::Exchange);
         summary.expanded = true;
         let (_, result) = summary.show(ui, |ui| {
             card(ui, |ui| {
@@ -91,26 +97,31 @@ impl ScanState {
             })
         });
         changed |= result.unwrap_or(false);
-        let camera_active = self.source.current == 0;
+        let camera_active = self.source.current == 1;
         if !camera_active {
-            let (device_open, device_changed) = scan_card(ui, "Device", self.device_open, |ui| {
-                let mut changed = false;
-                ui.horizontal(|ui| {
-                    ui.label("Backend");
-                    changed |= self.backend.show(ui);
+            let (device_open, device_changed) =
+                scan_card(ui, "Device", Icon::Plug, self.device_open, |ui| {
+                    let mut changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label("Backend");
+                        changed |= self.backend.show(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Device");
+                        changed |= self.device.show(ui);
+                        let _ = labeled_action(ui, "Refresh", ActionRank::Normal);
+                    });
+                    let _ = hint(ui, "Writes nkscan.log with Trace for a bug report.");
+                    changed
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Device");
-                    changed |= self.device.show(ui);
-                    let _ = labeled_action(ui, "Refresh", ActionRank::Normal);
-                });
-                let _ = hint(ui, "Writes nkscan.log with Trace for a bug report.");
-                changed
-            });
             self.device_open = device_open;
             changed |= device_changed;
-            let (quality_open, quality_changed) =
-                scan_card(ui, "Film & Quality", self.quality_open, |ui| {
+            let (quality_open, quality_changed) = scan_card(
+                ui,
+                "Film & Quality",
+                Icon::Sliders,
+                self.quality_open,
+                |ui| {
                     let mut changed = false;
                     ui.horizontal(|ui| {
                         ui.label("Film");
@@ -134,11 +145,12 @@ impl ScanState {
                     });
                     changed |= labeled_toggle(ui, "IR", &mut self.ir).clicked();
                     changed
-                });
+                },
+            );
             self.quality_open = quality_open;
             changed |= quality_changed;
             let (framing_open, framing_changed) =
-                scan_card(ui, "Framing", self.framing_open, |ui| {
+                scan_card(ui, "Framing", Icon::Crop, self.framing_open, |ui| {
                     let _ = hint(ui, "Prescan sets a crop for the next scan.");
                     let _ = labeled_action(ui, "Prescan...", ActionRank::Normal);
                     false
@@ -146,7 +158,7 @@ impl ScanState {
             self.framing_open = framing_open;
             changed |= framing_changed;
         }
-        let (_, camera_changed) = scan_card(ui, "Camera", camera_active, |ui| {
+        let (_, camera_changed) = scan_card(ui, "Camera", Icon::Camera, camera_active, |ui| {
             let mut changed = false;
             let _ = hint(
                 ui,
@@ -168,10 +180,14 @@ impl ScanState {
             changed
         });
         changed |= camera_changed;
-        let (_, light_changed) = scan_card(ui, "Preset", false, |ui| self.light.show(ui).is_some());
+        let (_, light_changed) = scan_card(ui, "Preset", Icon::Lightbulb, false, |ui| {
+            self.light.show(ui).is_some()
+        });
         changed |= light_changed;
         let (output_open, output_changed) =
-            scan_card(ui, "Output", self.output_open, |ui| self.show_output(ui));
+            scan_card(ui, "Output", Icon::FolderOpen, self.output_open, |ui| {
+                self.show_output(ui)
+            });
         self.output_open = output_open;
         changed |= output_changed;
         ui.add_space(f32::from(theme.space_md));
@@ -207,10 +223,11 @@ impl ScanState {
 fn scan_card(
     ui: &mut Ui,
     title: &str,
+    icon: Icon,
     expanded: bool,
     body: impl FnOnce(&mut Ui) -> bool,
 ) -> (bool, bool) {
-    let mut section = CollapsibleSection::new(title).with_guide();
+    let mut section = CollapsibleSection::new(title).with_guide().with_icon(icon);
     section.expanded = expanded;
     let (_, result) = section.show(ui, |ui| card(ui, body));
     ui.add_space(f32::from(Theme::default().space_sm));
@@ -222,9 +239,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn the_scan_source_keeps_the_reference_order() {
+        let state = ScanState::default();
+        assert_eq!(state.source.labels, ["Film Scanner", "Camera"]);
+        assert_eq!(state.source.icons[0], Some(Icon::CameraRotate));
+        assert_eq!(state.source.icons[1], Some(Icon::Camera));
+    }
+
+    #[test]
     fn the_scan_tab_opens_on_the_camera() {
         let state = ScanState::default();
         assert_eq!(state.source.current_label(), "Camera");
+        assert_eq!(state.source.current, 1);
         assert_eq!(state.backend.current_label(), "Auto");
         assert_eq!(state.scan_mode.current_label(), "Single pass");
         assert!(!state.device_open);
