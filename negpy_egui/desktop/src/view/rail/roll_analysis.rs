@@ -13,9 +13,6 @@ pub struct RollAnalysisState {
     pub roll_name: Option<String>,
     pub baseline: String,
     pub stale: bool,
-    pub use_luma: bool,
-    pub use_color: bool,
-    pub use_cast: bool,
 }
 
 impl RollAnalysisState {
@@ -59,9 +56,6 @@ impl RollAnalysisState {
             roll_name,
             baseline: rolls::baseline_label(repo, process),
             stale: rolls::frame_baseline_stale(repo, process),
-            use_luma: process.use_luma_average,
-            use_color: process.use_color_average,
-            use_cast: process.use_cast_average,
         };
         if state.roll_name.is_none() {
             state.roll_name = rolls::saved_rolls(repo)
@@ -85,9 +79,6 @@ impl RollAnalysisState {
             roll_name: process.roll_name.clone(),
             baseline: rolls::baseline_label_without_repo(process),
             stale: false,
-            use_luma: process.use_luma_average,
-            use_color: process.use_color_average,
-            use_cast: process.use_cast_average,
         }
     }
 
@@ -135,7 +126,7 @@ mod tests {
     }
 
     #[test]
-    fn the_average_toggles_read_the_saved_process() {
+    fn the_average_toggles_live_in_the_frame_config() {
         let config = WorkspaceConfig {
             process: negpy_backend::domain::models::process::ProcessConfig {
                 use_luma_average: true,
@@ -146,8 +137,6 @@ mod tests {
             ..WorkspaceConfig::default()
         };
         let state = RollAnalysisState::from_config(&config);
-        assert!(state.use_luma);
-        assert!(state.use_color);
-        assert!(!state.use_cast);
+        assert!(state.roll_line() == "No roll");
     }
 }

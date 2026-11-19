@@ -2,6 +2,7 @@
 
 use eframe::egui::Ui;
 
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::templates::{
     ActionRank, action_with_icon, labeled_action, labeled_toggle, section_subheader,
@@ -54,15 +55,55 @@ impl Default for MeteringState {
 }
 
 impl MeteringState {
+    /// Replace the controls with the metering values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let process = &edit.config.process;
+        self.analysis_buffer.set_value(process.analysis_buffer);
+        self.lock_bounds = process.lock_bounds;
+        self.draw_region = process.analysis_rect.is_some();
+        self.luma_clip.set_value(process.luma_range_clip);
+        self.color_clip.set_value(process.color_range_clip);
+        self.white_point.set_value(process.white_point_offset);
+        self.black_point.set_value(process.black_point_offset);
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&self, edit: &mut FrameEdit) -> bool {
+        let process = &mut edit.config.process;
+        let draw_region = self.draw_region;
+        let changed = !same(process.analysis_buffer, self.analysis_buffer.value)
+            || process.lock_bounds != self.lock_bounds
+            || process.analysis_rect.is_some() != draw_region
+            || !same(process.luma_range_clip, self.luma_clip.value)
+            || !same(process.color_range_clip, self.color_clip.value)
+            || !same(process.white_point_offset, self.white_point.value)
+            || !same(process.black_point_offset, self.black_point.value);
+        process.analysis_buffer = self.analysis_buffer.value;
+        process.lock_bounds = self.lock_bounds;
+        if !draw_region {
+            process.analysis_rect = None;
+        }
+        process.luma_range_clip = self.luma_clip.value;
+        process.color_range_clip = self.color_clip.value;
+        process.white_point_offset = self.white_point.value;
+        process.black_point_offset = self.black_point.value;
+        changed
+    }
+
     /// Paint the card. Returns whether a control changed the edit.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let mut section = CollapsibleSection::new("Metering")
             .with_guide()
             .with_icon(Icon::Sliders);
         section.expanded = self.open;
         let (_, result) = section.show(ui, |ui| card(ui, |ui| self.show_body(ui)));
         self.open = section.expanded;
-        result.unwrap_or(false)
+        let changed = result.unwrap_or(false);
+        if changed {
+            self.store(edit);
+        }
+        changed
     }
 
     fn show_body(&mut self, ui: &mut Ui) -> bool {
@@ -109,6 +150,10 @@ impl MeteringState {
     }
 }
 
+fn same(left: f64, right: f64) -> bool {
+    (left - right).abs() < 1e-9
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,10 +182,31 @@ mod tests {
     fn the_card_paints_on_a_context() {
         let ctx = eframe::egui::Context::default();
         let mut state = MeteringState::default();
+        let mut edit = FrameEdit::default();
         let _ = ctx.run(eframe::egui::RawInput::default(), |ctx| {
             eframe::egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn a_loaded_edit_fills_the_metering_card_and_stores_it() {
+        let mut edit = FrameEdit::default();
+        edit.config.process.analysis_buffer = 0.12;
+        edit.config.process.lock_bounds = true;
+        edit.config.process.luma_range_clip = -12.0;
+        edit.config.process.color_range_clip = 8.0;
+        edit.config.process.white_point_offset = 0.03;
+        edit.config.process.black_point_offset = -0.02;
+        let mut state = MeteringState::default();
+        state.load(&edit);
+        assert!(state.lock_bounds);
+        assert!((state.analysis_buffer.value - 0.12).abs() < 1e-9);
+        assert_eq!(state.luma_clip.value, -12.0);
+        assert_eq!(state.color_clip.value, 8.0);
+        assert!((state.white_point.value - 0.03).abs() < 1e-9);
+        assert!((state.black_point.value + 0.02).abs() < 1e-9);
+        assert!(!state.store(&mut edit));
     }
 }

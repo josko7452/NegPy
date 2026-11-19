@@ -236,13 +236,15 @@ impl RailState {
             edit.mark_dirty();
         }
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.metering.show(ui);
+        if self.metering.show(ui, edit) {
+            edit.mark_dirty();
+        }
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Calibration", 3);
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Metering", 0);
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.show_collapsed(ui, "Roll Analysis", 3);
+        self.show_roll_analysis(ui, edit);
     }
 
     fn show_frame(&mut self, ui: &mut Ui, _edit: &mut FrameEdit) {
@@ -423,15 +425,21 @@ impl RailState {
         });
     }
 
+    fn show_roll_analysis(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
+        let mut section = CollapsibleSection::new("Roll Analysis")
+            .with_guide()
+            .with_icon(Icon::Stack);
+        section.modified = 3;
+        section.expanded = true;
+        section.show(ui, |ui| self.show_roll_analysis_body(ui, edit));
+    }
+
     fn show_collapsed(&mut self, ui: &mut Ui, title: &str, modified: usize) {
         let mut section = CollapsibleSection::new(title).with_guide();
         section.modified = modified;
         if title == "Calibration" {
             section.expanded = true;
             section.show(ui, |ui| self.show_calibration_body(ui));
-        } else if title == "Roll Analysis" {
-            section.expanded = true;
-            section.show(ui, |ui| self.show_roll_analysis_body(ui));
         } else {
             section.expanded = false;
             section.show(ui, |ui| {
@@ -442,7 +450,7 @@ impl RailState {
         }
     }
 
-    fn show_roll_analysis_body(&mut self, ui: &mut Ui) {
+    fn show_roll_analysis_body(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
         let theme = Theme::default();
         let _ = card(ui, |ui| {
             ui.horizontal(|ui| {
@@ -532,11 +540,20 @@ impl RailState {
             }
             ui.add_space(f32::from(theme.space_sm));
             ui.horizontal(|ui| {
-                let _ = labeled_toggle(ui, "Luma", &mut self.roll_analysis.use_luma);
+                let mut use_luma = edit.config.process.use_luma_average;
+                let mut use_color = edit.config.process.use_color_average;
+                let mut use_cast = edit.config.process.use_cast_average;
+                let luma = labeled_toggle(ui, "Luma", &mut use_luma).clicked();
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = labeled_toggle(ui, "Color", &mut self.roll_analysis.use_color);
+                let color = labeled_toggle(ui, "Color", &mut use_color).clicked();
                 ui.add_space(f32::from(theme.space_sm));
-                let _ = labeled_toggle(ui, "Cast", &mut self.roll_analysis.use_cast);
+                let cast = labeled_toggle(ui, "Cast", &mut use_cast).clicked();
+                if luma || color || cast {
+                    edit.config.process.use_luma_average = use_luma;
+                    edit.config.process.use_color_average = use_color;
+                    edit.config.process.use_cast_average = use_cast;
+                    edit.mark_dirty();
+                }
             });
         });
     }
