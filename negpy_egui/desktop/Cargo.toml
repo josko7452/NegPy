@@ -16,6 +16,7 @@ egui_extras = "0.32"
 egui-phosphor = "0.10"
 egui-wgpu = "0.32"
 image = { version = "0.25.10", default-features = false, features = ["png"] }
+rfd = "0.18"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 wgpu = "25"

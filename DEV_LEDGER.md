@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 22:22 | **Last Commit:** `HEAD` backend: store the proof condition in session settings
+**Last Updated:** 2026-11-19 22:38 | **Last Commit:** `HEAD` desktop: wire the Library Import menu
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,11 +14,12 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Wire the Library Import button to folder import.
+1. [ ] Wire the Library Name sort button.
 2. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` backend: store the proof condition in session settings.
+- `HEAD` desktop: wire the Library Import menu.
+- `5bfe2236` backend: store the proof condition in session settings.
 - `c2bb6ed8` backend: keep the proof condition out of the export edit.
 - `9be68fcc` desktop: load the saved export and metadata presets.
 - `7d7efc33` desktop: bind the Export proof and sidecars.

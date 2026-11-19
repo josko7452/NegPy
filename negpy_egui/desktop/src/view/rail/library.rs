@@ -3,7 +3,7 @@
 //! A Roll is the Library's only unit; a folder is an import source. The panel shows the
 //! saved rolls for the open profile, newest state first.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use eframe::egui::{self, Align2, FontId, Sense, Stroke, Ui, Vec2};
 use negpy_backend::domain::types::AppConfig;
@@ -66,6 +66,8 @@ impl RollRow {
 pub struct LibraryState {
     pub rolls: Vec<RollRow>,
     pub filter: String,
+    profile: Option<PathBuf>,
+    status: String,
 }
 
 impl Default for LibraryState {
@@ -73,6 +75,8 @@ impl Default for LibraryState {
         Self {
             rolls: Vec::new(),
             filter: String::new(),
+            profile: None,
+            status: String::new(),
         }
     }
 }
@@ -98,6 +102,8 @@ impl LibraryState {
         Self {
             rolls: rows,
             filter: String::new(),
+            profile: Some(profile.to_path_buf()),
+            status: String::new(),
         }
     }
 
@@ -131,7 +137,50 @@ impl LibraryState {
         Self {
             rolls: rows,
             filter: String::new(),
+            profile: None,
+            status: String::new(),
         }
+    }
+
+    /// The message the last import left.
+    #[must_use]
+    pub fn status(&self) -> &str {
+        &self.status
+    }
+
+    /// Import one folder as a roll, or its subfolders as separate rolls.
+    pub fn import(&mut self, parent: &Path, subfolders: bool) -> bool {
+        let Some(profile) = self.profile.clone() else {
+            return false;
+        };
+        let app = AppConfig::for_user_dir(&profile);
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        if repo.initialize().is_err() {
+            self.status = "Could not open the library.".to_string();
+            return false;
+        }
+        let parent = parent.display().to_string();
+        let ids = if subfolders {
+            rolls::import_subfolders_as_rolls(&mut repo, &parent, false)
+        } else {
+            vec![rolls::recognize_folder(&mut repo, &parent, None)]
+        };
+        if ids.is_empty() {
+            self.status = "No folders with images found.".to_string();
+            return false;
+        }
+        let mut settings = serde_json::Map::new();
+        settings.insert("last_open_folder".to_string(), serde_json::json!(parent));
+        let _ = repo.save_global_settings(&settings);
+        let count =
+            negpy_backend::kernel::system::text::count_of(ids.len() as i64, "roll", "rolls");
+        let filter = std::mem::take(&mut self.filter);
+        *self = Self {
+            filter,
+            status: format!("Imported {count}."),
+            ..Self::load(Some(&profile))
+        };
+        true
     }
 
     /// Paint the tab and return the Roll the user opened.
@@ -141,6 +190,7 @@ impl LibraryState {
         section.expanded = true;
         let (_, result) = section.show(ui, |ui| {
             card(ui, |ui| {
+                let mut import = None;
                 ui.horizontal(|ui| {
                     let height = TOOLBAR_BUTTON_HEIGHT;
                     let width = (ui.available_width() - 210.0).max(100.0);
@@ -153,10 +203,22 @@ impl LibraryState {
                     ui.add_space(f32::from(theme.space_sm));
                     paint_small_button(ui, "Name", 66.0, &theme);
                     ui.add_space(f32::from(theme.space_sm));
-                    paint_small_button(ui, "Import", 76.0, &theme);
+                    import = Some(small_button(ui, "Import", 76.0, &theme));
                     ui.add_space(f32::from(theme.space_sm));
                     paint_small_button(ui, Icon::Menu.glyph(), TOOLBAR_BUTTON_HEIGHT, &theme);
                 });
+                let picked = import.and_then(|import| import_menu(&import));
+                if let Some(subfolders) = picked
+                    && let Some(parent) = rfd::FileDialog::new()
+                        .set_title(if subfolders {
+                            "Import Subfolders as Rolls"
+                        } else {
+                            "Import Folder as a Roll"
+                        })
+                        .pick_folder()
+                {
+                    self.import(&parent, subfolders);
+                }
                 ui.add_space(f32::from(theme.space_sm));
                 let needle = self.filter.trim().to_lowercase();
                 let mut opened = None;
@@ -221,6 +283,15 @@ impl LibraryState {
             FontId::proportional(f32::from(theme.font_size_small)),
             theme.text_hint,
         );
+        if !self.status.is_empty() {
+            ui.painter().text(
+                egui::pos2(ui.cursor().left(), hint_y + 18.0),
+                Align2::LEFT_CENTER,
+                &self.status,
+                FontId::proportional(f32::from(theme.font_size_small)),
+                theme.text_hint,
+            );
+        }
         opened
     }
 }
@@ -315,8 +386,9 @@ fn roll_name(entry: &serde_json::Value) -> String {
         .to_string()
 }
 
-fn paint_small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(width, TOOLBAR_BUTTON_HEIGHT), Sense::click());
+fn small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) -> egui::Response {
+    let (rect, response) =
+        ui.allocate_exact_size(Vec2::new(width, TOOLBAR_BUTTON_HEIGHT), Sense::click());
     ui.painter().rect_filled(rect, 4.0, theme.bg_input);
     ui.painter().rect_stroke(
         rect,
@@ -331,6 +403,28 @@ fn paint_small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) {
         FontId::proportional(f32::from(theme.font_size_base)),
         theme.text_primary,
     );
+    response
+}
+
+fn paint_small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) {
+    let _ = small_button(ui, label, width, theme);
+}
+
+fn import_menu(import: &egui::Response) -> Option<bool> {
+    egui::Popup::menu(import)
+        .show(|ui| {
+            ui.set_min_width(230.0);
+            let mut picked = None;
+            if ui.button("Import Folder as a Roll...").clicked() {
+                picked = Some(false);
+            }
+            if ui.button("Import Subfolders as Rolls...").clicked() {
+                picked = Some(true);
+            }
+            picked
+        })
+        .map(|response| response.inner)
+        .flatten()
 }
 
 #[cfg(test)]
@@ -408,6 +502,34 @@ mod tests {
             .collect();
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].name, "w2");
+    }
+
+    #[test]
+    fn an_imported_folder_becomes_a_roll_and_reloads_the_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let photos = dir.path().join("photos/w1");
+        std::fs::create_dir_all(&photos).unwrap();
+        std::fs::write(photos.join("frame.tif"), b"image").unwrap();
+        let mut state = LibraryState::load(Some(dir.path()));
+        assert!(state.rolls.is_empty());
+        assert!(state.import(&photos, false));
+        assert_eq!(state.rolls.len(), 1);
+        assert_eq!(state.rolls[0].name, "w1");
+        assert_eq!(state.status(), "Imported 1 roll.");
+    }
+
+    #[test]
+    fn a_subfolder_import_makes_a_roll_for_each_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        for name in ["w1", "w2"] {
+            let photos = dir.path().join("photos").join(name);
+            std::fs::create_dir_all(&photos).unwrap();
+            std::fs::write(photos.join("frame.tif"), b"image").unwrap();
+        }
+        let mut state = LibraryState::load(Some(dir.path()));
+        assert!(state.import(&dir.path().join("photos"), true));
+        assert_eq!(state.rolls.len(), 2);
+        assert_eq!(state.status(), "Imported 2 rolls.");
     }
 
     #[test]
