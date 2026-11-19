@@ -23,6 +23,8 @@ use negpy_backend::session::workspace::{SessionFile, WorkspaceSession};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FrameImage {
     pub name: String,
+    /// The source file, when the frame came from disk.
+    pub path: Option<PathBuf>,
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u8>,
@@ -34,10 +36,18 @@ impl FrameImage {
     pub fn from_display(name: impl Into<String>, frame: DisplayFrame) -> Self {
         Self {
             name: name.into(),
+            path: None,
             width: frame.width,
             height: frame.height,
             pixels: frame.pixels,
         }
+    }
+
+    /// The same frame bound to its source file.
+    #[must_use]
+    pub fn with_path(mut self, path: &Path) -> Self {
+        self.path = Some(path.to_path_buf());
+        self
     }
 
     /// Whether the buffer holds `width * height * 3` samples.
@@ -132,7 +142,7 @@ pub fn load_display_frame(
         .and_then(|name| name.to_str())
         .unwrap_or("frame")
         .to_string();
-    Ok(FrameImage::from_display(name, frame))
+    Ok(FrameImage::from_display(name, frame).with_path(path))
 }
 
 /// The image files in `folder`, in name order.
@@ -179,6 +189,7 @@ pub fn load_thumbnail(path: &Path, profile: Option<&Path>, max_edge: usize) -> O
         .to_string();
     let frame = FrameImage {
         name,
+        path: Some(path.to_path_buf()),
         width: cached.width() as usize,
         height: cached.height() as usize,
         pixels: cached.into_raw(),
@@ -208,11 +219,44 @@ pub fn load_strip(
         .collect()
 }
 
+/// The roll's thumbnails for explicit paths, in the order the roll lists them.
+#[must_use]
+pub fn load_strip_paths(
+    paths: &[PathBuf],
+    profile: Option<&Path>,
+    max_edge: usize,
+    limit: usize,
+) -> Vec<FrameImage> {
+    paths
+        .iter()
+        .take(limit)
+        .filter_map(|path| load_thumbnail(path, profile, max_edge))
+        .collect()
+}
+
+/// The display frame of the first path that decodes, with its strip.
+#[must_use]
+pub fn load_first_frame(
+    paths: &[PathBuf],
+    profile: Option<&Path>,
+    max_edge: usize,
+    strip_limit: usize,
+) -> Option<(FrameImage, Vec<FrameImage>)> {
+    for path in paths {
+        if let Ok(frame) = load_display_frame(path, profile, max_edge) {
+            let strip = load_strip_paths(paths, profile, 320, strip_limit);
+            return Some((frame, strip));
+        }
+    }
+    None
+}
+
 /// A display frame of one flat color, for a capture with no decodable source.
 #[must_use]
 pub fn placeholder(width: usize, height: usize) -> FrameImage {
     FrameImage {
         name: "P5080635.ORF".to_string(),
+        path: None,
         width,
         height,
         pixels: vec![0xa8; width * height * 3],

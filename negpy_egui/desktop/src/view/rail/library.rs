@@ -72,6 +72,7 @@ pub struct LibraryState {
     pub sort: SortButton,
     profile: Option<PathBuf>,
     status: String,
+    imported: Option<String>,
 }
 
 impl Default for LibraryState {
@@ -82,6 +83,7 @@ impl Default for LibraryState {
             sort: library_sort("name", false),
             profile: None,
             status: String::new(),
+            imported: None,
         }
     }
 }
@@ -118,6 +120,7 @@ impl LibraryState {
             sort: library_sort(order, descending),
             profile: Some(profile.to_path_buf()),
             status: String::new(),
+            imported: None,
         }
     }
 
@@ -154,6 +157,7 @@ impl LibraryState {
             sort: library_sort("name", false),
             profile: None,
             status: String::new(),
+            imported: None,
         }
     }
 
@@ -211,12 +215,19 @@ impl LibraryState {
         let count =
             negpy_backend::kernel::system::text::count_of(ids.len() as i64, "roll", "rolls");
         let filter = std::mem::take(&mut self.filter);
+        let imported = ids.first().cloned();
         *self = Self {
             filter,
             status: format!("Imported {count}."),
+            imported,
             ..Self::load(Some(&profile))
         };
         true
+    }
+
+    /// Take the roll a click or an import asked to open.
+    pub fn take_open_request(&mut self) -> Option<String> {
+        self.imported.take()
     }
 
     /// Rediscover rolls under every import source and re-read the row counts.
@@ -253,12 +264,13 @@ impl LibraryState {
         *self = Self {
             filter,
             status,
+            imported: None,
             ..Self::load(Some(&profile))
         };
         found > 0 || dropped > 0
     }
 
-    /// Paint the tab and return the Roll the user opened.
+    /// Paint the tab and return the id of the Roll the user opened or imported.
     pub fn show(&mut self, ui: &mut Ui, footer_y: Option<f32>) -> Option<String> {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Library").with_guide();
@@ -331,14 +343,17 @@ impl LibraryState {
                         let right = rect.right() - f32::from(theme.space_xl);
                         paint_pill(ui.painter(), right, rect.center().y, "Open", true);
                     }
-                    if response.response.clicked() {
-                        opened = Some(row.name.clone());
+                    if response.response.clicked() && !row.id.is_empty() {
+                        opened = Some(row.id.clone());
                     }
                 }
                 opened
             })
         });
         let opened = result.flatten();
+        if opened.is_some() {
+            self.imported = opened.clone();
+        }
         let needle = self.filter.trim().to_lowercase();
         let shown: Vec<&RollRow> = self
             .rolls

@@ -244,6 +244,57 @@ impl NegFeApp {
         self.strip = strip;
     }
 
+    /// Open a saved roll: load its first decodable frame, fill the strip, and bind the
+    /// frame's edit. A roll with no decodable frame leaves the canvas empty.
+    pub fn open_roll(&mut self, roll_id: &str) -> bool {
+        let Some(profile) = self.profile.clone() else {
+            self.mark_roll_open(roll_id);
+            return false;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app.edits_db_path,
+            app.settings_db_path,
+        );
+        let paths: Vec<std::path::PathBuf> =
+            negpy_backend::services::assets::rolls::roll_frame_paths(&repo, roll_id)
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect();
+        self.mark_roll_open(roll_id);
+        let Some((frame, strip)) =
+            crate::frame_source::load_first_frame(&paths, Some(&profile), 1600, 12)
+        else {
+            return false;
+        };
+        let open_path = frame.path.clone();
+        let edit = open_path
+            .as_deref()
+            .map_or_else(FrameEdit::default, |path| {
+                FrameEdit::load(Some(&profile), path)
+            });
+        let edit_config = edit.config.clone();
+        self.set_edit(edit);
+        self.set_frame(frame);
+        self.set_strip(strip);
+        if let Some(path) = open_path {
+            let (rows, prints) = crate::frame_source::stored_history(Some(&profile), &path);
+            self.set_history(&rows, &prints);
+            self.set_roll_analysis(crate::view::rail::roll_analysis::RollAnalysisState::load(
+                Some(&profile),
+                &path,
+                Some(&edit_config),
+            ));
+        }
+        true
+    }
+
+    fn mark_roll_open(&mut self, roll_id: &str) {
+        for row in &mut self.rail.library.rolls {
+            row.open = row.id == roll_id;
+        }
+    }
+
     /// Show the frame's stored History rows and work-print names.
     pub fn set_history(
         &mut self,
@@ -294,6 +345,7 @@ impl NegFeApp {
                     let switched = self
                         .rail
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+                    self.open_requested_roll();
                     self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
                         self.view.tab = tab;
@@ -322,6 +374,7 @@ impl NegFeApp {
             let switched = self
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+            self.open_requested_roll();
             self.view.tab = self.rail.tab;
             if let Some(tab) = switched {
                 self.view.tab = tab;
@@ -338,6 +391,12 @@ impl NegFeApp {
             return;
         };
         let _ = self.proof.save(repo);
+    }
+
+    fn open_requested_roll(&mut self) {
+        if let Some(roll_id) = self.rail.library.take_open_request() {
+            self.open_roll(&roll_id);
+        }
     }
 
     fn texture_for(&mut self, ctx: &egui::Context) -> Option<&TextureHandle> {

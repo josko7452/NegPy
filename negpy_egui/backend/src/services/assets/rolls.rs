@@ -211,6 +211,34 @@ pub fn roll_for_id(repo: &StorageRepository, roll_id: &str) -> Option<Value> {
     read(repo).get(roll_id).cloned()
 }
 
+/// The image files a roll opens, in name order: a folder roll's images minus its
+/// removed files, or a virtual roll's remaining members.
+#[must_use]
+pub fn roll_frame_paths(repo: &StorageRepository, roll_id: &str) -> Vec<String> {
+    let Some(entry) = roll_for_id(repo, roll_id) else {
+        return Vec::new();
+    };
+    if entry.get("kind").and_then(Value::as_str) == Some("folder") {
+        let folder = entry
+            .get("folder_path")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let excluded = string_list(&entry, "excluded_paths");
+        let mut paths: Vec<String> =
+            crate::services::assets::library::folder_image_paths(std::path::Path::new(folder))
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .filter(|path| !is_excluded_key(path, &excluded))
+                .collect();
+        paths.sort();
+        paths
+    } else {
+        let mut paths = string_list(&entry, "member_paths");
+        paths.retain(|path| std::path::Path::new(path).is_file());
+        paths
+    }
+}
+
 /// `path` in the form two spellings of one folder share: separators and case.
 #[must_use]
 pub fn folder_key(path: &str) -> String {
@@ -2407,5 +2435,63 @@ pub fn source_label(repo: &StorageRepository, source: &str) -> String {
             .unwrap_or_else(|| "a deleted scene".to_string()),
         "frame" => format!("Frame “{reference}”"),
         _ => "a saved baseline".to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repository(dir: &std::path::Path) -> StorageRepository {
+        let repo = StorageRepository::new(
+            dir.join("edits.db").display().to_string(),
+            dir.join("settings.db").display().to_string(),
+        );
+        repo.initialize().unwrap();
+        repo
+    }
+
+    #[test]
+    fn a_folder_roll_lists_its_images_without_the_removed_ones() {
+        let profile = tempfile::tempdir().unwrap();
+        let folder = profile.path().join("roll");
+        std::fs::create_dir(&folder).unwrap();
+        for name in ["b.ORF", "a.ORF", "c.ORF"] {
+            std::fs::write(folder.join(name), b"frame").unwrap();
+        }
+        let mut repo = repository(profile.path());
+        let removed = folder.join("b.ORF").display().to_string();
+        let roll_id = create_folder_roll(&mut repo, &folder.display().to_string(), &[removed]);
+        let paths: Vec<String> = roll_frame_paths(&repo, &roll_id)
+            .into_iter()
+            .filter_map(|path| {
+                std::path::Path::new(&path)
+                    .file_name()
+                    .map(|name| name.to_string_lossy().into_owned())
+            })
+            .collect();
+        assert_eq!(paths, ["a.ORF", "c.ORF"]);
+    }
+
+    #[test]
+    fn a_virtual_roll_drops_members_that_are_gone() {
+        let profile = tempfile::tempdir().unwrap();
+        let present = profile.path().join("present.ORF");
+        std::fs::write(&present, b"frame").unwrap();
+        let missing = profile.path().join("missing.ORF").display().to_string();
+        let mut repo = repository(profile.path());
+        let roll_id = create_virtual_roll(
+            &mut repo,
+            "picks",
+            &[missing, present.display().to_string()],
+        );
+        assert_eq!(roll_frame_paths(&repo, &roll_id).len(), 1);
+    }
+
+    #[test]
+    fn an_unknown_roll_has_no_paths() {
+        let profile = tempfile::tempdir().unwrap();
+        let repo = repository(profile.path());
+        assert!(roll_frame_paths(&repo, "missing").is_empty());
     }
 }
