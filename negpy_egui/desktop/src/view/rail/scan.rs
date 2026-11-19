@@ -1,9 +1,10 @@
 //! The Scan tab: the scanner choice over its device, quality, framing and output cards.
 
-use eframe::egui::Ui;
+use eframe::egui::{self, Ui, Vec2};
 
 use crate::styles::icons::Icon;
-use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
+use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
+use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
@@ -37,7 +38,7 @@ pub struct ScanState {
 impl Default for ScanState {
     fn default() -> Self {
         Self {
-            source: SegmentedChoice::new(&["Film Scanner", "Camera"]),
+            source: SegmentedChoice::new(&["Camera", "Film Scanner"]),
             backend: StepCombo::new(vec![
                 Choice::new("Auto"),
                 Choice::new("SANE"),
@@ -67,10 +68,10 @@ impl Default for ScanState {
             light: SegmentedChoice::new(&["White Light", "Narrowband Light"]),
             output_format: StepCombo::new(vec![Choice::new("DNG"), Choice::new("TIFF")]),
             output_folder: String::new(),
-            filename: "{{ roll }}_{{ frame }}".to_string(),
-            device_open: true,
-            quality_open: true,
-            output_open: false,
+            filename: "{{ date }}_{{ seq }}".to_string(),
+            device_open: false,
+            quality_open: false,
+            output_open: true,
         }
     }
 }
@@ -90,60 +91,76 @@ impl ScanState {
             })
         });
         changed |= result.unwrap_or(false);
-        let (device_open, device_changed) = scan_card(ui, "Device", self.device_open, |ui| {
-            let mut changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Backend");
-                changed |= self.backend.show(ui);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Device");
-                changed |= self.device.show(ui);
-                let _ = labeled_action(ui, "Refresh", ActionRank::Normal);
-            });
-            let _ = hint(ui, "Writes nkscan.log with Trace for a bug report.");
-            changed
-        });
-        self.device_open = device_open;
-        changed |= device_changed;
-        let (quality_open, quality_changed) =
-            scan_card(ui, "Film & Quality", self.quality_open, |ui| {
+        let camera_active = self.source.current == 0;
+        if !camera_active {
+            let (device_open, device_changed) = scan_card(ui, "Device", self.device_open, |ui| {
                 let mut changed = false;
                 ui.horizontal(|ui| {
-                    ui.label("Film");
-                    changed |= self.film.show(ui);
+                    ui.label("Backend");
+                    changed |= self.backend.show(ui);
                 });
                 ui.horizontal(|ui| {
-                    ui.label("Film format");
-                    changed |= self.film_format.show(ui);
+                    ui.label("Device");
+                    changed |= self.device.show(ui);
+                    let _ = labeled_action(ui, "Refresh", ActionRank::Normal);
                 });
-                ui.horizontal(|ui| {
-                    ui.label("Resolution");
-                    changed |= self.resolution.show(ui);
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Bit depth");
-                    changed |= self.bit_depth.show(ui);
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Scan mode");
-                    changed |= self.scan_mode.show(ui);
-                });
-                changed |= labeled_toggle(ui, "IR", &mut self.ir).clicked();
+                let _ = hint(ui, "Writes nkscan.log with Trace for a bug report.");
                 changed
             });
-        self.quality_open = quality_open;
-        changed |= quality_changed;
-        let (framing_open, framing_changed) = scan_card(ui, "Framing", self.framing_open, |ui| {
-            self.framing_open = true;
-            let _ = hint(ui, "Prescan sets a crop for the next scan.");
-            let _ = labeled_action(ui, "Prescan...", ActionRank::Normal);
-            false
-        });
-        self.framing_open = framing_open;
-        changed |= framing_changed;
-        let (_, camera_changed) = scan_card(ui, "Camera", false, |ui| {
+            self.device_open = device_open;
+            changed |= device_changed;
+            let (quality_open, quality_changed) =
+                scan_card(ui, "Film & Quality", self.quality_open, |ui| {
+                    let mut changed = false;
+                    ui.horizontal(|ui| {
+                        ui.label("Film");
+                        changed |= self.film.show(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Film format");
+                        changed |= self.film_format.show(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Resolution");
+                        changed |= self.resolution.show(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Bit depth");
+                        changed |= self.bit_depth.show(ui);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Scan mode");
+                        changed |= self.scan_mode.show(ui);
+                    });
+                    changed |= labeled_toggle(ui, "IR", &mut self.ir).clicked();
+                    changed
+                });
+            self.quality_open = quality_open;
+            changed |= quality_changed;
+            let (framing_open, framing_changed) =
+                scan_card(ui, "Framing", self.framing_open, |ui| {
+                    let _ = hint(ui, "Prescan sets a crop for the next scan.");
+                    let _ = labeled_action(ui, "Prescan...", ActionRank::Normal);
+                    false
+                });
+            self.framing_open = framing_open;
+            changed |= framing_changed;
+        }
+        let (_, camera_changed) = scan_card(ui, "Camera", camera_active, |ui| {
             let mut changed = false;
+            let _ = hint(
+                ui,
+                "Camera scanning needs python-gphoto2 (`pip install gphoto2`), which has no Windows build. See docs/CAMERA_SCANNING.md.",
+            );
+            let _ = hint(
+                ui,
+                "Connect the camera by USB, in PC Remote mode. NegPy finds it by itself.",
+            );
+            ui.horizontal(|ui| {
+                ui.label("● Camera");
+                ui.add_space(f32::from(theme.space_lg));
+                ui.label("● Light");
+            });
             ui.horizontal(|ui| {
                 ui.label("Camera");
                 changed |= self.camera.show(ui);
@@ -165,19 +182,24 @@ impl ScanState {
     fn show_output(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
-            ui.label("Format");
-            changed |= self.output_format.show(ui);
-        });
-        ui.horizontal(|ui| {
             ui.label("Folder");
-            let _ = ui.text_edit_singleline(&mut self.output_folder);
+            let _ = ui.add_sized(
+                Vec2::new(ui.available_width() - 36.0, DEFAULT_BUTTON_HEIGHT),
+                egui::TextEdit::singleline(&mut self.output_folder).hint_text("Output folder..."),
+            );
+            let _ = labeled_action(ui, "Folder", ActionRank::Normal);
         });
-        ui.horizontal(|ui| {
-            ui.label("Filename");
-            let _ = ui.text_edit_singleline(&mut self.filename);
+        let _ = card(ui, |ui| {
+            ui.horizontal(|ui| {
+                changed |= labeled_action(ui, "Scan as Roll", ActionRank::Normal).clicked();
+                changed |= labeled_action(ui, "Folder as Roll", ActionRank::Normal).clicked();
+            });
+            ui.horizontal(|ui| {
+                ui.label("Roll");
+                let _ = ui.text_edit_singleline(&mut self.filename);
+                let _ = labeled_action(ui, "+", ActionRank::Normal);
+            });
         });
-        let _ = section_subheader(ui, "DUST & SCRATCH");
-        changed |= self.dust_removal.show(ui).is_some();
         changed
     }
 }
@@ -200,14 +222,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_scan_tab_opens_on_the_film_scanner() {
+    fn the_scan_tab_opens_on_the_camera() {
         let state = ScanState::default();
-        assert_eq!(state.source.current_label(), "Film Scanner");
+        assert_eq!(state.source.current_label(), "Camera");
         assert_eq!(state.backend.current_label(), "Auto");
         assert_eq!(state.scan_mode.current_label(), "Single pass");
-        assert!(state.device_open);
-        assert!(state.quality_open);
-        assert!(!state.output_open);
+        assert!(!state.device_open);
+        assert!(!state.quality_open);
+        assert!(state.output_open);
     }
 
     #[test]
