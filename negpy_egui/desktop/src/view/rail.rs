@@ -234,7 +234,9 @@ impl RailState {
                 }
             }
             Tab::Export => {
-                self.export.show(ui);
+                if self.export.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             Tab::Scan => {
                 self.scan.show(ui);

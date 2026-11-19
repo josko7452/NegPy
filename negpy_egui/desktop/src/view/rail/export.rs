@@ -1,7 +1,11 @@
 //! The Export tab: the output intent, the file form, the proof and the export action.
 
 use eframe::egui::Ui;
+use negpy_backend::domain::models::{
+    EXPORT_COLOR_SPACES, ExportConfig, ExportFormat, ExportPresetOutputMode, ExportResolutionMode,
+};
 
+use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
@@ -53,12 +57,13 @@ impl Default for ExportState {
     fn default() -> Self {
         Self {
             page: 0,
-            intent: SegmentedChoice::new(&["Print", "Flat", "Linear"]),
-            format: StepCombo::new(vec![
-                Choice::new("JPEG"),
-                Choice::new("TIFF"),
-                Choice::new("PNG"),
-                Choice::new("WebP"),
+            intent: SegmentedChoice::new(&["Print", "Flat"]),
+            format: choice_combo(&[
+                (ExportFormat::Jpeg.as_str(), ExportFormat::Jpeg.as_str()),
+                (ExportFormat::Tiff.as_str(), ExportFormat::Tiff.as_str()),
+                (ExportFormat::Png.as_str(), ExportFormat::Png.as_str()),
+                (ExportFormat::Jxl.as_str(), ExportFormat::Jxl.as_str()),
+                (ExportFormat::Webp.as_str(), ExportFormat::Webp.as_str()),
             ]),
             jpeg_quality: CompactSlider::new(
                 SliderSpec::new(1.0, 100.0, 1.0, 0)
@@ -69,19 +74,27 @@ impl Default for ExportState {
             resolution: SegmentedChoice::new(&["Original", "Print", "Pixels"]),
             long_edge: CompactSlider::new(
                 SliderSpec::new(1000.0, 12000.0, 10.0, 0)
-                    .with_default(5500.0)
+                    .with_default(2000.0)
                     .with_unit(" px"),
             ),
-            paper_ratio: StepCombo::new(vec![
-                Choice::new("Original"),
-                Choice::new("3:2"),
-                Choice::new("4:5"),
+            paper_ratio: choice_combo(&[
+                ("Original", "Original"),
+                ("3:2", "3:2"),
+                ("5:4", "5:4"),
+                ("4:5", "4:5"),
+                ("1:1", "1:1"),
             ]),
-            input_icc: StepCombo::new(vec![Choice::new("None"), Choice::new("Adobe RGB")]),
-            export_profile: StepCombo::new(vec![Choice::new("sRGB"), Choice::new("Adobe RGB")]),
-            destination: StepCombo::new(vec![
-                Choice::new("Subfolder of source"),
-                Choice::new("Fixed folder"),
+            input_icc: StepCombo::new(vec![Choice::new("None")]),
+            export_profile: choice_combo(
+                &EXPORT_COLOR_SPACES
+                    .iter()
+                    .map(|space| (*space, *space))
+                    .collect::<Vec<_>>(),
+            ),
+            destination: choice_combo(&[
+                ("Subfolder of source", "subfolder_of_source"),
+                ("Same as source", "same_as_source"),
+                ("Fixed folder", "absolute"),
             ]),
             subfolder: "export".to_string(),
             filename: "{{ original_name }}".to_string(),
@@ -99,6 +112,61 @@ impl Default for ExportState {
 }
 
 impl ExportState {
+    /// Replace the controls with the export values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let export = &edit.config.export;
+        self.intent.current = usize::from(
+            edit.config.exposure.render_intent == negpy_backend::domain::models::RenderIntent::Flat,
+        );
+        self.format.pick(export.export_fmt.as_str());
+        self.jpeg_quality.set_value(export.jpeg_quality as f64);
+        self.progressive = export.jpeg_progressive;
+        self.resolution.current = match export.export_resolution_mode {
+            ExportResolutionMode::Original => 0,
+            ExportResolutionMode::Print => 1,
+            ExportResolutionMode::TargetPx => 2,
+        };
+        self.long_edge
+            .set_value(export.export_target_long_edge_px as f64);
+        self.paper_ratio.pick(&export.paper_aspect_ratio);
+        self.export_profile.pick(&export.export_color_space);
+        self.destination.pick(export.output_mode.as_str());
+        self.subfolder = export.output_subfolder.clone();
+        self.filename = export.filename_pattern.clone();
+        self.overwrite = export.overwrite;
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        let export = &mut edit.config.export;
+        let next = ExportConfig {
+            export_fmt: ExportFormat::coerce(self.format.current_value()),
+            jpeg_quality: self.jpeg_quality.value.round() as i64,
+            jpeg_progressive: self.progressive,
+            export_resolution_mode: match self.resolution.current {
+                1 => ExportResolutionMode::Print,
+                2 => ExportResolutionMode::TargetPx,
+                _ => ExportResolutionMode::Original,
+            },
+            export_target_long_edge_px: self.long_edge.value.round() as i64,
+            paper_aspect_ratio: self.paper_ratio.current_value().to_string(),
+            export_color_space: self.export_profile.current_value().to_string(),
+            output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
+            output_subfolder: self.subfolder.clone(),
+            filename_pattern: self.filename.clone(),
+            overwrite: self.overwrite,
+            ..export.clone()
+        };
+        edit.config.exposure.render_intent = if self.intent.current == 1 {
+            negpy_backend::domain::models::RenderIntent::Flat
+        } else {
+            negpy_backend::domain::models::RenderIntent::Print
+        };
+        let changed = *export != next;
+        *export = next;
+        changed
+    }
+
     /// Select a sub-tab by its manifest key.
     pub fn show_subtab(&mut self, key: &str) {
         self.page = match key {
@@ -110,7 +178,8 @@ impl ExportState {
     }
 
     /// Paint the tab. Returns whether the edit changed.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let tabs = export_tabs();
         let mut page = self.page;
         if let Some(picked) = panel_tab_strip(ui, &tabs, page, SUB_TAB_HEIGHT) {
@@ -125,6 +194,9 @@ impl ExportState {
             3 => self.show_alongside(ui),
             _ => false,
         };
+        if changed {
+            self.store(edit);
+        }
         changed
     }
 
@@ -214,6 +286,15 @@ impl ExportState {
     }
 }
 
+fn choice_combo(items: &[(&str, &str)]) -> StepCombo {
+    StepCombo::new(
+        items
+            .iter()
+            .map(|(label, id)| Choice::with_id(*label, *id))
+            .collect(),
+    )
+}
+
 fn field_combo(
     ui: &mut Ui,
     columns: RowColumns,
@@ -259,12 +340,34 @@ mod tests {
     }
 
     #[test]
+    fn the_export_tab_round_trips_the_edit() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.page = 0;
+        state.format.pick("TIFF");
+        state.jpeg_quality.set_value(80.0);
+        state.resolution.current = 2;
+        state.long_edge.set_value(4000.0);
+        assert!(state.store(&mut edit));
+        let export = &edit.config.export;
+        assert_eq!(export.export_fmt, ExportFormat::Tiff);
+        assert_eq!(export.jpeg_quality, 80);
+        assert_eq!(
+            export.export_resolution_mode,
+            ExportResolutionMode::TargetPx
+        );
+        assert_eq!(export.export_target_long_edge_px, 4000);
+    }
+
+    #[test]
     fn the_export_tab_paints_on_a_context() {
         let ctx = egui::Context::default();
         let mut state = ExportState::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                let mut edit = FrameEdit::default();
+                assert!(!state.show(ui, &mut edit));
             });
         });
     }
