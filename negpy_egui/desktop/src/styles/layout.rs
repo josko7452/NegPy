@@ -16,7 +16,7 @@ pub const SCAN_BUTTON_HEIGHT: f32 = 40.0;
 /// Section-header button and icon sizes.
 pub const HEADER_BUTTON_SIZE: f32 = 24.0;
 pub const HEADER_ICON_SIZE: f32 = 13.0;
-pub const HEADER_HEIGHT: f32 = 40.0;
+pub const HEADER_HEIGHT: f32 = 38.0;
 /// Section toolbars: Film Strip and Library.
 pub const TOOLBAR_BUTTON_HEIGHT: f32 = 28.0;
 pub const TOOLBAR_ICON_SIZE: f32 = 16.0;
