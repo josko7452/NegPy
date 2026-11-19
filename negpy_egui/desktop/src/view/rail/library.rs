@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Align2, FontId, Sense, Stroke, Ui, Vec2};
 use negpy_backend::domain::types::AppConfig;
 use negpy_backend::features::metadata::gear::GearLibrary;
 use negpy_backend::infrastructure::storage::repository::StorageRepository;
@@ -143,24 +143,12 @@ impl LibraryState {
             card(ui, |ui| {
                 ui.horizontal(|ui| {
                     let height = TOOLBAR_BUTTON_HEIGHT;
-                    let (filter, _) = ui.allocate_exact_size(
-                        Vec2::new(ui.available_width() - 210.0, height),
-                        Sense::hover(),
-                    );
-                    paint_field(ui, filter, &theme);
-                    ui.painter().text(
-                        filter.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
-                        Align2::LEFT_CENTER,
-                        Icon::Search.glyph(),
-                        FontId::proportional(f32::from(theme.font_size_header)),
-                        theme.text_hint,
-                    );
-                    ui.painter().text(
-                        filter.left_center() + Vec2::new(30.0, 0.0),
-                        Align2::LEFT_CENTER,
-                        "Filter rolls...",
-                        FontId::proportional(f32::from(theme.font_size_base)),
-                        theme.text_hint,
+                    let width = (ui.available_width() - 210.0).max(100.0);
+                    ui.add_sized(
+                        Vec2::new(width, height),
+                        egui::TextEdit::singleline(&mut self.filter)
+                            .hint_text("Filter rolls...")
+                            .margin(Vec2::new(f32::from(theme.space_xl), 8.0)),
                     );
                     ui.add_space(f32::from(theme.space_sm));
                     paint_small_button(ui, "Name", 66.0, &theme);
@@ -170,8 +158,15 @@ impl LibraryState {
                     paint_small_button(ui, Icon::Menu.glyph(), TOOLBAR_BUTTON_HEIGHT, &theme);
                 });
                 ui.add_space(f32::from(theme.space_sm));
+                let needle = self.filter.trim().to_lowercase();
                 let mut opened = None;
                 for row in &self.rolls {
+                    let visible = needle.is_empty()
+                        || row.name.to_lowercase().contains(&needle)
+                        || row.detail.to_lowercase().contains(&needle);
+                    if !visible {
+                        continue;
+                    }
                     let mut flat =
                         FlatRow::new(row.name.clone(), row.detail.clone()).with_icon(Icon::Folder);
                     if let Some(mode) = row.mode {
@@ -192,16 +187,50 @@ impl LibraryState {
             })
         });
         let opened = result.flatten();
+        let needle = self.filter.trim().to_lowercase();
+        let shown: Vec<&RollRow> = self
+            .rolls
+            .iter()
+            .filter(|row| {
+                needle.is_empty()
+                    || row.name.to_lowercase().contains(&needle)
+                    || row.detail.to_lowercase().contains(&needle)
+            })
+            .collect();
+        let total_frames: i64 = self.rolls.iter().map(|row| roll_photos(&row.detail)).sum();
+        let shown_frames: i64 = shown.iter().map(|row| roll_photos(&row.detail)).sum();
+        let tally = if needle.is_empty() {
+            format!(
+                "{} · {}",
+                count_of(self.rolls.len() as i64, "roll", "rolls"),
+                count_of(total_frames, "photo", "photos")
+            )
+        } else {
+            format!(
+                "{} of {} · {}",
+                shown.len(),
+                count_of(self.rolls.len() as i64, "roll", "rolls"),
+                count_of(shown_frames, "photo", "photos")
+            )
+        };
         let hint_y = footer_y.map_or(ui.cursor().top() + f32::from(theme.space_xl), |y| y - 8.0);
         ui.painter().text(
             egui::pos2(ui.cursor().left(), hint_y),
             Align2::LEFT_CENTER,
-            "10 rolls · 252 photos",
+            tally,
             FontId::proportional(f32::from(theme.font_size_small)),
             theme.text_hint,
         );
         opened
     }
+}
+
+fn roll_photos(detail: &str) -> i64 {
+    detail
+        .split_whitespace()
+        .next()
+        .and_then(|first| first.parse().ok())
+        .unwrap_or(0)
 }
 
 fn roll_frame_count(
@@ -286,16 +315,6 @@ fn roll_name(entry: &serde_json::Value) -> String {
         .to_string()
 }
 
-fn paint_field(ui: &mut Ui, rect: Rect, theme: &Theme) {
-    ui.painter().rect_filled(rect, 4.0, theme.bg_input);
-    ui.painter().rect_stroke(
-        rect,
-        4.0,
-        Stroke::new(1.0_f32, theme.border_primary),
-        egui::StrokeKind::Inside,
-    );
-}
-
 fn paint_small_button(ui: &mut Ui, label: &str, width: f32, theme: &Theme) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(width, TOOLBAR_BUTTON_HEIGHT), Sense::click());
     ui.painter().rect_filled(rect, 4.0, theme.bg_input);
@@ -365,6 +384,30 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         assert!(LibraryState::load(Some(dir.path())).rolls.is_empty());
         assert!(LibraryState::load(None).rolls.is_empty());
+    }
+
+    #[test]
+    fn the_filter_keeps_only_matching_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("w1");
+        let second = dir.path().join("w2");
+        std::fs::create_dir_all(&first).unwrap();
+        std::fs::create_dir_all(&second).unwrap();
+        let app = AppConfig::for_user_dir(dir.path());
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        repo.initialize().unwrap();
+        rolls::recognize_folder(&mut repo, &first.display().to_string(), Some("w1"));
+        rolls::recognize_folder(&mut repo, &second.display().to_string(), Some("w2"));
+        let mut state = LibraryState::load(Some(dir.path()));
+        state.filter = "w2".to_string();
+        let needle = state.filter.to_lowercase();
+        let shown: Vec<&RollRow> = state
+            .rolls
+            .iter()
+            .filter(|row| row.name.to_lowercase().contains(&needle))
+            .collect();
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].name, "w2");
     }
 
     #[test]
