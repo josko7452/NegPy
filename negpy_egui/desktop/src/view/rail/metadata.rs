@@ -53,6 +53,7 @@ pub struct MetadataState {
     pub capture_roll: String,
     pub capture_frame: String,
     pub presets: Vec<String>,
+    pub preset_names: Vec<String>,
     gear: GearLibrary,
 }
 
@@ -108,13 +109,19 @@ impl Default for MetadataState {
             scanning: String::new(),
             capture_roll: String::new(),
             capture_frame: String::new(),
-            presets: vec!["No presets yet".to_string()],
+            presets: Vec::new(),
+            preset_names: Vec::new(),
             gear: GearLibrary::default(),
         }
     }
 }
 
 impl MetadataState {
+    /// Show the metadata presets the profile holds.
+    pub fn set_presets(&mut self, names: Vec<String>) {
+        self.preset_names = names;
+    }
+
     /// Use the gear library the profile holds for the choice lists.
     pub fn set_gear(&mut self, gear: GearLibrary) {
         self.camera = search_combo(
@@ -417,8 +424,12 @@ impl MetadataState {
     fn show_presets(&mut self, ui: &mut Ui) -> bool {
         let _ = TabSummary::new(1).show(ui);
         metadata_card(ui, "Presets", true, |ui| {
-            for preset in &self.presets {
-                let _ = hint(ui, preset);
+            if self.preset_names.is_empty() {
+                let _ = hint(ui, "No presets yet.");
+            } else {
+                for preset in &self.preset_names {
+                    let _ = hint(ui, preset);
+                }
             }
             false
         })
@@ -606,6 +617,13 @@ mod tests {
         state.camera.current = 0;
         assert!(state.store(&mut edit));
         assert!(edit.config.metadata.camera_id.is_empty());
+    }
+
+    #[test]
+    fn the_metadata_presets_come_from_the_store() {
+        let mut state = MetadataState::default();
+        state.set_presets(vec!["Golden Hour".to_string()]);
+        assert_eq!(state.preset_names, ["Golden Hour"]);
     }
 
     #[test]

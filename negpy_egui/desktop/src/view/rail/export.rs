@@ -53,7 +53,7 @@ pub struct ExportState {
     pub proof_paper_white: bool,
     pub proof_ink_black: bool,
     pub proof_gamut_warning: bool,
-    pub presets: Vec<String>,
+    pub presets: Vec<negpy_backend::domain::models::ExportPreset>,
     pub contact_sheet: bool,
     pub alongside: bool,
     pub sidecars: bool,
@@ -116,7 +116,7 @@ impl Default for ExportState {
             proof_paper_white: false,
             proof_ink_black: false,
             proof_gamut_warning: false,
-            presets: vec!["No presets yet".to_string()],
+            presets: Vec::new(),
             contact_sheet: true,
             alongside: false,
             sidecars: false,
@@ -156,6 +156,11 @@ impl ExportState {
         self.proof_gamut_warning = export.proof_gamut_warning;
         self.sidecars = export.export_sidecars_enabled;
         self.sidecar_path = export.contact_sheet_output_path.clone();
+    }
+
+    /// Show the export presets the profile holds.
+    pub fn set_presets(&mut self, presets: Vec<negpy_backend::domain::models::ExportPreset>) {
+        self.presets = presets;
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -307,8 +312,15 @@ impl ExportState {
             .without_apply()
             .titled("Export Presets")
             .show(ui);
-        for preset in &self.presets {
-            let _ = hint(ui, preset);
+        if self.presets.is_empty() {
+            let _ = hint(ui, "No presets yet.");
+        } else {
+            for preset in &self.presets {
+                let _ = hint(
+                    ui,
+                    &negpy_backend::domain::models::preset_display_name(preset),
+                );
+            }
         }
         let _ = labeled_action(ui, "Save Preset...", ActionRank::Normal);
         false
@@ -422,6 +434,21 @@ mod tests {
         assert!(export.proof_black_point);
         assert!(export.export_sidecars_enabled);
         assert_eq!(export.contact_sheet_output_path, "/tmp/sheets");
+    }
+
+    #[test]
+    fn the_export_presets_show_their_display_names() {
+        let mut state = ExportState::default();
+        state.set_presets(vec![negpy_backend::domain::models::ExportPreset {
+            name: "JPEG".to_string(),
+            export_fmt: ExportFormat::Jpeg,
+            ..Default::default()
+        }]);
+        assert_eq!(state.presets.len(), 1);
+        assert_eq!(
+            negpy_backend::domain::models::preset_display_name(&state.presets[0]),
+            "JPEG"
+        );
     }
 
     #[test]

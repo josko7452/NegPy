@@ -192,6 +192,17 @@ impl NegFeApp {
             &negpy_backend::kernel::system::paths::resource_path("gear"),
         );
         self.rail.metadata.set_gear(gear);
+        let repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app.edits_db_path.clone(),
+            app.settings_db_path.clone(),
+        );
+        let presets = repo.load_export_presets();
+        self.rail.export.set_presets(presets);
+        let store = negpy_backend::services::assets::presets::PresetStore::new(
+            app.presets_dir.clone(),
+            "metadata",
+        );
+        self.rail.metadata.set_presets(store.list());
     }
 
     /// Show a decoded frame on the canvas.

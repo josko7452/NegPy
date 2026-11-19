@@ -11,6 +11,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Map, Value};
 
+use crate::domain::models::export::{
+    ExportFormat, ExportPreset, ExportResolutionMode, preset_from_dict,
+};
 use crate::domain::models::workspace::WorkspaceConfig;
 
 /// The edits and settings databases, opened as one repository.
@@ -83,6 +86,35 @@ impl StorageRepository {
              );",
         )?;
         Ok(())
+    }
+
+    /// Every saved export preset, or the three built-in formats when none is saved.
+    #[must_use]
+    pub fn load_export_presets(&self) -> Vec<ExportPreset> {
+        match self.global_setting("export_presets").ok().flatten() {
+            Some(Value::Array(items)) => items.iter().map(preset_from_dict).collect(),
+            _ => ["JPEG", "TIFF", "PNG"]
+                .into_iter()
+                .enumerate()
+                .map(|(index, name)| ExportPreset {
+                    name: name.to_string(),
+                    enabled: index == 0,
+                    export_fmt: ExportFormat::coerce(name),
+                    jpeg_quality: 90,
+                    export_resolution_mode: ExportResolutionMode::Original,
+                    ..ExportPreset::default()
+                })
+                .collect(),
+        }
+    }
+
+    /// Save the whole export preset list under one key.
+    pub fn save_export_presets(&mut self, presets: &[ExportPreset]) -> Result<(), RepositoryError> {
+        let value = serde_json::to_value(presets)
+            .map_err(|error| RepositoryError::Serialize(error.to_string()))?;
+        let mut settings = Map::new();
+        settings.insert("export_presets".to_string(), value);
+        self.save_global_settings(&settings)
     }
 
     fn connect(&self, path: &str) -> rusqlite::Result<Connection> {
@@ -884,4 +916,46 @@ fn bytes_to_f32(bytes: &[u8]) -> Vec<f32> {
         .iter()
         .map(|chunk| f32::from_le_bytes(*chunk))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn export_presets_round_trip_through_the_settings_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = StorageRepository::new(
+            dir.path().join("edits.db").display().to_string(),
+            dir.path().join("settings.db").display().to_string(),
+        );
+        repo.initialize().unwrap();
+        let presets = vec![ExportPreset {
+            name: "Web".to_string(),
+            export_fmt: ExportFormat::Webp,
+            jpeg_quality: 75,
+            ..ExportPreset::default()
+        }];
+        repo.save_export_presets(&presets).unwrap();
+        let loaded = repo.load_export_presets();
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Web");
+        assert_eq!(loaded[0].export_fmt, ExportFormat::Webp);
+        assert_eq!(loaded[0].jpeg_quality, 75);
+    }
+
+    #[test]
+    fn an_absent_export_preset_list_uses_the_three_built_ins() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = StorageRepository::new(
+            dir.path().join("edits.db").display().to_string(),
+            dir.path().join("settings.db").display().to_string(),
+        );
+        let names: Vec<String> = repo
+            .load_export_presets()
+            .into_iter()
+            .map(|preset| preset.name)
+            .collect();
+        assert_eq!(names, ["JPEG", "TIFF", "PNG"]);
+    }
 }

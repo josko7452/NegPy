@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 01:20 | **Last Commit:** `99a8313a` desktop: bind the Export file page to the edit
+**Last Updated:** 2026-11-20 01:40 | **Last Commit:** `7d7efc33` desktop: bind the Export proof and sidecars
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,11 +14,11 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Load and bind the export presets.
-2. [ ] Revisit the Light Table tile metrics.
+1. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` desktop: bind the Export proof and sidecars.
+- `HEAD` desktop: load the saved export and metadata presets.
+- `7d7efc33` desktop: bind the Export proof and sidecars.
 - `99a8313a` desktop: bind the Export file page to the edit.
 - `1b763df1` desktop: bind the Metadata gear to the gear library.
 - `3ad300f2` desktop: carry ids in the step combo.
