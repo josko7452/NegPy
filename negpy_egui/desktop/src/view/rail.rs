@@ -271,7 +271,9 @@ impl RailState {
                 }
             }
             "color" => {
-                self.look.show(ui);
+                if self.look.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             "finish" => {
                 self.finish.show(ui);

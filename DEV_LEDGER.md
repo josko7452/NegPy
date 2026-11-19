@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 22:30 | **Last Commit:** `HEAD` desktop: bind the Exposure page to the edit
+**Last Updated:** 2026-11-19 22:45 | **Last Commit:** `HEAD` desktop: bind the Look page to the edit
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -19,11 +19,12 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Bind the Look and Finish pages to the frame edit.
+1. [ ] Bind the Finish page to the frame edit.
 2. [ ] Bind the Export and Metadata cards to the frame edit.
 
 ## Completed (Recent)
-- `HEAD` desktop: bind the Exposure page to the edit.
+- `HEAD` desktop: bind the Look page to the edit.
+- `10be5d3f` desktop: bind the Exposure page to the edit.
 - `50797ebc` desktop: bind the Geometry page to the edit.
 - `113a6235` desktop: bind the Roll Setup to the edit.
 - `be36372b` desktop: bind the metering cards to the edit.
@@ -42,7 +43,7 @@ anything whose only gain is a closer score.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- Targeted Exposure tests passed: 3 tests.
+- Targeted Look tests passed: 3 tests.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
