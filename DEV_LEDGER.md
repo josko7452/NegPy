@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 02:05 | **Last Commit:** `HEAD` backend: keep the proof condition out of the export edit
+**Last Updated:** 2026-11-19 22:22 | **Last Commit:** `HEAD` backend: store the proof condition in session settings
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,11 +14,12 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Move the proof condition to session settings.
+1. [ ] Wire the Library Import button to folder import.
 2. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` backend: keep the proof condition out of the export edit.
+- `HEAD` backend: store the proof condition in session settings.
+- `c2bb6ed8` backend: keep the proof condition out of the export edit.
 - `9be68fcc` desktop: load the saved export and metadata presets.
 - `7d7efc33` desktop: bind the Export proof and sidecars.
 - `99a8313a` desktop: bind the Export file page to the edit.

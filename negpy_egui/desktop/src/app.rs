@@ -13,6 +13,7 @@ use crate::styles::layout::TOP_ROW_HEIGHT;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
 use crate::view::rail::{RAIL_WIDTH, RailState};
+use negpy_backend::session::proof::ProofSettings;
 use std::path::Path;
 
 /// The visible tab of the right rail.
@@ -143,6 +144,8 @@ pub struct NegFeApp {
     pub view: ViewState,
     pub rail: RailState,
     pub edit: FrameEdit,
+    pub proof: ProofSettings,
+    settings: Option<negpy_backend::infrastructure::storage::repository::StorageRepository>,
     pub frame: Option<FrameImage>,
     pub strip: Vec<FrameImage>,
     texture: Option<TextureHandle>,
@@ -158,6 +161,8 @@ impl NegFeApp {
             rail: RailState::for_view(&view),
             view,
             edit: FrameEdit::default(),
+            proof: ProofSettings::default(),
+            settings: None,
             frame: None,
             strip: Vec::new(),
             texture: None,
@@ -173,6 +178,8 @@ impl NegFeApp {
             rail: RailState::for_view(&view),
             view,
             edit: FrameEdit::default(),
+            proof: ProofSettings::default(),
+            settings: None,
             frame: None,
             strip: Vec::new(),
             texture: None,
@@ -196,6 +203,8 @@ impl NegFeApp {
             app.edits_db_path.clone(),
             app.settings_db_path.clone(),
         );
+        self.proof = ProofSettings::load(&repo);
+        self.settings = Some(repo.clone());
         let presets = repo.load_export_presets();
         self.rail.export.set_presets(presets);
         let store = negpy_backend::services::assets::presets::PresetStore::new(
@@ -277,12 +286,18 @@ impl NegFeApp {
                 .show(ctx, |ui| {
                     crate::view::light_table::paint(ui, screen, &strip_textures, 0);
                     let rail_rect = rail_rect(screen);
-                    let switched = self.rail.show(ui, rail_rect, &mut self.edit);
+                    let proof = self.proof.clone();
+                    let switched = self
+                        .rail
+                        .show(ui, rail_rect, &mut self.edit, &mut self.proof);
                     self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
                         self.view.tab = tab;
                     }
                     let _ = self.edit.save();
+                    if self.proof != proof {
+                        self.save_proof();
+                    }
                 });
             return;
         }
@@ -299,13 +314,26 @@ impl NegFeApp {
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
             let rail_rect = paint_shell(ui.painter(), screen, &self.view, texture, &strip_textures);
-            let switched = self.rail.show(ui, rail_rect, &mut self.edit);
+            let proof = self.proof.clone();
+            let switched = self
+                .rail
+                .show(ui, rail_rect, &mut self.edit, &mut self.proof);
             self.view.tab = self.rail.tab;
             if let Some(tab) = switched {
                 self.view.tab = tab;
             }
             let _ = self.edit.save();
+            if self.proof != proof {
+                self.save_proof();
+            }
         });
+    }
+
+    fn save_proof(&mut self) {
+        let Some(repo) = &mut self.settings else {
+            return;
+        };
+        let _ = self.proof.save(repo);
     }
 
     fn texture_for(&mut self, ctx: &egui::Context) -> Option<&TextureHandle> {

@@ -4,6 +4,7 @@ use eframe::egui::Ui;
 use negpy_backend::domain::models::{
     EXPORT_COLOR_SPACES, ExportConfig, ExportFormat, ExportPresetOutputMode, ExportResolutionMode,
 };
+use negpy_backend::session::proof::ProofSettings;
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
@@ -46,13 +47,7 @@ pub struct ExportState {
     pub subfolder: String,
     pub filename: String,
     pub overwrite: bool,
-    pub soft_proof: bool,
-    pub proof_profile: StepCombo,
-    pub proof_intent: StepCombo,
-    pub proof_black_point: bool,
-    pub proof_paper_white: bool,
-    pub proof_ink_black: bool,
-    pub proof_gamut_warning: bool,
+    pub proof: ProofSettings,
     pub presets: Vec<negpy_backend::domain::models::ExportPreset>,
     pub contact_sheet: bool,
     pub alongside: bool,
@@ -106,16 +101,7 @@ impl Default for ExportState {
             subfolder: "export".to_string(),
             filename: "{{ original_name }}".to_string(),
             overwrite: false,
-            soft_proof: false,
-            proof_profile: StepCombo::new(vec![Choice::new("Use Export profile")]),
-            proof_intent: choice_combo(&[
-                ("Relative Colorimetric", "relative_colorimetric"),
-                ("Perceptual", "perceptual"),
-            ]),
-            proof_black_point: false,
-            proof_paper_white: false,
-            proof_ink_black: false,
-            proof_gamut_warning: false,
+            proof: ProofSettings::default(),
             presets: Vec::new(),
             contact_sheet: true,
             alongside: false,
@@ -200,7 +186,7 @@ impl ExportState {
         };
     }
 
-    /// Paint the tab. Returns whether the edit changed.
+    /// Paint the tab. Returns whether the edit or the session proof changed.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
         self.load(edit);
         let tabs = export_tabs();
@@ -280,17 +266,25 @@ impl ExportState {
     }
 
     fn show_proof(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = labeled_toggle(ui, "Soft Proof", &mut self.soft_proof).clicked();
+        let proof = &mut self.proof;
+        let mut changed = labeled_toggle(ui, "Soft Proof", &mut proof.enabled).clicked();
         ui.horizontal(|ui| {
             ui.label("Proof profile");
-            changed |= self.proof_intent.show(ui);
+            let mut intent = choice_combo(&[
+                ("Relative Colorimetric", "relative_colorimetric"),
+                ("Perceptual", "perceptual"),
+                ("Saturation", "saturation"),
+            ]);
+            intent.pick(&proof.intent);
+            if intent.show(ui) {
+                proof.intent = intent.current_value().to_string();
+                changed = true;
+            }
         });
-        changed |=
-            labeled_toggle(ui, "Black Point Compensation", &mut self.proof_black_point).clicked();
-        changed |=
-            labeled_toggle(ui, "Simulate Paper White", &mut self.proof_paper_white).clicked();
-        changed |= labeled_toggle(ui, "Simulate Ink Black", &mut self.proof_ink_black).clicked();
-        changed |= labeled_toggle(ui, "Gamut Warning", &mut self.proof_gamut_warning).clicked();
+        changed |= labeled_toggle(ui, "Black Point Compensation", &mut proof.black_point).clicked();
+        changed |= labeled_toggle(ui, "Simulate Paper White", &mut proof.paper_white).clicked();
+        changed |= labeled_toggle(ui, "Simulate Ink Black", &mut proof.ink_black).clicked();
+        changed |= labeled_toggle(ui, "Gamut Warning", &mut proof.gamut_warning).clicked();
         let _ = hint(ui, "The printer or paper profile to preview.");
         changed
     }
@@ -416,6 +410,17 @@ mod tests {
         let export = &edit.config.export;
         assert!(export.export_sidecars_enabled);
         assert_eq!(export.contact_sheet_output_path, "/tmp/sheets");
+    }
+
+    #[test]
+    fn the_proof_controls_read_and_write_the_session_proof() {
+        let mut state = ExportState::default();
+        state.proof.enabled = false;
+        state.proof.intent = "perceptual".to_string();
+        state.proof.black_point = true;
+        assert!(!state.proof.enabled);
+        assert_eq!(state.proof.intent, "perceptual");
+        assert!(state.proof.black_point);
     }
 
     #[test]

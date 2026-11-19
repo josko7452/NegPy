@@ -3,6 +3,7 @@
 pub mod asset_config;
 pub mod power_assertion;
 pub mod prefetch_logic;
+pub mod proof;
 pub mod render_memo;
 pub mod settings_catalog;
 pub mod startup;

@@ -20,6 +20,7 @@ use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
 use crate::view::widgets::tab_header::TabSummary;
 use negpy_backend::domain::models::process::{ProcessMode, scan_setup_values, with_process_mode};
+use negpy_backend::session::proof::ProofSettings;
 
 pub mod export;
 pub mod frame_color;
@@ -155,7 +156,13 @@ impl RailState {
     }
 
     /// Paint the rail into `rect` and return whether the user chose another tab.
-    pub fn show(&mut self, ui: &mut Ui, rect: Rect, edit: &mut FrameEdit) -> Option<Tab> {
+    pub fn show(
+        &mut self,
+        ui: &mut Ui,
+        rect: Rect,
+        edit: &mut FrameEdit,
+        proof: &mut ProofSettings,
+    ) -> Option<Tab> {
         let theme = Theme::default();
         let mut inner = ui.new_child(
             egui::UiBuilder::new()
@@ -194,7 +201,7 @@ impl RailState {
             .auto_shrink([false, false])
             .show(&mut body_ui, |ui| {
                 ui.add_space(f32::from(theme.space_sm));
-                self.show_body(ui, footer_y, edit);
+                self.show_body(ui, footer_y, edit, proof);
                 ui.add_space(f32::from(theme.space_xl));
             });
         if footer_height > 0.0 {
@@ -221,7 +228,13 @@ impl RailState {
         switched
     }
 
-    fn show_body(&mut self, ui: &mut Ui, footer_y: f32, edit: &mut FrameEdit) {
+    fn show_body(
+        &mut self,
+        ui: &mut Ui,
+        footer_y: f32,
+        edit: &mut FrameEdit,
+        proof: &mut ProofSettings,
+    ) {
         match self.tab {
             Tab::Library => {
                 self.library.show(ui, Some(footer_y));
@@ -234,9 +247,11 @@ impl RailState {
                 }
             }
             Tab::Export => {
+                self.export.proof = proof.clone();
                 if self.export.show(ui, edit) {
                     edit.mark_dirty();
                 }
+                *proof = self.export.proof.clone();
             }
             Tab::Scan => {
                 self.scan.show(ui);
