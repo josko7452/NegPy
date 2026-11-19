@@ -344,8 +344,8 @@ fn paint_shell(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
     );
-    let strip_height = if view.strip_open { 249.0 } else { 0.0 };
-    let toolbar_height = 44.0;
+    let strip_height = if view.strip_open { 239.0 } else { 0.0 };
+    let toolbar_height = 52.0;
     let canvas_width = rail.left() - margin - (screen.left() + margin);
     let canvas_bottom = screen.bottom() - margin - toolbar_height - strip_height;
     let canvas_rect = Rect::from_min_size(
