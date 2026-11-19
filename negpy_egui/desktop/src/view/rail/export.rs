@@ -148,12 +148,6 @@ impl ExportState {
         self.subfolder = export.output_subfolder.clone();
         self.filename = export.filename_pattern.clone();
         self.overwrite = export.overwrite;
-        self.soft_proof = export.soft_proof_enabled;
-        self.proof_intent.pick(&export.proof_intent);
-        self.proof_black_point = export.proof_black_point;
-        self.proof_paper_white = export.proof_paper_white;
-        self.proof_ink_black = export.proof_ink_black;
-        self.proof_gamut_warning = export.proof_gamut_warning;
         self.sidecars = export.export_sidecars_enabled;
         self.sidecar_path = export.contact_sheet_output_path.clone();
     }
@@ -182,12 +176,6 @@ impl ExportState {
             output_subfolder: self.subfolder.clone(),
             filename_pattern: self.filename.clone(),
             overwrite: self.overwrite,
-            soft_proof_enabled: self.soft_proof,
-            proof_intent: self.proof_intent.current_value().to_string(),
-            proof_black_point: self.proof_black_point,
-            proof_paper_white: self.proof_paper_white,
-            proof_ink_black: self.proof_ink_black,
-            proof_gamut_warning: self.proof_gamut_warning,
             export_sidecars_enabled: self.sidecars,
             contact_sheet_output_path: self.sidecar_path.clone(),
             ..export.clone()
@@ -417,21 +405,15 @@ mod tests {
     }
 
     #[test]
-    fn the_export_proof_and_sidecar_fields_round_trip() {
+    fn the_export_sidecar_fields_round_trip() {
         let mut state = ExportState::default();
         let mut edit = FrameEdit::default();
         state.load(&edit);
-        state.page = 1;
-        state.soft_proof = true;
-        state.proof_intent.pick("perceptual");
-        state.proof_black_point = true;
+        state.page = 3;
         state.sidecars = true;
         state.sidecar_path = "/tmp/sheets".to_string();
         assert!(state.store(&mut edit));
         let export = &edit.config.export;
-        assert!(export.soft_proof_enabled);
-        assert_eq!(export.proof_intent, "perceptual");
-        assert!(export.proof_black_point);
         assert!(export.export_sidecars_enabled);
         assert_eq!(export.contact_sheet_output_path, "/tmp/sheets");
     }

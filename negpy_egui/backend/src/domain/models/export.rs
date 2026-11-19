@@ -133,22 +133,6 @@ pub struct ExportConfig {
     pub contact_sheet_output_path: String,
     #[serde(default)]
     pub export_sidecars_enabled: bool,
-    /// Preview the export through this printer profile.
-    #[serde(default)]
-    pub soft_proof_enabled: bool,
-    /// The proof profile path; empty follows the export profile.
-    #[serde(default)]
-    pub proof_icc_path: Option<String>,
-    #[serde(default = "default_relative_colorimetric")]
-    pub proof_intent: String,
-    #[serde(default)]
-    pub proof_black_point: bool,
-    #[serde(default)]
-    pub proof_paper_white: bool,
-    #[serde(default)]
-    pub proof_ink_black: bool,
-    #[serde(default)]
-    pub proof_gamut_warning: bool,
 }
 
 impl ExportConfig {
@@ -349,20 +333,13 @@ const fn default_same_as_source() -> ExportPresetOutputMode {
     ExportPresetOutputMode::SameAsSource
 }
 
-fn default_relative_colorimetric() -> String {
-    "relative_colorimetric".to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn the_export_defaults_carry_the_proof_condition() {
+    fn the_export_defaults_carry_the_sidecar_settings() {
         let export = ExportConfig::default();
-        assert!(!export.soft_proof_enabled);
-        assert_eq!(export.proof_intent, "relative_colorimetric");
-        assert!(!export.proof_black_point);
         assert!(!export.export_sidecars_enabled);
         assert!(export.contact_sheet_output_path.is_empty());
     }

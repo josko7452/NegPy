@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 01:40 | **Last Commit:** `7d7efc33` desktop: bind the Export proof and sidecars
+**Last Updated:** 2026-11-20 02:05 | **Last Commit:** `HEAD` backend: keep the proof condition out of the export edit
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -14,10 +14,12 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Revisit the Light Table tile metrics.
+1. [ ] Move the proof condition to session settings.
+2. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` desktop: load the saved export and metadata presets.
+- `HEAD` backend: keep the proof condition out of the export edit.
+- `9be68fcc` desktop: load the saved export and metadata presets.
 - `7d7efc33` desktop: bind the Export proof and sidecars.
 - `99a8313a` desktop: bind the Export file page to the edit.
 - `1b763df1` desktop: bind the Metadata gear to the gear library.
@@ -46,9 +48,9 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
   `cargo fmt --all --check` pass.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
-- Roll capture: total 0.686, layout 0.705. Frame 0.699 to 0.749.
-  The golden manifest has no live source path, so the frame and strip are
-  blank and drag the total. The rail card stack renders.
+- Full workspace suite, format and check pass.
+- Golden matrix with the vv9 source: best total 0.771; four layout scores
+  reach 0.80. Light Table 0.697 and Contact Sheet 0.726 remain below target.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
