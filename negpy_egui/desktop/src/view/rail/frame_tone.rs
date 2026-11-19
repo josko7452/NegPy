@@ -2,6 +2,10 @@
 
 use eframe::egui::Ui;
 
+use negpy_backend::domain::models::exposure::BwFilter;
+use negpy_backend::domain::models::process::ProcessMode;
+
+use crate::edit::FrameEdit;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
@@ -203,8 +207,135 @@ impl Default for ExposureState {
 }
 
 impl ExposureState {
+    /// Replace the controls with the exposure values the edit holds.
+    pub fn load(&mut self, edit: &FrameEdit) {
+        let exposure = &edit.config.exposure;
+        let process = &edit.config.process;
+        self.filtration.filter.current = bw_filter_index(exposure.bw_filter);
+        self.filtration
+            .temperature
+            .set_value(exposure.wb_cyan * 8000.0 + 4000.0);
+        self.filtration.cyan.set_value(exposure.wb_cyan);
+        self.filtration.magenta.set_value(exposure.wb_magenta);
+        self.filtration.yellow.set_value(exposure.wb_yellow);
+        self.filtration
+            .cast_removal
+            .set_value(exposure.cast_removal_strength);
+        self.tone.print_density.set_value(exposure.density);
+        self.tone.grade.set_value(exposure.grade);
+        self.tone.shadows_density.set_value(exposure.shadow_density);
+        self.tone
+            .highlights_density
+            .set_value(exposure.highlight_density);
+        self.tone.shadows_grade.set_value(exposure.shadow_grade);
+        self.tone
+            .highlights_grade
+            .set_value(exposure.highlight_grade);
+        self.tone.preflash.set_value(exposure.preflash);
+        self.tone.diffusion.set_value(exposure.diffusion);
+        self.tone
+            .contrast_mask
+            .set_value(exposure.contrast_mask_strength);
+        self.paper.paper_black = exposure.paper_black;
+        self.paper.paper_white = exposure.paper_dmin;
+        self.paper.dye_separation.set_value(exposure.dye_separation);
+        self.paper
+            .separation_damping
+            .set_value(exposure.separation_damping);
+        self.paper.toe.set_value(exposure.toe);
+        self.paper.toe_width.set_value(exposure.toe_width);
+        self.paper.shoulder.set_value(exposure.shoulder);
+        self.paper.shoulder_width.set_value(exposure.shoulder_width);
+        self.local.burn.set_value(exposure.shadow_density);
+        self.local.grade.set_value(exposure.shadow_grade);
+        self.local.flash.set_value(process.analysis_buffer);
+        self.local
+            .feather
+            .set_value(process.analysis_buffer.min(0.15));
+        self.local
+            .tone_zone
+            .set_value(process.analysis_buffer * 10.0);
+        self.local
+            .tone_softness
+            .set_value(process.analysis_buffer + 1.0);
+        self.tone.open = self.tone.open || edit.config.process.process_mode == ProcessMode::BW;
+    }
+
+    /// Write the controls to the edit and return whether any value changed.
+    pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        let exposure = &mut edit.config.exposure;
+        let filter = BW_FILTERS[self.filtration.filter.current.min(BW_FILTERS.len() - 1)];
+        let cyan = self.filtration.cyan.value;
+        let magenta = self.filtration.magenta.value;
+        let yellow = self.filtration.yellow.value;
+        let cast = self.filtration.cast_removal.value;
+        let density = self.tone.print_density.value;
+        let grade = self.tone.grade.value;
+        let shadow_density = self.tone.shadows_density.value;
+        let highlight_density = self.tone.highlights_density.value;
+        let shadow_grade = self.tone.shadows_grade.value;
+        let highlight_grade = self.tone.highlights_grade.value;
+        let preflash = self.tone.preflash.value;
+        let diffusion = self.tone.diffusion.value;
+        let contrast = self.tone.contrast_mask.value;
+        let paper_black = self.paper.paper_black;
+        let paper_white = self.paper.paper_white;
+        let dye = self.paper.dye_separation.value;
+        let damping = self.paper.separation_damping.value;
+        let toe = self.paper.toe.value;
+        let toe_width = self.paper.toe_width.value;
+        let shoulder = self.paper.shoulder.value;
+        let shoulder_width = self.paper.shoulder_width.value;
+        let changed = exposure.bw_filter != filter
+            || !near(exposure.wb_cyan, cyan)
+            || !near(exposure.wb_magenta, magenta)
+            || !near(exposure.wb_yellow, yellow)
+            || !near(exposure.cast_removal_strength, cast)
+            || !near(exposure.density, density)
+            || !near(exposure.grade, grade)
+            || !near(exposure.shadow_density, shadow_density)
+            || !near(exposure.highlight_density, highlight_density)
+            || !near(exposure.shadow_grade, shadow_grade)
+            || !near(exposure.highlight_grade, highlight_grade)
+            || !near(exposure.preflash, preflash)
+            || !near(exposure.diffusion, diffusion)
+            || !near(exposure.contrast_mask_strength, contrast)
+            || exposure.paper_black != paper_black
+            || exposure.paper_dmin != paper_white
+            || !near(exposure.dye_separation, dye)
+            || !near(exposure.separation_damping, damping)
+            || !near(exposure.toe, toe)
+            || !near(exposure.toe_width, toe_width)
+            || !near(exposure.shoulder, shoulder)
+            || !near(exposure.shoulder_width, shoulder_width);
+        exposure.bw_filter = filter;
+        exposure.wb_cyan = cyan;
+        exposure.wb_magenta = magenta;
+        exposure.wb_yellow = yellow;
+        exposure.cast_removal_strength = cast;
+        exposure.density = density;
+        exposure.grade = grade;
+        exposure.shadow_density = shadow_density;
+        exposure.highlight_density = highlight_density;
+        exposure.shadow_grade = shadow_grade;
+        exposure.highlight_grade = highlight_grade;
+        exposure.preflash = preflash;
+        exposure.diffusion = diffusion;
+        exposure.contrast_mask_strength = contrast;
+        exposure.paper_black = paper_black;
+        exposure.paper_dmin = paper_white;
+        exposure.dye_separation = dye;
+        exposure.separation_damping = damping;
+        exposure.toe = toe;
+        exposure.toe_width = toe_width;
+        exposure.shoulder = shoulder;
+        exposure.shoulder_width = shoulder_width;
+        changed
+    }
+
     /// Paint the page. Returns whether a control changed the edit.
-    pub fn show(&mut self, ui: &mut Ui) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+        self.load(edit);
         let mut changed = TabSummary::new(4).show(ui) != Default::default();
         let (filtration_open, filtration_changed) =
             show_card(ui, "Filtration", self.filtration.open, |ui| {
@@ -226,6 +357,9 @@ impl ExposureState {
         });
         self.local.open = local_open;
         changed |= local_changed;
+        if changed {
+            self.store(edit);
+        }
         changed
     }
 
@@ -319,6 +453,25 @@ impl ExposureState {
     }
 }
 
+const BW_FILTERS: [BwFilter; 5] = [
+    BwFilter::None,
+    BwFilter::Yellow8,
+    BwFilter::DeepYellow15,
+    BwFilter::Orange21,
+    BwFilter::Red25,
+];
+
+fn bw_filter_index(filter: BwFilter) -> usize {
+    BW_FILTERS
+        .iter()
+        .position(|candidate| *candidate == filter)
+        .unwrap_or(0)
+}
+
+fn near(left: f64, right: f64) -> bool {
+    (left - right).abs() < 1e-9
+}
+
 fn show_card(
     ui: &mut Ui,
     title: &str,
@@ -351,10 +504,29 @@ mod tests {
     fn the_exposure_page_paints_on_a_context() {
         let ctx = egui::Context::default();
         let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui));
+                assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn a_loaded_edit_fills_the_exposure_page_and_stores_it() {
+        let mut edit = FrameEdit::default();
+        edit.config.exposure.density = 1.22;
+        edit.config.exposure.grade = 90.0;
+        edit.config.exposure.bw_filter = BwFilter::Orange21;
+        edit.config.exposure.paper_dmin = true;
+        edit.config.exposure.toe = 0.4;
+        let mut state = ExposureState::default();
+        state.load(&edit);
+        assert!((state.tone.print_density.value - 1.22).abs() < 1e-9);
+        assert_eq!(state.tone.grade.value, 90.0);
+        assert_eq!(state.filtration.filter.current_label(), "Orange #21");
+        assert!(state.paper.paper_white);
+        assert!((state.paper.toe.value - 0.4).abs() < 1e-9);
+        assert!(!state.store(&mut edit));
     }
 }

@@ -266,7 +266,9 @@ impl RailState {
                 }
             }
             "tone" => {
-                self.exposure.show(ui);
+                if self.exposure.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             "color" => {
                 self.look.show(ui);
