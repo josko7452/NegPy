@@ -27,6 +27,7 @@ pub mod frame_tone;
 pub mod history;
 pub mod library;
 pub mod metadata;
+pub mod raw_decode;
 pub mod roll_analysis;
 pub mod scan;
 
@@ -59,6 +60,7 @@ pub struct RailState {
     pub scan: scan::ScanState,
     pub history: history::HistoryState,
     pub roll_analysis: roll_analysis::RollAnalysisState,
+    pub raw_decode: raw_decode::RawDecodeState,
 }
 
 impl RailState {
@@ -124,6 +126,7 @@ impl RailState {
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
+            raw_decode: raw_decode::RawDecodeState::default(),
         }
     }
 
@@ -218,7 +221,7 @@ impl RailState {
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_setup(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.show_collapsed(ui, "Raw Decode", 0);
+        self.raw_decode.show(ui);
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Optics", 0);
         ui.add_space(f32::from(Theme::default().space_lg));

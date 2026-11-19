@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 18:10 | **Last Commit:** `pending` desktop: share the bundled fixture
+**Last Updated:** 2026-11-19 18:35 | **Last Commit:** `pending` desktop: build the Raw Decode card
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 shell work is active.
@@ -19,20 +19,21 @@ anything whose only gain is a closer score.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] E5: give the Raw Decode card its controls.
-2. [ ] E5: give the Optics card its controls.
-3. [ ] E5: give the Metering card its controls.
-4. [ ] E5: wire the Use Average toggles.
+1. [ ] E5: give the Optics card its controls.
+2. [ ] E5: give the Metering card its controls.
+3. [ ] E5: wire the Use Average toggles.
+4. [ ] E5: run the full workspace tests after the commit pass.
 
 ## Completed (Recent)
-- `pending` desktop: share the bundled fixture.
+- `pending` desktop: build the Raw Decode card.
+- `7a8166a2` desktop: share the bundled fixture.
 - `6268316a` desktop: read the Roll Analysis baseline.
 - `ac6877fd` desktop: build the Light Table view.
 - `bbea3e1c` desktop: give Scan its source icons.
 
 ## Verification
-- `cargo test -p negpy-desktop` passes: 119 library tests. Fixture tests
-  cover the bundled reference file.
+- `cargo test -p negpy-desktop` passes: 122 library tests. Raw Decode tests
+  cover the demosaic order, highlight labels and painting.
 - `cargo check --workspace` passes. `cargo fmt --all --check` passes.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
