@@ -143,6 +143,8 @@ pub fn two_line_rects(row: Rect, left: f32, right: f32) -> (Rect, Rect) {
 pub struct FlatRow {
     pub name: String,
     pub detail: String,
+    pub icon: Option<Icon>,
+    pub dot: Option<egui::Color32>,
     pub current: bool,
     pub selected: bool,
 }
@@ -154,9 +156,25 @@ impl FlatRow {
         Self {
             name: name.into(),
             detail: detail.into(),
+            icon: None,
+            dot: None,
             current: false,
             selected: false,
         }
+    }
+
+    /// Show a leading icon, as the Library shows a folder.
+    #[must_use]
+    pub fn with_icon(mut self, icon: Icon) -> Self {
+        self.icon = Some(icon);
+        self
+    }
+
+    /// Show a film-mode dot before the detail line.
+    #[must_use]
+    pub fn with_dot(mut self, color: egui::Color32) -> Self {
+        self.dot = Some(color);
+        self
     }
 
     /// Paint the row and report its click and ⋮ press.
@@ -166,9 +184,20 @@ impl FlatRow {
             ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::click());
         let hover = response.hovered();
         paint_fill(ui.painter(), rect, self.current, hover, self.selected);
+        let mut left = rect.left() + f32::from(theme.space_xl);
+        if let Some(icon) = self.icon {
+            ui.painter().text(
+                egui::pos2(left + ROW_ICON / 2.0, rect.center().y),
+                Align2::CENTER_CENTER,
+                icon.glyph(),
+                FontId::proportional(f32::from(theme.font_size_base)),
+                theme.text_secondary,
+            );
+            left += ROW_ICON + f32::from(theme.space_lg);
+        }
         let (name_rect, detail_rect) = two_line_rects(
             rect,
-            rect.left() + f32::from(theme.space_xl),
+            left,
             more_rect(rect).left() - f32::from(theme.space_md),
         );
         ui.painter().text(
@@ -182,8 +211,17 @@ impl FlatRow {
                 theme.text_secondary
             },
         );
+        let mut detail_left = detail_rect.left();
+        if let Some(dot) = self.dot {
+            ui.painter().circle_filled(
+                egui::pos2(detail_left + 3.0, detail_rect.center().y),
+                3.5,
+                dot,
+            );
+            detail_left += 7.0 + f32::from(theme.space_md);
+        }
         ui.painter().text(
-            detail_rect.left_center(),
+            egui::pos2(detail_left, detail_rect.center().y),
             Align2::LEFT_CENTER,
             &self.detail,
             FontId::proportional(f32::from(theme.font_size_small)),

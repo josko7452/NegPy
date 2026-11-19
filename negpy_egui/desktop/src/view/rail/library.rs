@@ -18,6 +18,7 @@ const ROLL_ROW: f32 = 46.0;
 pub struct RollRow {
     pub name: String,
     pub detail: String,
+    pub mode: Option<egui::Color32>,
     pub open: bool,
 }
 
@@ -28,8 +29,16 @@ impl RollRow {
         Self {
             name: name.into(),
             detail: detail.into(),
+            mode: None,
             open: false,
         }
+    }
+
+    /// Mark the roll's film mode with the dot the Library prints.
+    #[must_use]
+    pub fn with_mode(mut self, color: egui::Color32) -> Self {
+        self.mode = Some(color);
+        self
     }
 }
 
@@ -51,19 +60,25 @@ impl LibraryState {
     #[must_use]
     pub fn reference() -> Self {
         let mut rows = Vec::new();
-        for (name, detail) in [
-            ("w1", "37 photos · 12 Nov"),
-            ("w10", "13 photos · 12 Nov"),
-            ("w2", "37 photos · 12 Nov"),
-            ("w3", "37 photos · 12 Nov"),
-            ("w4", "39 photos · 12 Nov"),
-            ("w5", "37 photos · 12 Nov"),
-            ("w6", "13 photos · 11 Nov"),
-            ("w7", "13 photos · 12 Nov"),
-            ("w8", "13 photos · 12 Nov"),
-            ("w9", "13 photos · Color · 12 Nov"),
+        for (name, detail, mode) in [
+            ("w1", "37 photos · 12 Nov", None),
+            ("w10", "13 photos · 12 Nov", None),
+            ("w2", "37 photos · 12 Nov", None),
+            ("w3", "37 photos · 12 Nov", None),
+            ("w4", "39 photos · 12 Nov", None),
+            ("w5", "37 photos · 12 Nov", None),
+            ("w6", "13 photos · 11 Nov", None),
+            ("w7", "13 photos · 12 Nov", None),
+            ("w8", "13 photos · 12 Nov", None),
+            (
+                "w9",
+                "13 photos · Color · 12 Nov",
+                Some(Theme::default().mode_c41),
+            ),
         ] {
-            rows.push(RollRow::new(name, detail));
+            let mut row = RollRow::new(name, detail);
+            row.mode = mode;
+            rows.push(row);
         }
         if let Some(open) = rows.last_mut() {
             open.open = true;
@@ -75,7 +90,7 @@ impl LibraryState {
     }
 
     /// Paint the tab and return the Roll the user opened.
-    pub fn show(&mut self, ui: &mut Ui) -> Option<String> {
+    pub fn show(&mut self, ui: &mut Ui, footer_y: Option<f32>) -> Option<String> {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Library").with_guide();
         section.expanded = true;
@@ -112,7 +127,11 @@ impl LibraryState {
                 ui.add_space(f32::from(theme.space_sm));
                 let mut opened = None;
                 for row in &self.rolls {
-                    let mut flat = FlatRow::new(row.name.clone(), row.detail.clone());
+                    let mut flat =
+                        FlatRow::new(row.name.clone(), row.detail.clone()).with_icon(Icon::Folder);
+                    if let Some(mode) = row.mode {
+                        flat = flat.with_dot(mode);
+                    }
                     flat.current = row.open;
                     let response = flat.show(ui, ROLL_ROW);
                     if row.open {
@@ -128,9 +147,9 @@ impl LibraryState {
             })
         });
         let opened = result.flatten();
-        ui.add_space(f32::from(theme.space_xl));
+        let hint_y = footer_y.map_or(ui.cursor().top() + f32::from(theme.space_xl), |y| y - 8.0);
         ui.painter().text(
-            egui::pos2(ui.cursor().left(), ui.cursor().top() + 8.0),
+            egui::pos2(ui.cursor().left(), hint_y),
             Align2::LEFT_CENTER,
             "10 rolls · 252 photos",
             FontId::proportional(f32::from(theme.font_size_small)),
@@ -186,7 +205,7 @@ mod tests {
         let mut state = LibraryState::reference();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert_eq!(state.show(ui), None);
+                assert_eq!(state.show(ui, None), None);
             });
         });
     }

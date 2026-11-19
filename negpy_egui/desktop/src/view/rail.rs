@@ -158,12 +158,13 @@ impl RailState {
                 .layout(egui::Layout::top_down(egui::Align::Min)),
         );
         body_ui.set_width(scroll_body.width());
+        let footer_y = scroll_body.bottom() - f32::from(theme.space_lg);
         ScrollArea::vertical()
             .id_salt(("rail", self.tab))
             .auto_shrink([false, false])
             .show(&mut body_ui, |ui| {
                 ui.add_space(f32::from(theme.space_sm));
-                self.show_body(ui);
+                self.show_body(ui, footer_y);
                 ui.add_space(f32::from(theme.space_xl));
             });
         if footer_height > 0.0 {
@@ -190,10 +191,10 @@ impl RailState {
         switched
     }
 
-    fn show_body(&mut self, ui: &mut Ui) {
+    fn show_body(&mut self, ui: &mut Ui, footer_y: f32) {
         match self.tab {
             Tab::Library => {
-                self.library.show(ui);
+                self.library.show(ui, Some(footer_y));
             }
             Tab::Roll => self.show_roll(ui),
             Tab::Frame => self.show_frame(ui),
