@@ -111,13 +111,19 @@ impl ViewState {
 
     /// Set the state named by one manifest entry.
     pub fn from_capture(group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) -> Self {
-        Self {
-            tab: if tab.is_empty() {
+        let (tab, subtab) = if group == "frame" {
+            (Tab::Frame, tab.to_string())
+        } else {
+            let tab = if tab.is_empty() {
                 Tab::from_key(group)
             } else {
                 Tab::from_key(tab)
-            },
-            subtab: subtab.to_string(),
+            };
+            (tab, subtab.to_string())
+        };
+        Self {
+            tab,
+            subtab,
             group: group.to_string(),
             view: view.to_string(),
             scroll: (scroll.max(0.0) * 1000.0).round() as u32,
@@ -695,5 +701,18 @@ mod tests {
         assert_eq!(view.tab, Tab::Metadata);
         let view = ViewState::from_capture("scan", "", "", "canvas", 0.0);
         assert_eq!(view.tab, Tab::Scan);
+    }
+
+    #[test]
+    fn a_frame_capture_opens_the_page_in_its_tab_key() {
+        let view = ViewState::from_capture("frame", "tone", "", "canvas", 0.0);
+        assert_eq!(view.tab, Tab::Frame);
+        assert_eq!(view.subtab, "tone");
+        assert_eq!(
+            crate::view::rail::RailState::for_view(&view)
+                .frame_subtab
+                .current_key(),
+            "tone"
+        );
     }
 }

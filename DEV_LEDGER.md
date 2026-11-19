@@ -1,37 +1,25 @@
 # Development Ledger
-**Last Updated:** 2026-11-19 02:00 | **Last Commit:** `HEAD` desktop: match the Film Strip tile track
+**Last Updated:** 2026-11-19 03:10 | **Last Commit:** `HEAD` desktop: open the Frame capture sub-tab
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. GUI work is allowed.
-This session completed the 10-commit budget. E5 shell parity is active.
+Ten-commit session in progress; E5 shell parity is active.
 
 ## Next Steps (Ordered)
-1. [ ] E5: close the remaining shell gap. All 20 captures score 0.572 to
-   0.685; the 0.80 gate is still 0.12 away. The strip track, rail header
-   chrome and mode labels are now in place; the next pass should measure
-   the toolbar and rail card interiors.
-2. [ ] E5: replace reference-only panel values with backend services.
-3. [ ] E6: start the dialogs over the new rail panels.
+1. [ ] E5: measure the rail regions after the Frame capture fix.
+2. [ ] E5: bring the toolbar and rail card interiors to the golden layout.
+3. [ ] E5: replace reference-only panel values with backend services.
 
 ## Completed (Recent)
-- `ddaf05c6` desktop: match the Film Strip tile track.
+- `HEAD` desktop: open the Frame capture sub-tab.
+- `3ea357f8` desktop: match the Film Strip tile track.
 - `c8191452` desktop: show the card header chrome.
-- `7eef57f5` desktop: put Find over the rail in the top bar.
-- `a226baca` desktop: paint the grouped canvas bar.
-- `04c2f5a9` desktop: name the canvas bar icon roles.
-- `f5fc4827` desktop: space roll cards like the reference.
-- `8a618a30` desktop: allocate the slider row it paints.
-- `7eadf07c` desktop: keep section bodies inside the scroll.
-- `38c8a7f6` desktop: capture golden frames at exact size.
 
 ## Verification
 - Targeted `cargo test -p negpy-desktop --lib` passes per commit.
-- Fresh 1920x1600 capture: Roll layout 0.645 after the last shell fix.
-- `cargo check --workspace` and `cargo test --workspace` pass.
-- Full golden comparison: 20 captures, 0.572 to 0.685; none at 0.80.
-  The lowest are the Export and Scan tabs; the highest are Library and
-  Frame History.
-- `git diff --stat -- negpy negpy_core` must stay empty.
+- Frame captures now open Geometry, Exposure, Look, Finish, Favorites
+  and History from the manifest's `tab` key.
+- Full workspace tests run after commit 10.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.

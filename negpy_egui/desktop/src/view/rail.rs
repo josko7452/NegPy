@@ -617,8 +617,7 @@ mod tests {
 
     #[test]
     fn the_rail_state_reads_the_capture_subtab() {
-        let mut view = ViewState::from_capture("frame", "frame", "tone", "canvas", 0.0);
-        view.tab = Tab::Frame;
+        let view = ViewState::from_capture("frame", "tone", "", "canvas", 0.0);
         let state = RailState::for_view(&view);
         assert_eq!(state.frame_subtab.current_key(), "tone");
     }
