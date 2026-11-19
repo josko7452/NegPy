@@ -38,7 +38,7 @@ fn main() -> eframe::Result {
         std::process::exit(2);
     });
     std::fs::create_dir_all(&options.output).unwrap();
-    let (frame, strip, history, prints) = load_manifest_state(&manifest, &reference);
+    let (frame, strip, history, prints, roll_analysis) = load_manifest_state(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
         .with_decorations(false)
@@ -62,6 +62,7 @@ fn main() -> eframe::Result {
                 strip,
                 history,
                 prints,
+                roll_analysis,
             )))
         }),
     )
@@ -82,6 +83,7 @@ struct CaptureApp {
         Vec<negpy_backend::session::workspace::HistoryRow>,
         Vec<String>,
     ),
+    roll_analysis: negpy_desktop::view::rail::roll_analysis::RollAnalysisState,
     viewport: Option<CaptureSize>,
 }
 
@@ -94,6 +96,7 @@ impl CaptureApp {
         strip: Vec<FrameImage>,
         history: Vec<negpy_backend::session::workspace::HistoryRow>,
         prints: Vec<String>,
+        roll_analysis: negpy_desktop::view::rail::roll_analysis::RollAnalysisState,
     ) -> Self {
         let mut app = NegFeApp::for_capture(
             &manifest.captures[0].group,
@@ -105,6 +108,7 @@ impl CaptureApp {
         app.set_frame(frame.clone());
         app.set_strip(strip.clone());
         app.set_history(&history, &prints);
+        app.set_roll_analysis(roll_analysis.clone());
         Self {
             manifest,
             reference,
@@ -113,6 +117,7 @@ impl CaptureApp {
             frame,
             strip,
             history: (history, prints),
+            roll_analysis,
             index: 0,
             requested: false,
             wrote_manifest: false,
@@ -139,6 +144,7 @@ impl CaptureApp {
             app.set_frame(self.frame.clone());
             app.set_strip(self.strip.clone());
             app.set_history(&self.history.0, &self.history.1);
+            app.set_roll_analysis(self.roll_analysis.clone());
             self.app = app;
         }
     }

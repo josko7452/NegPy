@@ -21,11 +21,13 @@ fn main() -> eframe::Result {
         eprintln!("{error}");
         std::process::exit(2);
     });
-    let (frame, strip, history, prints) = launch::load_manual_state(&options, &reference);
+    let (frame, strip, history, prints, roll_analysis) =
+        launch::load_manual_state(&options, &reference);
     let mut app = NegFeApp::new(&reference);
     app.set_frame(frame);
     app.set_strip(strip);
     app.set_history(&history, &prints);
+    app.set_roll_analysis(roll_analysis);
     let viewport = ViewportBuilder::default()
         .with_inner_size([1920.0, 1600.0])
         .with_resizable(true);

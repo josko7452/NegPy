@@ -2362,6 +2362,22 @@ pub fn baseline_label(repo: &StorageRepository, process: &ProcessConfig) -> Stri
     source_label(repo, &process.baseline_source)
 }
 
+/// The baseline label for a frame with no repository read.
+#[must_use]
+pub fn baseline_label_without_repo(process: &ProcessConfig) -> String {
+    if process.baseline_source.is_empty() {
+        return process.roll_name.as_ref().map_or_else(
+            || "a saved baseline".to_string(),
+            |name| format!("Roll “{name}”"),
+        );
+    }
+    let (kind, _) = process.baseline_source.split_once(':').unwrap_or(("", ""));
+    match kind {
+        "frame" => "Frame".to_string(),
+        _ => "a saved baseline".to_string(),
+    }
+}
+
 /// A `baseline_source` rendered for display.
 #[must_use]
 pub fn source_label(repo: &StorageRepository, source: &str) -> String {

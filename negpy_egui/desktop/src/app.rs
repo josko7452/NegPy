@@ -197,6 +197,14 @@ impl NegFeApp {
         self.rail.history.load_session(rows, work_prints);
     }
 
+    /// Show the roll and baseline labels the stored edit names.
+    pub fn set_roll_analysis(
+        &mut self,
+        state: crate::view::rail::roll_analysis::RollAnalysisState,
+    ) {
+        self.rail.roll_analysis = state;
+    }
+
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
         let theme = Theme::default();

@@ -27,6 +27,7 @@ pub mod frame_tone;
 pub mod history;
 pub mod library;
 pub mod metadata;
+pub mod roll_analysis;
 pub mod scan;
 
 /// The rail's fixed width at the golden window.
@@ -57,6 +58,7 @@ pub struct RailState {
     pub export: export::ExportState,
     pub scan: scan::ScanState,
     pub history: history::HistoryState,
+    pub roll_analysis: roll_analysis::RollAnalysisState,
 }
 
 impl RailState {
@@ -121,6 +123,7 @@ impl RailState {
             export,
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
+            roll_analysis: roll_analysis::RollAnalysisState::default(),
         }
     }
 
@@ -465,17 +468,26 @@ impl RailState {
             ui.painter().text(
                 field.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
                 Align2::LEFT_CENTER,
-                "✓ w9",
+                Icon::Check.glyph(),
+                FontId::proportional(f32::from(theme.font_size_base)),
+                theme.text_hint,
+            );
+            ui.painter().text(
+                field.left_center() + Vec2::new(f32::from(theme.space_xl) + 22.0, 0.0),
+                Align2::LEFT_CENTER,
+                self.roll_analysis.roll_line(),
                 FontId::proportional(f32::from(theme.font_size_base)),
                 theme.text_primary,
             );
             ui.advance_cursor_after_rect(field);
             ui.add_space(f32::from(theme.space_sm));
-            ui.label(
-                RichText::new("⚠ Baseline from an older analysis: run Reanalyze")
-                    .size(f32::from(theme.font_size_small))
-                    .color(theme.warn_amber),
-            );
+            if self.roll_analysis.stale {
+                ui.label(
+                    RichText::new("⚠ Baseline from an older analysis: run Reanalyze")
+                        .size(f32::from(theme.font_size_small))
+                        .color(theme.warn_amber),
+                );
+            }
             ui.add_space(f32::from(theme.space_md));
             ui.horizontal(|ui| {
                 let _ = section_subheader(ui, "SCENES");
@@ -495,11 +507,13 @@ impl RailState {
             );
             ui.add_space(f32::from(theme.space_sm));
             let _ = section_subheader(ui, "USE AVERAGE");
-            ui.label(
-                RichText::new("⚠ Baseline: Roll “w9”, from an older analysis")
-                    .size(f32::from(theme.font_size_small))
-                    .color(theme.warn_amber),
-            );
+            if let Some(warning) = self.roll_analysis.baseline_warning() {
+                ui.label(
+                    RichText::new(warning)
+                        .size(f32::from(theme.font_size_small))
+                        .color(theme.warn_amber),
+                );
+            }
             ui.add_space(f32::from(theme.space_sm));
             ui.horizontal(|ui| {
                 let _ = action_with_icon(

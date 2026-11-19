@@ -68,10 +68,17 @@ pub fn load_manual_state(
     Vec<FrameImage>,
     Vec<negpy_backend::session::workspace::HistoryRow>,
     Vec<String>,
+    crate::view::rail::roll_analysis::RollAnalysisState,
 ) {
     let profile = options.profile_dir();
     let Some(folder) = options.frame_folder() else {
-        return (placeholder(1600, 1200), Vec::new(), Vec::new(), Vec::new());
+        return (
+            placeholder(1600, 1200),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            crate::view::rail::roll_analysis::RollAnalysisState::default(),
+        );
     };
     let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
     let frame = current
@@ -79,11 +86,21 @@ pub fn load_manual_state(
         .and_then(|path| load_display_frame(path, profile.as_deref(), 1600).ok())
         .unwrap_or_else(|| placeholder(1600, 1200));
     let strip = load_strip(&folder, current.as_deref(), profile.as_deref(), 320, 12);
-    let history = current.map_or_else(
+    let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
-        |path| stored_history(profile.as_deref(), &path),
+        |path| stored_history(profile.as_deref(), path),
     );
-    (frame, strip, history.0, history.1)
+    let roll_analysis = current.as_deref().map_or_else(
+        crate::view::rail::roll_analysis::RollAnalysisState::default,
+        |path| {
+            crate::view::rail::roll_analysis::RollAnalysisState::load(
+                profile.as_deref(),
+                path,
+                None,
+            )
+        },
+    );
+    (frame, strip, history.0, history.1, roll_analysis)
 }
 
 /// Load the frame and strip a manifest capture shows.
@@ -96,6 +113,7 @@ pub fn load_manifest_state(
     Vec<FrameImage>,
     Vec<negpy_backend::session::workspace::HistoryRow>,
     Vec<String>,
+    crate::view::rail::roll_analysis::RollAnalysisState,
 ) {
     let profile = manifest.profile_dir();
     let frame = frame_path(manifest.frame_folder(), &reference.fixture.frame)
@@ -114,14 +132,24 @@ pub fn load_manifest_state(
             }
         },
     );
-    let history = manifest
+    let current = manifest
         .frame_folder()
-        .and_then(|folder| frame_path(Some(folder), &reference.fixture.frame))
-        .map_or_else(
-            || (Vec::new(), Vec::new()),
-            |path| stored_history(profile.as_deref(), &path),
-        );
-    (frame, strip, history.0, history.1)
+        .and_then(|folder| frame_path(Some(folder), &reference.fixture.frame));
+    let history = current.as_deref().map_or_else(
+        || (Vec::new(), Vec::new()),
+        |path| stored_history(profile.as_deref(), path),
+    );
+    let roll_analysis = current.as_deref().map_or_else(
+        crate::view::rail::roll_analysis::RollAnalysisState::default,
+        |path| {
+            crate::view::rail::roll_analysis::RollAnalysisState::load(
+                profile.as_deref(),
+                path,
+                None,
+            )
+        },
+    );
+    (frame, strip, history.0, history.1, roll_analysis)
 }
 
 #[cfg(test)]
@@ -165,7 +193,7 @@ mod tests {
             profile: None,
             folder: Some(PathBuf::from("/missing/folder")),
         };
-        let (frame, strip, _, _) = load_manual_state(&options, &fixture);
+        let (frame, strip, _, _, _) = load_manual_state(&options, &fixture);
         assert!(frame.is_rgb());
         assert!(strip.is_empty());
     }

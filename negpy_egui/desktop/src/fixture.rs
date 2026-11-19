@@ -187,6 +187,7 @@ impl GoldenManifest {
     pub fn profile_dir(&self) -> Option<PathBuf> {
         std::env::var_os("NEGPY_GUI_PROFILE")
             .map(PathBuf::from)
+            .filter(|path| path.is_dir())
             .or_else(|| {
                 self.source
                     .as_ref()
