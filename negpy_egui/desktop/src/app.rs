@@ -309,7 +309,7 @@ fn paint_shell(
     );
     painter.rect_filled(top, 0.0, surface());
     painter.text(
-        top.left_center() + Vec2::new(0.0, -4.0),
+        top.left_center() + Vec2::new(f32::from(Theme::default().space_xl), 0.0),
         egui::Align2::LEFT_CENTER,
         "P5080635.ORF · 7792 x 10388 px",
         egui::FontId::proportional(13.0),
@@ -318,7 +318,7 @@ fn paint_shell(
     painter.text(
         egui::pos2(
             screen.right() - RAIL_WIDTH - margin - 18.0,
-            top.center().y - 4.0,
+            top.center().y,
         ),
         egui::Align2::RIGHT_CENTER,
         "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
