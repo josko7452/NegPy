@@ -276,7 +276,9 @@ impl RailState {
                 }
             }
             "finish" => {
-                self.finish.show(ui);
+                if self.finish.show(ui, edit) {
+                    edit.mark_dirty();
+                }
             }
             "history" => {
                 self.history.show(ui);
