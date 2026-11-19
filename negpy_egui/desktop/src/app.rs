@@ -3,7 +3,9 @@
 //! The shell is intentionally small during the theme port: it paints the fixed regions
 //! the golden comparator scores, so every capture has the same geometry as NegPy.
 
-use eframe::egui::{self, Color32, Frame, Rect, Stroke, TextureHandle, TextureOptions, Vec2};
+use eframe::egui::{
+    self, Color32, Frame, Rect, Sense, Stroke, TextureHandle, TextureOptions, Vec2,
+};
 
 use crate::edit::FrameEdit;
 use crate::fixture::ReferenceFixture;
@@ -79,6 +81,15 @@ impl Tab {
     }
 }
 
+/// The controls a painted shell reported clicked this frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ShellHits {
+    pub import: bool,
+    pub previous: bool,
+    pub next: bool,
+    pub tile: Option<usize>,
+}
+
 /// The whole-window view a manifest entry asks to show.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ViewState {
@@ -149,6 +160,8 @@ pub struct NegFeApp {
     settings: Option<negpy_backend::infrastructure::storage::repository::StorageRepository>,
     pub frame: Option<FrameImage>,
     pub strip: Vec<FrameImage>,
+    /// The open frame's index in the strip.
+    pub selected: usize,
     texture: Option<TextureHandle>,
     strip_textures: Vec<TextureHandle>,
 }
@@ -167,6 +180,7 @@ impl NegFeApp {
             settings: None,
             frame: None,
             strip: Vec::new(),
+            selected: 0,
             texture: None,
             strip_textures: Vec::new(),
         }
@@ -185,6 +199,7 @@ impl NegFeApp {
             settings: None,
             frame: None,
             strip: Vec::new(),
+            selected: 0,
             texture: None,
             strip_textures: Vec::new(),
         }
@@ -242,6 +257,51 @@ impl NegFeApp {
     pub fn set_strip(&mut self, strip: Vec<FrameImage>) {
         self.strip_textures.clear();
         self.strip = strip;
+        self.selected = 0;
+    }
+
+    /// Open the strip frame at `index` and bind its edit. Saves the old edit first.
+    pub fn select_frame(&mut self, index: usize) -> bool {
+        let Some(path) = self.strip.get(index).and_then(|frame| frame.path.clone()) else {
+            return false;
+        };
+        let profile = self.profile.clone();
+        let _ = self.edit.save();
+        let Ok(frame) = crate::frame_source::load_display_frame(&path, profile.as_deref(), 1600)
+        else {
+            return false;
+        };
+        let edit = FrameEdit::load(profile.as_deref(), &path);
+        let config = edit.config.clone();
+        self.set_frame(frame);
+        self.set_edit(edit);
+        self.selected = index;
+        if let Some(profile) = profile.as_deref() {
+            let (rows, prints) = crate::frame_source::stored_history(Some(profile), &path);
+            self.set_history(&rows, &prints);
+            self.set_roll_analysis(crate::view::rail::roll_analysis::RollAnalysisState::load(
+                Some(profile),
+                &path,
+                Some(&config),
+            ));
+        }
+        true
+    }
+
+    /// Move to the previous strip frame.
+    pub fn previous_frame(&mut self) -> bool {
+        if self.selected == 0 {
+            return false;
+        }
+        self.select_frame(self.selected - 1)
+    }
+
+    /// Move to the next strip frame.
+    pub fn next_frame(&mut self) -> bool {
+        if self.selected + 1 >= self.strip.len() {
+            return false;
+        }
+        self.select_frame(self.selected + 1)
     }
 
     /// Open a saved roll: load its first decodable frame, fill the strip, and bind the
@@ -277,6 +337,7 @@ impl NegFeApp {
         self.set_edit(edit);
         self.set_frame(frame);
         self.set_strip(strip);
+        self.selected = 0;
         if let Some(path) = open_path {
             let (rows, prints) = crate::frame_source::stored_history(Some(&profile), &path);
             self.set_history(&rows, &prints);
@@ -339,7 +400,11 @@ impl NegFeApp {
             egui::CentralPanel::default()
                 .frame(Frame::NONE.fill(theme.bg_panel))
                 .show(ctx, |ui| {
-                    crate::view::light_table::paint(ui, screen, &strip_textures, 0);
+                    if let Some(index) =
+                        crate::view::light_table::paint(ui, screen, &strip_textures, self.selected)
+                    {
+                        self.select_frame(index);
+                    }
                     let rail_rect = rail_rect(screen);
                     let proof = self.proof.clone();
                     let switched = self
@@ -370,7 +435,7 @@ impl NegFeApp {
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
             let label = self.frame_label();
-            let (rail_rect, import) = paint_shell(
+            let (rail_rect, hits) = paint_shell(
                 ui,
                 screen,
                 &self.view,
@@ -378,9 +443,19 @@ impl NegFeApp {
                 &strip_textures,
                 self.has_frame(),
                 &label,
+                self.selected,
             );
-            if import {
+            if hits.import {
                 self.rail.library.import_with_picker(false);
+            }
+            if let Some(index) = hits.tile {
+                self.select_frame(index);
+            }
+            if hits.previous {
+                self.previous_frame();
+            }
+            if hits.next {
+                self.next_frame();
             }
             let proof = self.proof.clone();
             let switched = self
@@ -497,7 +572,8 @@ fn paint_shell(
     thumbnails: &[(egui::TextureId, Vec2)],
     has_frame: bool,
     label: &str,
-) -> (Rect, bool) {
+    selected: usize,
+) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
     paint_top_bar_with(&painter, screen, label);
@@ -548,7 +624,7 @@ fn paint_shell(
     } else {
         canvas_rect
     };
-    let mut import = false;
+    let mut hits = ShellHits::default();
     if let Some(texture) = frame.filter(|_| has_frame) {
         painter.image(
             texture,
@@ -557,7 +633,7 @@ fn paint_shell(
             Color32::WHITE,
         );
     } else {
-        import = paint_empty_canvas(ui, photo);
+        hits.import = paint_empty_canvas(ui, photo);
     }
 
     if strip_height > 0.0 {
@@ -594,7 +670,19 @@ fn paint_shell(
                     Color32::WHITE,
                 );
             }
-            let border = if index == 0 {
+            if index < thumbnails.len() {
+                let response = ui.interact(
+                    tile,
+                    ui.id().with(("film-strip-tile", index)),
+                    Sense::click(),
+                );
+                if response.clicked() {
+                    hits.tile = Some(index);
+                }
+            }
+            let border = if index == selected && index < thumbnails.len() {
+                theme.border_checked
+            } else if index == selected {
                 theme.error
             } else {
                 theme.border_color
@@ -602,7 +690,7 @@ fn paint_shell(
             painter.rect_stroke(
                 tile,
                 0.0,
-                Stroke::new(if index == 0 { 4.0 } else { 1.0_f32 }, border),
+                Stroke::new(if index == selected { 3.0_f32 } else { 1.0_f32 }, border),
                 egui::StrokeKind::Inside,
             );
             let dot = egui::pos2(tile.right() - 7.0, tile.top() + 7.0);
@@ -636,8 +724,10 @@ fn paint_shell(
 
     painter.rect_filled(rail, 0.0, surface());
     painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
-    paint_toolbar(&painter, toolbar);
-    (rail, import)
+    let navigation = paint_toolbar(ui, &painter, toolbar, selected, thumbnails.len());
+    hits.previous = navigation.previous;
+    hits.next = navigation.next;
+    (rail, hits)
 }
 
 /// The top bar's bounds, from the window edge to the rail.
@@ -732,7 +822,13 @@ fn paint_empty_canvas(ui: &mut egui::Ui, area: Rect) -> bool {
     .clicked()
 }
 
-fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
+fn paint_toolbar(
+    ui: &mut egui::Ui,
+    painter: &egui::Painter,
+    toolbar: Rect,
+    selected: usize,
+    frames: usize,
+) -> ShellHits {
     use crate::styles::icons::Icon;
     use crate::styles::layout::{
         BAR_BUTTON_HEIGHT, BAR_ICON_SIZE, BAR_TRACK_BUTTON_HEIGHT, BAR_TRACK_PAD,
@@ -812,28 +908,22 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
     let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(172.0, row_height));
     track(painter, navigation);
     let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
-    flat(
-        painter,
-        Rect::from_min_size(inner.min, Vec2::splat(BAR_TRACK_BUTTON_HEIGHT)),
-        Icon::ChevronLeft,
-        theme.text_secondary,
+    let previous = Rect::from_min_size(inner.min, Vec2::splat(BAR_TRACK_BUTTON_HEIGHT));
+    let next = Rect::from_min_size(
+        egui::pos2(inner.right() - BAR_TRACK_BUTTON_HEIGHT, inner.top()),
+        Vec2::splat(BAR_TRACK_BUTTON_HEIGHT),
     );
+    flat(painter, previous, Icon::ChevronLeft, theme.text_secondary);
+    let previous = ui.interact(previous, ui.id().with("previous-frame"), Sense::click());
     painter.text(
         inner.center(),
         egui::Align2::CENTER_CENTER,
-        "1 / 13",
+        &format!("{} / {}", selected + 1, frames.max(selected + 1)),
         egui::FontId::proportional(13.0),
         theme.text_secondary,
     );
-    flat(
-        painter,
-        Rect::from_min_size(
-            egui::pos2(inner.right() - BAR_TRACK_BUTTON_HEIGHT, inner.top()),
-            Vec2::splat(BAR_TRACK_BUTTON_HEIGHT),
-        ),
-        Icon::ChevronRight,
-        theme.text_secondary,
-    );
+    flat(painter, next, Icon::ChevronRight, theme.text_secondary);
+    let next = ui.interact(next, ui.id().with("next-frame"), Sense::click());
     x = navigation.right() + 8.0;
 
     let zoom = Rect::from_min_size(egui::pos2(x, top), Vec2::new(76.0, row_height));
@@ -1039,6 +1129,11 @@ fn paint_toolbar(painter: &egui::Painter, toolbar: Rect) {
             );
         }
     }
+    ShellHits {
+        previous: previous.clicked(),
+        next: next.clicked(),
+        ..ShellHits::default()
+    }
 }
 
 #[cfg(test)]
@@ -1096,6 +1191,20 @@ mod tests {
         assert_eq!(app.view.tab, Tab::Frame);
         assert_eq!(app.rail.frame_subtab.current_key(), "tone");
         assert_eq!(app.rail.library.filter, "kept");
+    }
+
+    #[test]
+    fn frame_navigation_stops_at_the_strip_ends() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        assert!(!app.previous_frame());
+        assert!(!app.next_frame());
+        app.strip = vec![
+            crate::frame_source::FrameImage::empty(),
+            crate::frame_source::FrameImage::empty(),
+        ];
+        assert!(!app.next_frame());
+        assert!(!app.select_frame(2));
     }
 
     #[test]

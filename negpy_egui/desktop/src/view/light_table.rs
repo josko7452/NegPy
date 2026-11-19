@@ -41,8 +41,14 @@ pub fn grid(count: usize, area: Rect, aspects: &[f32]) -> Vec<Rect> {
     cells
 }
 
-/// Paint the Light Table over `screen`. `selected` is the open frame.
-pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)], selected: usize) {
+/// Paint the Light Table over `screen`. `selected` is the open frame; the return value
+/// is the cell the user clicked.
+pub fn paint(
+    ui: &mut egui::Ui,
+    screen: Rect,
+    strip: &[(egui::TextureId, Vec2)],
+    selected: usize,
+) -> Option<usize> {
     let theme = Theme::default();
     crate::app::paint_top_bar(ui.painter(), screen);
     let top = crate::app::top_bar_rect(screen);
@@ -64,17 +70,20 @@ pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)],
         .map(|(_, size)| (size.x / size.y.max(1.0)).max(0.05))
         .collect();
     let cells = grid(strip.len(), grid_area, &aspects);
+    let mut clicked = None;
     for (index, cell) in cells.iter().enumerate() {
         if !grid_area.intersects(*cell) {
             continue;
         }
-        let hovered = ui
-            .interact(
-                *cell,
-                ui.id().with(("light-table-cell", index)),
-                Sense::click(),
-            )
-            .hovered();
+        let response = ui.interact(
+            *cell,
+            ui.id().with(("light-table-cell", index)),
+            Sense::click(),
+        );
+        let hovered = response.hovered();
+        if response.clicked() {
+            clicked = Some(index);
+        }
         ui.painter()
             .rect_filled(cell.shrink(1.0), 0.0, Color32::BLACK);
         if let Some((texture, size)) = strip.get(index) {
@@ -108,6 +117,7 @@ pub fn paint(ui: &mut egui::Ui, screen: Rect, strip: &[(egui::TextureId, Vec2)],
         }
     }
     paint_bar(ui, bar, strip.len());
+    clicked
 }
 
 fn cover_rect(outer: Rect, content: Vec2) -> Rect {
