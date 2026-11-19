@@ -162,6 +162,13 @@ pub struct NegFeApp {
     pub strip: Vec<FrameImage>,
     /// The open frame's index in the strip.
     pub selected: usize,
+    /// The open frame's linear proxy, held until the frame changes.
+    source: Option<std::sync::Arc<crate::render_worker::SourceFrame>>,
+    renderer: crate::render_worker::RenderWorker,
+    /// The config hash of the request in flight, and of the frame on the canvas.
+    requested: Option<String>,
+    rendered: Option<String>,
+    generation: u64,
     texture: Option<TextureHandle>,
     strip_textures: Vec<TextureHandle>,
 }
@@ -181,6 +188,11 @@ impl NegFeApp {
             frame: None,
             strip: Vec::new(),
             selected: 0,
+            source: None,
+            renderer: crate::render_worker::RenderWorker::start(),
+            requested: None,
+            rendered: None,
+            generation: 0,
             texture: None,
             strip_textures: Vec::new(),
         }
@@ -200,6 +212,11 @@ impl NegFeApp {
             frame: None,
             strip: Vec::new(),
             selected: 0,
+            source: None,
+            renderer: crate::render_worker::RenderWorker::start(),
+            requested: None,
+            rendered: None,
+            generation: 0,
             texture: None,
             strip_textures: Vec::new(),
         }
@@ -245,6 +262,63 @@ impl NegFeApp {
         self.edit = edit;
     }
 
+    /// Keep the linear proxy of the open frame, so an edit re-renders without a decode.
+    pub fn set_source(&mut self, source: Option<crate::render_worker::SourceFrame>) {
+        self.source = source.map(std::sync::Arc::new);
+        self.requested = None;
+        self.rendered = None;
+    }
+
+    /// Submit one render when the config differs from the frame on the canvas.
+    fn request_render(&mut self, ctx: &egui::Context, interactive: bool) {
+        let Some(source) = self.source.clone() else {
+            return;
+        };
+        let hash = negpy_backend::kernel::caching::logic::calculate_config_hash(&self.edit.config);
+        if self.rendered.as_deref() == Some(hash.as_str())
+            || self.requested.as_deref() == Some(hash.as_str())
+        {
+            return;
+        }
+        self.generation += 1;
+        self.requested = Some(hash);
+        self.renderer.submit(crate::render_worker::RenderRequest {
+            generation: self.generation,
+            source,
+            config: self.edit.config.clone(),
+        });
+        ctx.request_repaint();
+        let _ = interactive;
+    }
+
+    /// Show the newest finished preview.
+    fn receive_render(&mut self, ctx: &egui::Context) -> bool {
+        let mut shown = false;
+        for output in self.renderer.drain() {
+            if output.generation != self.generation {
+                continue;
+            }
+            self.rendered = Some(output.config_hash);
+            self.view.texture_size = Some(Vec2::new(
+                output.frame.width as f32,
+                output.frame.height as f32,
+            ));
+            self.frame = Some(FrameImage::from_display(self.source_name(), output.frame));
+            self.texture = None;
+            shown = true;
+        }
+        if shown {
+            ctx.request_repaint();
+        }
+        shown
+    }
+
+    fn source_name(&self) -> String {
+        self.source
+            .as_ref()
+            .map_or_else(|| "frame".to_string(), |source| source.name.clone())
+    }
+
     /// Move to the tab and page a capture entry asks for, without rebuilding the rail.
     pub fn select_view(&mut self, group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) {
         let texture_size = self.view.texture_size;
@@ -273,6 +347,11 @@ impl NegFeApp {
         };
         let edit = FrameEdit::load(profile.as_deref(), &path);
         let config = edit.config.clone();
+        if let Ok((source, _)) =
+            crate::frame_source::load_linear_source(&path, profile.as_deref(), 1600)
+        {
+            self.set_source(Some(source));
+        }
         self.set_frame(frame);
         self.set_edit(edit);
         self.selected = index;
@@ -334,6 +413,12 @@ impl NegFeApp {
                 FrameEdit::load(Some(&profile), path)
             });
         let edit_config = edit.config.clone();
+        if let Some(path) = open_path.as_deref()
+            && let Ok((source, _)) =
+                crate::frame_source::load_linear_source(path, Some(&profile), 1600)
+        {
+            self.set_source(Some(source));
+        }
         self.set_edit(edit);
         self.set_frame(frame);
         self.set_strip(strip);
@@ -375,6 +460,7 @@ impl NegFeApp {
 
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
+        self.receive_render(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -457,6 +543,7 @@ impl NegFeApp {
             if hits.next {
                 self.next_frame();
             }
+            self.request_render(ctx, false);
             let proof = self.proof.clone();
             let switched = self
                 .rail

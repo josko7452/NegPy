@@ -129,6 +129,21 @@ pub fn load_display_frame(
     profile: Option<&Path>,
     max_edge: usize,
 ) -> Result<FrameImage, String> {
+    let (source, config) = load_linear_source(path, profile, max_edge)?;
+    let mut engine = DarkroomEngine::new();
+    let frame = render_display(&mut engine, &source.image, &config, &source.hash);
+    if !frame.is_rgb() {
+        return Err("The decoded frame is not an RGB buffer.".to_string());
+    }
+    Ok(FrameImage::from_display(source.name, frame).with_path(path))
+}
+
+/// Decode `path` at a bounded proxy size and keep the linear source for a re-render.
+pub fn load_linear_source(
+    path: &Path,
+    profile: Option<&Path>,
+    max_edge: usize,
+) -> Result<(crate::render_worker::SourceFrame, WorkspaceConfig), String> {
     let config = stored_config(profile, path);
     let loaded = factory::load(
         path,
@@ -144,17 +159,19 @@ pub fn load_display_frame(
     let oriented = oriented(&decoded, loaded.orientation);
     let proxy = downsample_to_long_edge(&oriented, max_edge.max(1));
     let hash = file_hash(path).map_err(|error| error.to_string())?;
-    let mut engine = DarkroomEngine::new();
-    let frame = render_display(&mut engine, &proxy, &config, &hash);
-    if !frame.is_rgb() {
-        return Err("The decoded frame is not an RGB buffer.".to_string());
-    }
     let name = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("frame")
         .to_string();
-    Ok(FrameImage::from_display(name, frame).with_path(path))
+    Ok((
+        crate::render_worker::SourceFrame {
+            name,
+            hash,
+            image: proxy,
+        },
+        config,
+    ))
 }
 
 /// The image files in `folder`, in name order.
