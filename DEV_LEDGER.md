@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 00:40 | **Last Commit:** `ec2a4fb7` desktop: bind the Metadata page to the edit
+**Last Updated:** 2026-11-20 00:50 | **Last Commit:** `3ad300f2` desktop: carry a stored id in the step combo
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`, bottom-up. E5 card wiring is active.
@@ -15,11 +15,11 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 
 ## Next Steps (Ordered)
 1. [ ] Bind the Export page to the edit.
-2. [ ] Bind the gear combos by id.
-3. [ ] Revisit the Light Table tile metrics.
+2. [ ] Revisit the Light Table tile metrics.
 
 ## Completed (Recent)
-- `HEAD` desktop: carry ids in the step combo.
+- `HEAD` desktop: bind the Metadata gear to the gear library.
+- `3ad300f2` desktop: carry ids in the step combo.
 - `ec2a4fb7` desktop: bind the Metadata page to the edit.
 - `0311b01e` desktop: filter the Library and count its rows.
 - `c4beaa3e` desktop: show the roll detail line from the store.

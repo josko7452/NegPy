@@ -183,6 +183,15 @@ impl NegFeApp {
     /// Load the Library from the profile the app reads and saves.
     pub fn set_profile(&mut self, profile: Option<&Path>) {
         self.rail.library = crate::view::rail::library::LibraryState::load(profile);
+        let Some(profile) = profile else {
+            return;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+        let gear = negpy_backend::features::metadata::gear::GearLibrary::load(
+            Path::new(&app.gear_dir),
+            &negpy_backend::kernel::system::paths::resource_path("gear"),
+        );
+        self.rail.metadata.set_gear(gear);
     }
 
     /// Show a decoded frame on the canvas.

@@ -4,6 +4,7 @@ use eframe::egui::{self, Align2, FontId, Rect, RichText, Sense, Stroke, Ui, Vec2
 use negpy_backend::domain::models::MetadataConfig;
 use negpy_backend::domain::models::metadata::{FORMAT_OPTIONS, format_label, format_value};
 use negpy_backend::features::metadata::capture::{format_dev_time, format_temperature};
+use negpy_backend::features::metadata::gear::GearLibrary;
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
@@ -52,6 +53,7 @@ pub struct MetadataState {
     pub capture_roll: String,
     pub capture_frame: String,
     pub presets: Vec<String>,
+    gear: GearLibrary,
 }
 
 impl Default for MetadataState {
@@ -107,15 +109,54 @@ impl Default for MetadataState {
             capture_roll: String::new(),
             capture_frame: String::new(),
             presets: vec!["No presets yet".to_string()],
+            gear: GearLibrary::default(),
         }
     }
 }
 
 impl MetadataState {
+    /// Use the gear library the profile holds for the choice lists.
+    pub fn set_gear(&mut self, gear: GearLibrary) {
+        self.camera = search_combo(
+            "Search cameras...",
+            gear.cameras
+                .iter()
+                .map(|item| (item.resolved_display_name(), item.id.clone())),
+        );
+        self.lens = search_combo(
+            "Search lenses...",
+            gear.lenses
+                .iter()
+                .map(|item| (item.resolved_display_name(), item.id.clone())),
+        );
+        self.film_stock = search_combo(
+            "Search film stocks...",
+            gear.film_stocks
+                .iter()
+                .map(|item| (item.full_film_label(), item.id.clone())),
+        );
+        self.saved_process = search_combo(
+            "Search processes...",
+            gear.processes
+                .iter()
+                .map(|item| (item.display_name.clone(), item.id.clone())),
+        );
+        self.saved_setup = search_combo(
+            "Search scan setups...",
+            gear.scan_setups
+                .iter()
+                .map(|item| (item.display_name.clone(), item.id.clone())),
+        );
+        self.gear = gear;
+    }
+
     /// Replace the controls with the metadata values the edit holds.
     pub fn load(&mut self, edit: &FrameEdit) {
         let config = &edit.config.metadata;
         self.protect = config.protect_original_metadata;
+        self.camera.pick(&config.camera_id);
+        self.lens.pick(&config.lens_id);
+        self.film_stock.pick(&config.film_stock_id);
         self.capture_date = config.capture_date.clone();
         self.place = join_place(config);
         self.exposure = config.exposure_override.clone();
@@ -123,11 +164,13 @@ impl MetadataState {
             .iter()
             .position(|option| *option == format_label(&config.format))
             .unwrap_or(0);
+        self.saved_process.pick(&config.process_id);
         self.developer = config.developer.clone();
         self.dilution = config.process_dilution.clone();
         self.push_pull.current = push_pull_index(config.push_pull);
         self.time = format_dev_time(config.process_time_seconds);
         self.temperature = format_temperature(config.process_temperature_c);
+        self.saved_setup.pick(&config.scanning_id);
         self.scanning = config.scanning.clone();
         self.capture_roll = config.capture_roll.clone();
         self.capture_frame = config
@@ -145,14 +188,19 @@ impl MetadataState {
         let frame = self.capture_frame.trim().parse::<i64>().ok();
         let place = parse_place(&self.place);
         let next = MetadataConfig {
+            camera_id: picked(&self.camera),
+            lens_id: picked(&self.lens),
+            film_stock_id: picked(&self.film_stock),
             capture_date: self.capture_date.clone(),
             exposure_override: self.exposure.clone(),
+            process_id: picked(&self.saved_process),
             developer: self.developer.clone(),
             process_dilution: self.dilution.clone(),
             push_pull,
             process_time_seconds: parse_dev_time(&self.time).or(config.process_time_seconds),
             process_temperature_c: parse_temperature(&self.temperature)
                 .or(config.process_temperature_c),
+            scanning_id: picked(&self.saved_setup),
             scanning: self.scanning.clone(),
             capture_roll: self.capture_roll.clone(),
             capture_frame: frame,
@@ -408,6 +456,20 @@ impl MetadataState {
 
 const PUSH_PULL_VALUES: [i64; 7] = [3, 2, 1, 0, -1, -2, -3];
 
+fn search_combo(placeholder: &str, items: impl Iterator<Item = (String, String)>) -> StepCombo {
+    let mut choices = vec![Choice::new(placeholder)];
+    choices.extend(items.map(|(label, id)| Choice::with_id(label, id)));
+    StepCombo::new(choices)
+}
+
+fn picked(combo: &StepCombo) -> String {
+    if combo.current == 0 {
+        String::new()
+    } else {
+        combo.current_value().to_string()
+    }
+}
+
 fn push_pull_index(value: i64) -> usize {
     PUSH_PULL_VALUES
         .iter()
@@ -523,6 +585,27 @@ mod tests {
         assert_eq!(edit.config.metadata.developer, "D-76");
         assert_eq!(edit.config.metadata.push_pull, 3);
         assert_eq!(edit.config.metadata.format, "35mm");
+    }
+
+    #[test]
+    fn the_metadata_gear_picks_the_stored_id() {
+        let mut state = MetadataState::default();
+        let gear = GearLibrary {
+            cameras: vec![negpy_backend::features::metadata::gear::Camera {
+                id: "cam-om3".to_string(),
+                display_name: "OM-3".to_string(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        state.set_gear(gear);
+        let mut edit = FrameEdit::default();
+        edit.config.metadata.camera_id = "cam-om3".to_string();
+        state.load(&edit);
+        assert_eq!(state.camera.current_label(), "OM-3");
+        state.camera.current = 0;
+        assert!(state.store(&mut edit));
+        assert!(edit.config.metadata.camera_id.is_empty());
     }
 
     #[test]
