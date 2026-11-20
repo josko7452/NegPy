@@ -42,6 +42,7 @@ pub struct ExportState {
     pub long_edge: CompactSlider,
     pub paper_ratio: StepCombo,
     pub input_icc: StepCombo,
+    pub output_icc: StepCombo,
     pub export_profile: StepCombo,
     pub destination: StepCombo,
     pub subfolder: String,
@@ -88,6 +89,7 @@ impl Default for ExportState {
                 ("1:1", "1:1"),
             ]),
             input_icc: StepCombo::new(vec![Choice::new("None")]),
+            output_icc: StepCombo::new(vec![Choice::new("None")]),
             export_profile: choice_combo(
                 &EXPORT_COLOR_SPACES
                     .iter()
@@ -132,6 +134,10 @@ impl ExportState {
             .set_value(export.export_target_long_edge_px as f64);
         self.paper_ratio.pick(&export.paper_aspect_ratio);
         self.export_profile.pick(&export.export_color_space);
+        self.input_icc
+            .pick(export.icc_input_path.as_deref().unwrap_or(""));
+        self.output_icc
+            .pick(export.icc_output_path.as_deref().unwrap_or(""));
         self.destination.pick(export.output_mode.as_str());
         self.subfolder = export.output_subfolder.clone();
         self.filename = export.filename_pattern.clone();
@@ -148,6 +154,12 @@ impl ExportState {
     /// Show the export presets the profile holds.
     pub fn set_presets(&mut self, presets: Vec<negpy_backend::domain::models::ExportPreset>) {
         self.presets = presets;
+    }
+
+    /// Show the ICC profiles the profile holds for the Input and Output fields.
+    pub fn set_icc_profiles(&mut self, paths: &[std::path::PathBuf]) {
+        self.input_icc = icc_choices(paths);
+        self.output_icc = icc_choices(paths);
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -167,6 +179,8 @@ impl ExportState {
             export_color_space: self.export_profile.current_value().to_string(),
             output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
             output_subfolder: self.subfolder.clone(),
+            icc_input_path: optional_path(self.input_icc.current_value()),
+            icc_output_path: optional_path(self.output_icc.current_value()),
             filename_pattern: self.filename.clone(),
             overwrite: self.overwrite,
             export_sidecars_enabled: self.sidecars,
@@ -253,6 +267,14 @@ impl ExportState {
             field_combo(
                 ui,
                 columns,
+                "Output ICC",
+                &mut self.output_icc,
+                &mut changed,
+            );
+            ui.add_space(f32::from(theme.space_md));
+            field_combo(
+                ui,
+                columns,
                 "Export profile",
                 &mut self.export_profile,
                 &mut changed,
@@ -331,6 +353,22 @@ impl ExportState {
     }
 }
 
+fn optional_path(value: &str) -> Option<String> {
+    (!value.is_empty()).then(|| value.to_string())
+}
+
+fn icc_choices(paths: &[std::path::PathBuf]) -> StepCombo {
+    let mut choices = vec![Choice::with_id("None", "")];
+    choices.extend(paths.iter().map(|path| {
+        let label = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Profile");
+        Choice::with_id(label, path.display().to_string())
+    }));
+    StepCombo::new(choices)
+}
+
 fn choice_combo(items: &[(&str, &str)]) -> StepCombo {
     StepCombo::new(
         items
@@ -403,6 +441,28 @@ mod tests {
             ExportResolutionMode::TargetPx
         );
         assert_eq!(export.export_target_long_edge_px, 4000);
+    }
+
+    #[test]
+    fn the_export_icc_fields_round_trip() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.set_icc_profiles(&[
+            std::path::PathBuf::from("/icc/source.icc"),
+            std::path::PathBuf::from("/icc/paper.icc"),
+        ]);
+        state.load(&edit);
+        state.input_icc.pick("/icc/source.icc");
+        state.output_icc.pick("/icc/paper.icc");
+        assert!(state.store(&mut edit));
+        assert_eq!(
+            edit.config.export.icc_input_path.as_deref(),
+            Some("/icc/source.icc")
+        );
+        assert_eq!(
+            edit.config.export.icc_output_path.as_deref(),
+            Some("/icc/paper.icc")
+        );
     }
 
     #[test]

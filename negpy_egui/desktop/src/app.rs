@@ -249,6 +249,10 @@ impl NegFeApp {
         self.settings = Some(repo.clone());
         let presets = repo.load_export_presets();
         self.rail.export.set_presets(presets);
+        let profiles = negpy_backend::infrastructure::display::color_mgmt::available_profiles(
+            std::path::Path::new(&app.user_icc_dir),
+        );
+        self.rail.export.set_icc_profiles(&profiles);
         let store = negpy_backend::services::assets::presets::PresetStore::new(
             app.presets_dir.clone(),
             "metadata",
