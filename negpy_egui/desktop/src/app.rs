@@ -946,23 +946,7 @@ impl NegFeApp {
 
     fn apply_roll_analysis(&mut self, ctx: &egui::Context) {
         if self.rail.roll_analysis.take_use_frame() {
-            if let Some(frame) = self.strip.get(self.selected)
-                && let Some(path) = &frame.path
-            {
-                let frame_name = frame.name.clone();
-                self.edit.config.process.roll_name = Some(frame.name.clone());
-                self.edit.config.process.baseline_source = format!(
-                    "frame:{}",
-                    negpy_backend::infrastructure::storage::local_asset_store::file_hash(path)
-                        .unwrap_or_default()
-                );
-                self.rail.roll_analysis.baseline = format!("Frame “{frame_name}”");
-                self.rail.roll_analysis.stale = false;
-                self.edit.mark_dirty();
-                self.requested = None;
-                self.rendered = None;
-                ctx.request_repaint();
-            }
+            self.use_frame_as_baseline(ctx);
         }
         if self.rail.roll_analysis.take_reanalyze() {
             self.rail.roll_analysis.stale = false;
@@ -970,6 +954,57 @@ impl NegFeApp {
             self.rendered = None;
             ctx.request_repaint();
         }
+    }
+
+    /// Save the open frame's own measurement as the roll baseline, then load it back.
+    fn use_frame_as_baseline(&mut self, ctx: &egui::Context) {
+        let Some(profile) = self.edit.source().map(|(profile, _)| profile.to_path_buf()) else {
+            return;
+        };
+        let Some(roll_id) = self
+            .rail
+            .roll_analysis
+            .roll_id
+            .clone()
+            .or_else(|| self.rail.roll_analysis.roll_name.clone())
+        else {
+            return;
+        };
+        let process = &self.edit.config.process;
+        if !process.is_local_initialized() {
+            return;
+        }
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app.edits_db_path,
+            app.settings_db_path,
+        );
+        let floors = process.local_floors;
+        let ceils = process.local_ceils;
+        negpy_backend::services::assets::rolls::set_roll_normalization(
+            &mut repo,
+            &roll_id,
+            &floors,
+            &ceils,
+            &[0.0; 3],
+            &[],
+            None,
+            negpy_backend::domain::models::workspace::BOUNDS_VERSION,
+            None,
+            None,
+        );
+        self.edit.config.process.baseline_source = format!("roll:{roll_id}");
+        self.edit.config.process.locked_floors = floors;
+        self.edit.config.process.locked_ceils = ceils;
+        self.edit.mark_dirty();
+        self.rail.roll_analysis.stale = false;
+        self.rail.roll_analysis.baseline =
+            negpy_backend::services::assets::rolls::baseline_label_without_repo(
+                &self.edit.config.process,
+            );
+        self.requested = None;
+        self.rendered = None;
+        ctx.request_repaint();
     }
 
     fn open_requested_roll(&mut self) {
@@ -1832,5 +1867,40 @@ mod tests {
         );
         app.store_measured_bounds(&metrics);
         assert_eq!(app.edit.config.process.local_floors, [0.4; 3]);
+    }
+
+    #[test]
+    fn using_a_frame_saves_its_bounds_on_the_roll() {
+        let dir = tempfile::tempdir().unwrap();
+        let profile = dir.path();
+        let photo = profile.join("frame.orf");
+        std::fs::write(&photo, b"frame").unwrap();
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            negpy_backend::domain::types::AppConfig::for_user_dir(profile).edits_db_path,
+            negpy_backend::domain::types::AppConfig::for_user_dir(profile).settings_db_path,
+        );
+        repo.initialize().unwrap();
+        let roll_id = negpy_backend::services::assets::rolls::create_virtual_roll(
+            &mut repo,
+            "Roll",
+            &[photo.display().to_string()],
+        );
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.profile = Some(profile.to_path_buf());
+        app.set_edit(FrameEdit::load(Some(profile), &photo));
+        app.edit.config.process.local_floors = [0.1, 0.2, 0.3];
+        app.edit.config.process.local_ceils = [0.7, 0.8, 0.9];
+        app.rail.roll_analysis.roll_id = Some(roll_id.clone());
+        let ctx = egui::Context::default();
+        app.use_frame_as_baseline(&ctx);
+        let saved = negpy_backend::services::assets::rolls::roll_normalization(&repo, &roll_id)
+            .expect("a saved baseline");
+        assert_eq!(saved["floors"], serde_json::json!([0.1, 0.2, 0.3]));
+        assert_eq!(
+            app.edit.config.process.baseline_source,
+            format!("roll:{roll_id}")
+        );
+        assert_eq!(app.edit.config.process.locked_floors, [0.1, 0.2, 0.3]);
     }
 }

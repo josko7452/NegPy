@@ -11,6 +11,8 @@ use negpy_backend::services::assets::rolls;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct RollAnalysisState {
     pub roll_name: Option<String>,
+    /// The saved roll the baseline goes onto.
+    pub roll_id: Option<String>,
     pub baseline: String,
     pub stale: bool,
     pub open: bool,
@@ -43,10 +45,16 @@ impl RollAnalysisState {
     #[must_use]
     pub fn from_repo(repo: &StorageRepository, config: &WorkspaceConfig) -> Self {
         let process = &config.process;
+        let source_id = process.baseline_source.strip_prefix("roll:");
+        let roll_id = source_id.map(str::to_string).or_else(|| {
+            let wanted = process.roll_name.as_deref()?;
+            rolls::saved_rolls(repo)
+                .into_iter()
+                .find(|(_, entry)| entry.get("name").and_then(|name| name.as_str()) == Some(wanted))
+                .map(|(id, _)| id)
+        });
         let roll_name = process.roll_name.clone().or_else(|| {
-            process
-                .baseline_source
-                .strip_prefix("roll:")
+            source_id
                 .and_then(|roll_id| rolls::roll_for_id(repo, roll_id))
                 .and_then(|entry| {
                     entry
@@ -57,6 +65,7 @@ impl RollAnalysisState {
         });
         let mut state = Self {
             roll_name,
+            roll_id,
             baseline: rolls::baseline_label(repo, process),
             stale: rolls::frame_baseline_stale(repo, process),
             open: true,
@@ -83,6 +92,10 @@ impl RollAnalysisState {
         let process = &config.process;
         Self {
             roll_name: process.roll_name.clone(),
+            roll_id: process
+                .baseline_source
+                .strip_prefix("roll:")
+                .map(str::to_string),
             baseline: rolls::baseline_label_without_repo(process),
             stale: false,
             open: true,
@@ -168,5 +181,26 @@ mod tests {
         assert!(state.take_reanalyze());
         assert!(!state.take_use_frame());
         assert!(!state.take_reanalyze());
+    }
+
+    #[test]
+    fn a_named_roll_resolves_the_saved_id_for_the_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = StorageRepository::new(
+            dir.path().join("edits.db").display().to_string(),
+            dir.path().join("settings.db").display().to_string(),
+        );
+        repo.initialize().unwrap();
+        let roll_id =
+            rolls::create_virtual_roll(&mut repo, "Portra 400", &["/roll/a.orf".to_string()]);
+        let config = WorkspaceConfig {
+            process: negpy_backend::domain::models::process::ProcessConfig {
+                roll_name: Some("Portra 400".to_string()),
+                ..Default::default()
+            },
+            ..WorkspaceConfig::default()
+        };
+        let state = RollAnalysisState::from_repo(&repo, &config);
+        assert_eq!(state.roll_id.as_deref(), Some(roll_id.as_str()));
     }
 }
