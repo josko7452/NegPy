@@ -291,42 +291,37 @@ impl ScanState {
             self.framing_open = framing_open;
             changed |= framing_changed;
         }
-        let camera_expanded = if camera_active {
-            self.camera_open
-        } else {
-            false
-        };
-        let (camera_open, camera_changed) = scan_card(
-            ui,
-            "Camera",
-            Icon::Camera,
-            camera_expanded,
-            |ui| {
-                let mut changed = false;
-                let _ = hint(
-                    ui,
-                    "Camera scanning needs python-gphoto2 (`pip install gphoto2`), which has no Windows build. See docs/CAMERA_SCANNING.md.",
-                );
-                let _ = hint(
-                    ui,
-                    "Connect the camera by USB, in PC Remote mode. NegPy finds it by itself.",
-                );
-                ui.horizontal(|ui| {
-                    ui.label("● Camera");
-                    ui.add_space(f32::from(theme.space_lg));
-                    ui.label("● Light");
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Camera");
-                    changed |= self.camera.show(ui);
-                });
-                changed
-            },
-        );
         if camera_active {
+            let (camera_open, camera_changed) = scan_card(
+                ui,
+                "Camera",
+                Icon::Camera,
+                self.camera_open,
+                |ui| {
+                    let mut changed = false;
+                    let _ = hint(
+                        ui,
+                        "Camera scanning needs python-gphoto2 (`pip install gphoto2`), which has no Windows build. See docs/CAMERA_SCANNING.md.",
+                    );
+                    let _ = hint(
+                        ui,
+                        "Connect the camera by USB, in PC Remote mode. NegPy finds it by itself.",
+                    );
+                    ui.horizontal(|ui| {
+                        ui.label("● Camera");
+                        ui.add_space(f32::from(theme.space_lg));
+                        ui.label("● Light");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Camera");
+                        changed |= self.camera.show(ui);
+                    });
+                    changed
+                },
+            );
             self.camera_open = camera_open;
+            changed |= camera_changed;
         }
-        changed |= camera_changed;
         let (preset_open, light_changed) =
             scan_card(ui, "Preset", Icon::Lightbulb, self.preset_open, |ui| {
                 self.light.show(ui).is_some()
@@ -428,6 +423,27 @@ mod tests {
         assert!(!state.device_open);
         assert!(!state.quality_open);
         assert!(state.output_open);
+    }
+
+    #[test]
+    fn the_camera_card_keeps_its_state_across_the_source_switch() {
+        let mut state = ScanState::default();
+        state.camera_open = false;
+        state.source.current = 0;
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui);
+            });
+        });
+        assert!(!state.camera_open);
+        state.source.current = 1;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui);
+            });
+        });
+        assert!(!state.camera_open);
     }
 
     #[test]
