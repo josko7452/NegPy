@@ -2,6 +2,8 @@
 
 use eframe::egui::{self, CursorIcon, Rect, Sense, Stroke, Vec2};
 
+use negpy_backend::domain::models::{LocalMask, MaskShape};
+
 use crate::styles::templates::with_alpha;
 use crate::styles::theme::Theme;
 
@@ -136,6 +138,77 @@ pub fn crop_tool(
     None
 }
 
+/// A mask the canvas lasso drew, in normalized photo coordinates.
+pub type DrawnMask = (MaskShape, Vec<[f64; 2]>);
+
+/// The in-progress local mask lasso.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MaskDrag {
+    pub points: Vec<egui::Pos2>,
+}
+
+/// Paint every stored mask and let the lasso collect points inside the photo.
+pub fn local_tool(
+    ui: &mut egui::Ui,
+    photo: Rect,
+    masks: &[LocalMask],
+    drawing: bool,
+    drag: &mut MaskDrag,
+) -> Option<DrawnMask> {
+    let theme = Theme::default();
+    for mask in masks {
+        let points: Vec<egui::Pos2> = mask
+            .vertices
+            .iter()
+            .map(|point| {
+                egui::pos2(
+                    photo.left() + point[0] as f32 * photo.width(),
+                    photo.top() + point[1] as f32 * photo.height(),
+                )
+            })
+            .collect();
+        if points.len() >= 2 {
+            ui.painter().add(egui::Shape::closed_line(
+                points,
+                Stroke::new(1.5_f32, theme.mark_photo),
+            ));
+        }
+    }
+    let response = ui.interact(photo, ui.id().with("local-photo"), Sense::click());
+    if drawing {
+        response.clone().on_hover_cursor(CursorIcon::Crosshair);
+        if response.clicked() {
+            if let Some(point) = response.interact_pointer_pos() {
+                drag.points.push(point);
+            }
+        }
+        if response.double_clicked() {
+            let points: Vec<[f64; 2]> = drag
+                .points
+                .drain(..)
+                .map(|point| {
+                    [
+                        f64::from((point.x - photo.left()) / photo.width().max(1.0)),
+                        f64::from((point.y - photo.top()) / photo.height().max(1.0)),
+                    ]
+                })
+                .collect();
+            if points.len() >= 3 {
+                return Some((MaskShape::Polygon, points));
+            }
+        }
+    } else {
+        drag.points.clear();
+    }
+    if drag.points.len() >= 2 {
+        ui.painter().add(egui::Shape::line(
+            drag.points.clone(),
+            Stroke::new(1.5_f32, theme.warn_amber),
+        ));
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,5 +247,17 @@ mod tests {
     fn a_click_without_a_size_makes_no_crop() {
         let rect = drag_rect(photo(), egui::pos2(200.0, 100.0), egui::pos2(201.0, 101.0));
         assert_eq!(rect, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn a_drawn_point_becomes_a_normalized_vertex() {
+        let photo = photo();
+        let point = egui::pos2(200.0, 100.0);
+        let normalized = [
+            f64::from((point.x - photo.left()) / photo.width()),
+            f64::from((point.y - photo.top()) / photo.height()),
+        ];
+        assert!((normalized[0] - 0.25).abs() < 1e-9);
+        assert!((normalized[1] - 0.25).abs() < 1e-9);
     }
 }

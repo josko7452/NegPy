@@ -85,13 +85,14 @@ impl Tab {
 }
 
 /// The controls a painted shell reported clicked this frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct ShellHits {
     pub import: bool,
     pub previous: bool,
     pub next: bool,
     pub tile: Option<usize>,
     pub crop: Option<[f64; 4]>,
+    pub mask: Option<crate::view::canvas::DrawnMask>,
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -182,6 +183,8 @@ pub struct NegFeApp {
     strip_textures: Vec<TextureHandle>,
     /// The press position of a crop drag on the canvas.
     crop_drag: Option<egui::Pos2>,
+    /// The local mask lasso, between clicks.
+    mask_drag: crate::view::canvas::MaskDrag,
 }
 
 impl NegFeApp {
@@ -212,6 +215,7 @@ impl NegFeApp {
             texture: None,
             strip_textures: Vec::new(),
             crop_drag: None,
+            mask_drag: crate::view::canvas::MaskDrag::default(),
         }
     }
 
@@ -242,6 +246,7 @@ impl NegFeApp {
             texture: None,
             strip_textures: Vec::new(),
             crop_drag: None,
+            mask_drag: crate::view::canvas::MaskDrag::default(),
         }
     }
 
@@ -891,6 +896,8 @@ impl NegFeApp {
                     self.frame.as_ref().map(|frame| (frame.width, frame.height)),
                 ),
                 &mut self.crop_drag,
+                (&self.edit.config.local.masks, self.rail.exposure.local.draw),
+                &mut self.mask_drag,
             );
             if hits.import {
                 self.rail.library.import_with_picker(false);
@@ -909,6 +916,20 @@ impl NegFeApp {
                 self.edit.config.geometry.crop_from_auto = false;
                 self.edit.config.geometry.crop_detect_key.clear();
                 self.edit.config.geometry.autocrop_squared = false;
+                self.edit.mark_dirty();
+                ctx.request_repaint();
+            }
+            if let Some((shape, vertices)) = hits.mask {
+                self.edit
+                    .config
+                    .local
+                    .masks
+                    .push(negpy_backend::domain::models::LocalMask {
+                        vertices,
+                        shape,
+                        ..Default::default()
+                    });
+                self.rail.exposure.local.draw = false;
                 self.edit.mark_dirty();
                 ctx.request_repaint();
             }
@@ -1140,6 +1161,8 @@ fn paint_shell(
         Option<(usize, usize)>,
     ),
     crop_drag: &mut Option<egui::Pos2>,
+    local: (&[negpy_backend::domain::models::LocalMask], bool),
+    mask_drag: &mut crate::view::canvas::MaskDrag,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1213,6 +1236,7 @@ fn paint_shell(
             crop_drag,
         );
         hits.crop = crop;
+        hits.mask = crate::view::canvas::local_tool(ui, photo, local.0, local.1, mask_drag);
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }

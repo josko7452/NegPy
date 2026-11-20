@@ -218,6 +218,9 @@ pub struct ExposureState {
     /// The selected filtration region and tone channel survive a frame repaint.
     pub region: usize,
     pub channel: usize,
+    /// The masks the canvas lasso has stored for this frame.
+    pub mask_count: usize,
+    clear_masks: bool,
 }
 
 impl Default for ExposureState {
@@ -231,6 +234,8 @@ impl Default for ExposureState {
             is_bw: false,
             region: 0,
             channel: 0,
+            mask_count: 0,
+            clear_masks: false,
         }
     }
 }
@@ -363,6 +368,7 @@ impl ExposureState {
             .set_value(process.analysis_buffer + 1.0);
         self.tone.open = self.tone.open || edit.config.process.process_mode == ProcessMode::BW;
         self.is_bw = edit.config.process.process_mode == ProcessMode::BW;
+        self.mask_count = edit.config.local.masks.len();
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -546,6 +552,12 @@ impl ExposureState {
         });
         self.local.open = local_open;
         changed |= local_changed;
+        if changed && self.clear_masks {
+            edit.config.local.masks.clear();
+            self.mask_count = 0;
+            self.clear_masks = false;
+            changed = true;
+        }
         if changed {
             self.store(edit);
         }
@@ -681,7 +693,7 @@ impl ExposureState {
             changed |= labeled_toggle(ui, "Oval", &mut self.local.oval).clicked();
             changed |= labeled_toggle(ui, "Card", &mut self.local.card).clicked();
         });
-        let _ = section_subheader(ui, "MASKS · 0");
+        let _ = section_subheader(ui, &format!("MASKS · {}", self.mask_count));
         changed |= self.local.burn.show(ui, "Burn").1;
         changed |= self.local.grade.show(ui, "Grade").1;
         changed |= self.local.flash.show(ui, "Flash").1;
@@ -689,7 +701,9 @@ impl ExposureState {
         let _ = section_subheader(ui, "Tone Limit");
         changed |= self.local.tone_zone.show(ui, "Tone Zone").1;
         changed |= self.local.tone_softness.show(ui, "Tone Softness").1;
-        let _ = labeled_action(ui, "Clear All", ActionRank::Normal);
+        if labeled_action(ui, "Clear All", ActionRank::Normal).clicked() {
+            self.clear_masks = true;
+        }
         changed
     }
 }
@@ -739,6 +753,18 @@ mod tests {
         assert!(!state.local.open);
         assert_eq!(state.tone.channel.current_label(), "Global");
         assert_eq!(state.paper.paper.current_label(), "Digital (Adobe RGB)");
+    }
+
+    #[test]
+    fn the_local_card_counts_the_stored_masks() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        edit.config
+            .local
+            .masks
+            .push(negpy_backend::domain::models::LocalMask::default());
+        state.load(&edit);
+        assert_eq!(state.mask_count, 1);
     }
 
     #[test]
