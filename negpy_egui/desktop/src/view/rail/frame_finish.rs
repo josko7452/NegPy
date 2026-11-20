@@ -130,6 +130,20 @@ impl Default for FinishingState {
 pub struct FinishState {
     pub retouch: RetouchState,
     pub finishing: FinishingState,
+    /// The retouch tool the next canvas stroke uses.
+    pub tool: RetouchTool,
+    pub overlay_choice: usize,
+}
+
+/// The selected retouch tool.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetouchTool {
+    #[default]
+    Off,
+    Heal,
+    Scratch,
+    Line,
+    Clone,
 }
 
 impl Default for FinishState {
@@ -137,6 +151,8 @@ impl Default for FinishState {
         Self {
             retouch: RetouchState::default(),
             finishing: FinishingState::default(),
+            tool: RetouchTool::Off,
+            overlay_choice: 0,
         }
     }
 }
@@ -169,6 +185,11 @@ impl FinishState {
             .clone_feather
             .set_value(retouch.clone_feather * 100.0);
         let finish = &edit.config.finish;
+        self.retouch.overlay.current = self.overlay_choice.min(2);
+        self.retouch.heal = self.tool == RetouchTool::Heal;
+        self.retouch.scratch = self.tool == RetouchTool::Scratch;
+        self.retouch.line = self.tool == RetouchTool::Line;
+        self.retouch.clone = self.tool == RetouchTool::Clone;
         self.finishing
             .vignette_burn
             .set_value(finish.vignette_stops);
@@ -205,6 +226,18 @@ impl FinishState {
         let clone_match = self.retouch.clone_match;
         let clone_strength = self.retouch.clone_strength.value / 100.0;
         let clone_feather = self.retouch.clone_feather.value / 100.0;
+        self.overlay_choice = self.retouch.overlay.current.min(2);
+        self.tool = if self.retouch.heal {
+            RetouchTool::Heal
+        } else if self.retouch.scratch {
+            RetouchTool::Scratch
+        } else if self.retouch.line {
+            RetouchTool::Line
+        } else if self.retouch.clone {
+            RetouchTool::Clone
+        } else {
+            RetouchTool::Off
+        };
         let changed = retouch.dust_remove != optical
             || !near(retouch.dust_threshold, spot)
             || !near(retouch.dust_hair_threshold, hair)
@@ -394,5 +427,19 @@ mod tests {
         assert!((state.finishing.vignette_burn.value + 0.5).abs() < 1e-9);
         assert_eq!(state.finishing.border_color.current_label(), "Custom");
         assert!(!state.store(&mut edit));
+    }
+
+    #[test]
+    fn the_retouch_tool_and_overlay_survive_a_reload() {
+        let mut state = FinishState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.retouch.heal = true;
+        state.retouch.overlay.current = 2;
+        state.store(&mut edit);
+        state.load(&edit);
+        assert!(state.retouch.heal);
+        assert_eq!(state.retouch.overlay.current_label(), "IR");
+        assert_eq!(state.tool, RetouchTool::Heal);
     }
 }

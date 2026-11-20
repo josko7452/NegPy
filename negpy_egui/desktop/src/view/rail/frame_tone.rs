@@ -215,6 +215,9 @@ pub struct ExposureState {
     pub local: LocalState,
     pub temperature_dirty: bool,
     pub is_bw: bool,
+    /// The selected filtration region and tone channel survive a frame repaint.
+    pub region: usize,
+    pub channel: usize,
 }
 
 impl Default for ExposureState {
@@ -226,6 +229,8 @@ impl Default for ExposureState {
             local: LocalState::default(),
             temperature_dirty: false,
             is_bw: false,
+            region: 0,
+            channel: 0,
         }
     }
 }
@@ -235,6 +240,8 @@ impl ExposureState {
     pub fn load(&mut self, edit: &FrameEdit) {
         let exposure = &edit.config.exposure;
         let process = &edit.config.process;
+        self.filtration.region.current = self.region.min(2);
+        self.tone.channel.current = self.channel.min(3);
         self.filtration.filter.current = bw_filter_index(exposure.bw_filter);
         let region_channels = [
             (exposure.wb_cyan, exposure.wb_magenta, exposure.wb_yellow),
@@ -360,6 +367,8 @@ impl ExposureState {
 
     /// Write the controls to the edit and return whether any value changed.
     pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        self.region = self.filtration.region.current.min(2);
+        self.channel = self.tone.channel.current.min(3);
         let exposure = &mut edit.config.exposure;
         let filter = BW_FILTERS[self.filtration.filter.current.min(BW_FILTERS.len() - 1)];
         let region = self.filtration.region.current.min(2);
@@ -773,7 +782,7 @@ mod tests {
         edit.config.exposure.highlight_magenta = 0.21;
         let mut state = ExposureState::default();
         for region in 0..3 {
-            state.filtration.region.current = region;
+            state.region = region;
             state.load(&edit);
             assert!((state.filtration.cyan.value - [0.11, 0.22, 0.33][region]).abs() < 1e-9);
             assert!((state.filtration.magenta.value - [0.07, 0.14, 0.21][region]).abs() < 1e-9);
@@ -848,4 +857,17 @@ mod tests {
         assert_eq!(state.paper.paper.current_value(), "neutral");
         assert!(!state.store(&mut edit));
     }
+}
+
+#[test]
+fn the_region_and_channel_choices_survive_a_reload() {
+    let mut state = ExposureState::default();
+    let mut edit = FrameEdit::default();
+    state.load(&edit);
+    state.filtration.region.current = 2;
+    state.tone.channel.current = 3;
+    state.store(&mut edit);
+    state.load(&edit);
+    assert_eq!(state.filtration.region.current, 2);
+    assert_eq!(state.tone.channel.current, 3);
 }
