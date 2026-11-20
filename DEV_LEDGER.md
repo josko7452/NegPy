@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 12:10 | **Last Commit:** `HEAD` desktop: store typed metadata fields
+**Last Updated:** 2026-11-20 14:10 | **Last Commit:** `ea2dde7a` export: render and save a contact sheet
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
@@ -15,12 +15,14 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Wire the Library import status and open request.
-2. [ ] Give Optics real flat-field profile actions.
-3. [ ] Drive the Scan controls from the scanner service.
-4. [ ] Wire the remaining P3 card actions.
+1. [ ] Wire the remaining P3 card actions.
+2. [ ] Map the local masks and finish the card dialogs.
 
 ## Completed (Recent)
+- `ea2dde7a` export: render and save a contact sheet.
+- `bb49cda0` scan: run the selected device from the tab.
+- `05eb456e` optics: load and edit flat-field profiles.
+- `460c4f0e` library: report an import without a profile.
 - `HEAD` desktop: store typed metadata fields.
 - `cea3ec8e` desktop: map paper and transform controls.
 - `041f7b0d` desktop: map filtration and tone channels.

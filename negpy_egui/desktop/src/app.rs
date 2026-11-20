@@ -748,6 +748,7 @@ impl NegFeApp {
                         .rail
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
                     self.rail.apply_optics_action(&mut self.edit);
+                    self.rail.apply_history_action(&mut self.edit);
                     self.open_requested_roll();
                     self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
@@ -816,6 +817,7 @@ impl NegFeApp {
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
             self.rail.apply_optics_action(&mut self.edit);
+            self.rail.apply_history_action(&mut self.edit);
             if self.rail.export.take_contact_sheet_request() {
                 self.view.contact_sheet = true;
                 self.view.view = "contact_sheet_dialog".to_string();

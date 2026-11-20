@@ -48,6 +48,10 @@ pub struct HistoryState {
     pub work_prints_open: bool,
     pub history_open: bool,
     pub load_metadata: bool,
+    pub selected_step: Option<i64>,
+    pub save_requested: bool,
+    pub restore_requested: Option<i64>,
+    pub selected_work_print: Option<String>,
 }
 
 impl Default for HistoryState {
@@ -82,6 +86,10 @@ impl HistoryState {
             work_prints_open: true,
             history_open: true,
             load_metadata: false,
+            selected_step: None,
+            save_requested: false,
+            restore_requested: None,
+            selected_work_print: None,
         }
     }
 
@@ -116,12 +124,19 @@ impl HistoryState {
                 } else {
                     for name in &self.work_prints {
                         let row = FlatRow::new(name.clone(), "");
-                        let _ = row.show(ui, 30.0);
+                        let response = row.show(ui, 30.0);
+                        if response.response.clicked() {
+                            self.selected_work_print = Some(name.clone());
+                            self.restore_requested = Some(-1);
+                            changed = true;
+                        }
                     }
                 }
                 ui.horizontal(|ui| {
-                    changed |=
-                        labeled_action(ui, "Save Work Print...", ActionRank::Normal).clicked();
+                    if labeled_action(ui, "Save Work Print...", ActionRank::Normal).clicked() {
+                        self.save_requested = true;
+                        changed = true;
+                    }
                 });
                 changed
             })
@@ -133,10 +148,16 @@ impl HistoryState {
         let (_, steps) = history.show(ui, |ui| {
             card(ui, |ui| {
                 let mut changed = false;
+                let mut restore = None;
                 for step in &self.steps {
                     if step_row(ui, step) {
                         changed = true;
+                        self.selected_step = Some(i64::from(step.number));
+                        restore = Some(i64::from(step.number));
                     }
+                }
+                if let Some(index) = restore {
+                    self.restore_requested = Some(index);
                 }
                 let _ = hint(
                     ui,
@@ -150,6 +171,29 @@ impl HistoryState {
         ui.add_space(f32::from(theme.space_sm));
         changed
     }
+
+    /// Take the one requested restore: a work print by name, or a history step by index.
+    pub fn take_restore(&mut self) -> Option<RestoreTarget> {
+        let index = self.restore_requested.take()?;
+        if index < 0 {
+            let name = self.selected_work_print.take()?;
+            Some(RestoreTarget::WorkPrint(name))
+        } else {
+            Some(RestoreTarget::Step(index))
+        }
+    }
+
+    /// Take the one Save Work Print request.
+    pub fn take_save_request(&mut self) -> bool {
+        std::mem::take(&mut self.save_requested)
+    }
+}
+
+/// The version a History click asked to reopen.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum RestoreTarget {
+    Step(i64),
+    WorkPrint(String),
 }
 
 fn step_row(ui: &mut Ui, step: &HistoryStep) -> bool {

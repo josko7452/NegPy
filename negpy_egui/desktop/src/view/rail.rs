@@ -306,6 +306,35 @@ impl RailState {
         }
     }
 
+    /// Run the selected History action against the frame's store.
+    pub fn apply_history_action(&mut self, edit: &mut FrameEdit) -> bool {
+        if self.history.take_save_request() {
+            let name = format!("Work print {}", self.history.work_prints.len() + 1);
+            let _ = edit.save_work_print(&name);
+            if let Some((profile, path)) = edit.source() {
+                let (rows, prints) = crate::frame_source::stored_history(Some(&profile), &path);
+                self.history.load_session(&rows, &prints);
+                return true;
+            }
+        }
+        match self.history.take_restore() {
+            Some(history::RestoreTarget::Step(index)) => {
+                if let Some(stored) = edit.history_step(index) {
+                    edit.restore(stored);
+                    return true;
+                }
+            }
+            Some(history::RestoreTarget::WorkPrint(name)) => {
+                if let Some(stored) = edit.work_print(&name) {
+                    edit.restore(stored);
+                    return true;
+                }
+            }
+            None => {}
+        }
+        false
+    }
+
     fn show_body(
         &mut self,
         ui: &mut Ui,
@@ -394,7 +423,9 @@ impl RailState {
                 }
             }
             "history" => {
-                self.history.show(ui);
+                if self.history.show(ui) {
+                    edit.mark_dirty();
+                }
             }
             key => {
                 let cards = frame_cards(key);
