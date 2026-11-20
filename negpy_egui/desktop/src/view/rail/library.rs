@@ -237,10 +237,12 @@ impl LibraryState {
             negpy_backend::kernel::system::text::count_of(ids.len() as i64, "roll", "rolls");
         let filter = std::mem::take(&mut self.filter);
         let imported = ids.first().cloned();
+        let open = self.open;
         *self = Self {
             filter,
             status: format!("Imported {count}."),
             imported,
+            open,
             ..Self::load(Some(&profile))
         };
         true
@@ -282,10 +284,12 @@ impl LibraryState {
             ),
         };
         let filter = std::mem::take(&mut self.filter);
+        let open = self.open;
         *self = Self {
             filter,
             status,
             imported: None,
+            open,
             ..Self::load(Some(&profile))
         };
         found > 0 || dropped > 0
@@ -770,6 +774,15 @@ mod tests {
         assert!(state.refresh());
         assert_eq!(state.rolls.len(), 2);
         assert_eq!(state.status(), "Found 1 new roll.");
+    }
+
+    #[test]
+    fn a_refresh_keeps_the_library_collapsed() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = LibraryState::load(Some(dir.path()));
+        state.open = false;
+        let _ = state.refresh();
+        assert!(!state.open);
     }
 
     #[test]
