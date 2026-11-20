@@ -55,6 +55,7 @@ pub struct ExportState {
     pub sidecars: bool,
     pub sidecar_path: String,
     pub requested: bool,
+    pub contact_sheet_requested: bool,
 }
 
 impl Default for ExportState {
@@ -111,6 +112,7 @@ impl Default for ExportState {
             sidecars: false,
             sidecar_path: String::new(),
             requested: false,
+            contact_sheet_requested: false,
         }
     }
 }
@@ -149,6 +151,11 @@ impl ExportState {
     /// Take the one Export Roll request this frame.
     pub fn take_request(&mut self) -> bool {
         std::mem::take(&mut self.requested)
+    }
+
+    /// Take the one Contact Sheet request this frame.
+    pub fn take_contact_sheet_request(&mut self) -> bool {
+        std::mem::take(&mut self.contact_sheet_requested)
     }
 
     /// Show the export presets the profile holds.
@@ -349,7 +356,12 @@ impl ExportState {
             ui,
             "Leave the folder empty to follow the export destination.",
         );
-        changed | labeled_toggle(ui, "Alongside Exports", &mut self.alongside).clicked()
+        changed
+            | labeled_toggle(ui, "Alongside Exports", &mut self.alongside).clicked()
+            | labeled_action(ui, "Contact Sheet...", ActionRank::Normal)
+                .clicked()
+                .then(|| self.contact_sheet_requested = true)
+                .is_some()
     }
 }
 
@@ -515,5 +527,13 @@ mod tests {
                 assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn the_contact_sheet_action_leaves_one_request() {
+        let mut state = ExportState::default();
+        state.contact_sheet_requested = true;
+        assert!(state.take_contact_sheet_request());
+        assert!(!state.take_contact_sheet_request());
     }
 }

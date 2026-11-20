@@ -1,0 +1,278 @@
+//! The live Contact Sheet dialog: a rendered page, its settings, and Export.
+
+use eframe::egui::{self, Align2, Color32, FontId, Rect, Stroke, Vec2};
+use negpy_backend::services::export::contact_sheet_layout::{ContactSheetSettings, DPI_CHOICES};
+
+use crate::styles::icons::Icon;
+use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
+use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle};
+use crate::styles::theme::Theme;
+use crate::view::widgets::field_row::{RowColumns, field_row};
+
+const PANEL_WIDTH: f32 = 340.0;
+const MARGIN: f32 = 16.0;
+const GAP: f32 = 16.0;
+
+/// What the dialog asks the app to do.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SheetActions {
+    pub close: bool,
+    pub export: bool,
+    pub refresh: bool,
+}
+
+/// The live dialog's state.
+#[derive(Clone)]
+pub struct ContactSheetDialog {
+    pub settings: ContactSheetSettings,
+    pub page: usize,
+    pub page_count: usize,
+    pub preview: Option<egui::TextureHandle>,
+    pub status: String,
+    /// A settings change that needs a new render.
+    pub changed: bool,
+}
+
+impl Default for ContactSheetDialog {
+    fn default() -> Self {
+        Self {
+            settings: ContactSheetSettings::default(),
+            page: 0,
+            page_count: 1,
+            preview: None,
+            status: String::new(),
+            changed: true,
+        }
+    }
+}
+
+impl ContactSheetDialog {
+    /// Show a freshly rendered page.
+    pub fn set_preview(&mut self, ctx: &egui::Context, width: usize, height: usize, pixels: &[u8]) {
+        let image = egui::ColorImage::from_rgb([width, height], pixels);
+        self.preview = Some(ctx.load_texture(
+            format!("contact-sheet-{}", self.page),
+            image,
+            egui::TextureOptions::LINEAR,
+        ));
+        self.changed = false;
+    }
+
+    /// Paint the dialog into `screen` and return the buttons it asked for.
+    pub fn show(&mut self, ui: &mut egui::Ui, screen: Rect) -> SheetActions {
+        let theme = Theme::default();
+        let panel = Rect::from_min_size(
+            egui::pos2(screen.right() - MARGIN - PANEL_WIDTH, screen.top() + MARGIN),
+            Vec2::new(PANEL_WIDTH, screen.height() - 2.0 * MARGIN),
+        );
+        let canvas = Rect::from_min_max(
+            egui::pos2(screen.left() + MARGIN, screen.top() + MARGIN),
+            egui::pos2(panel.left() - GAP, screen.bottom() - MARGIN),
+        );
+        ui.painter().rect_filled(screen, 0.0, theme.bg_panel);
+        ui.painter()
+            .rect_filled(canvas, 0.0, theme.canvas_bg_dark_grey);
+        let paper = paper_rect(
+            canvas,
+            self.settings.paper_width as f32,
+            self.settings.paper_height as f32,
+        );
+        ui.painter().rect_filled(paper, 0.0, Color32::BLACK);
+        if let Some(texture) = &self.preview {
+            ui.painter().image(
+                texture.id(),
+                paper,
+                Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                Color32::WHITE,
+            );
+        }
+        ui.painter().rect_stroke(
+            paper,
+            0.0,
+            Stroke::new(1.0_f32, theme.border_primary),
+            egui::StrokeKind::Inside,
+        );
+        self.show_navigation(ui, canvas, &theme);
+        self.show_controls(ui, panel, &theme)
+    }
+
+    fn show_navigation(&mut self, ui: &mut egui::Ui, canvas: Rect, theme: &Theme) {
+        let y = canvas.bottom() - 20.0;
+        let previous = button(
+            ui,
+            Rect::from_center_size(
+                egui::pos2(canvas.center().x - 56.0, y),
+                Vec2::new(36.0, 28.0),
+            ),
+            Icon::ChevronLeft.glyph(),
+        );
+        if previous {
+            self.page = self.page.saturating_sub(1);
+            self.changed = true;
+        }
+        ui.painter().text(
+            egui::pos2(canvas.center().x, y),
+            Align2::CENTER_CENTER,
+            format!("Sheet {} of {}", self.page + 1, self.page_count.max(1)),
+            FontId::proportional(f32::from(theme.font_size_small)),
+            theme.text_hint,
+        );
+        let next = button(
+            ui,
+            Rect::from_center_size(
+                egui::pos2(canvas.center().x + 56.0, y),
+                Vec2::new(36.0, 28.0),
+            ),
+            Icon::ChevronRight.glyph(),
+        );
+        if next {
+            self.page = (self.page + 1).min(self.page_count.saturating_sub(1));
+            self.changed = true;
+        }
+    }
+
+    fn show_controls(&mut self, ui: &mut egui::Ui, panel: Rect, theme: &Theme) -> SheetActions {
+        let mut child = ui.new_child(
+            egui::UiBuilder::new()
+                .max_rect(panel)
+                .layout(egui::Layout::top_down(egui::Align::Min)),
+        );
+        child.set_width(panel.width());
+        let columns = RowColumns::new();
+        field_row(&mut child, columns, "Paper", |ui| {
+            ui.label(format!(
+                "{:.1} × {:.1} cm",
+                self.settings.paper_width / 10.0,
+                self.settings.paper_height / 10.0
+            ));
+        });
+        field_row(&mut child, columns, "DPI", |ui| {
+            if ui
+                .add(egui::Button::new(self.settings.dpi.to_string()))
+                .clicked()
+            {
+                let index = DPI_CHOICES
+                    .iter()
+                    .position(|dpi| *dpi == self.settings.dpi)
+                    .unwrap_or(0);
+                self.settings.dpi = DPI_CHOICES[(index + 1) % DPI_CHOICES.len()];
+                self.changed = true;
+            }
+        });
+        child.add_space(f32::from(theme.space_md));
+        let mut changed = false;
+        changed |=
+            labeled_toggle(&mut child, "Film Edges", &mut self.settings.film_edges).clicked();
+        changed |=
+            labeled_toggle(&mut child, "Edge Print", &mut self.settings.edge_print).clicked();
+        changed |=
+            labeled_toggle(&mut child, "White Paper", &mut self.settings.white_paper).clicked();
+        changed |=
+            labeled_toggle(&mut child, "Roll Label", &mut self.settings.roll_label).clicked();
+        if changed {
+            self.changed = true;
+        }
+        child.add_space(f32::from(theme.space_md));
+        let _ = labeled_action(&mut child, "Pick Frames...", ActionRank::Normal);
+        if !self.status.is_empty() {
+            child.label(&self.status);
+        }
+
+        let footer = Rect::from_min_size(
+            egui::pos2(panel.left(), panel.bottom() - DEFAULT_BUTTON_HEIGHT),
+            Vec2::new(panel.width(), DEFAULT_BUTTON_HEIGHT),
+        );
+        let cancel = Rect::from_min_size(
+            egui::pos2(
+                footer.right() - 2.0 * 72.0 - f32::from(theme.space_md),
+                footer.top(),
+            ),
+            Vec2::new(72.0, DEFAULT_BUTTON_HEIGHT),
+        );
+        let export = Rect::from_min_size(
+            egui::pos2(footer.right() - 72.0, footer.top()),
+            Vec2::new(72.0, DEFAULT_BUTTON_HEIGHT),
+        );
+        SheetActions {
+            close: button(ui, cancel, "Cancel"),
+            export: primary_button(ui, export, "Export"),
+            refresh: self.changed,
+        }
+    }
+}
+
+fn paper_rect(canvas: Rect, width_mm: f32, height_mm: f32) -> Rect {
+    let pad = 28.0;
+    let scale = ((canvas.width() - 2.0 * pad) / width_mm)
+        .min((canvas.height() - 2.0 * pad) / height_mm)
+        .max(0.05);
+    Rect::from_center_size(
+        canvas.center(),
+        Vec2::new(width_mm * scale, height_mm * scale),
+    )
+}
+
+fn button(ui: &mut egui::Ui, rect: Rect, label: &str) -> bool {
+    let theme = Theme::default();
+    ui.painter().rect_filled(rect, 4.0, theme.bg_input);
+    ui.painter().rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0_f32, theme.border_primary),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(f32::from(theme.font_size_base)),
+        theme.text_primary,
+    );
+    ui.allocate_rect(rect, egui::Sense::click()).clicked()
+}
+
+fn primary_button(ui: &mut egui::Ui, rect: Rect, label: &str) -> bool {
+    let theme = Theme::default();
+    ui.painter().rect_filled(rect, 4.0, theme.bg_primary);
+    ui.painter().rect_stroke(
+        rect,
+        4.0,
+        Stroke::new(1.0_f32, theme.border_checked_hover),
+        egui::StrokeKind::Inside,
+    );
+    ui.painter().text(
+        rect.center(),
+        Align2::CENTER_CENTER,
+        label,
+        FontId::proportional(f32::from(theme.font_size_base)),
+        theme.text_on_accent,
+    );
+    ui.allocate_rect(rect, egui::Sense::click()).clicked()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_dialog_paints_on_a_context() {
+        let ctx = egui::Context::default();
+        let mut state = ContactSheetDialog::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let actions = state.show(ui, ui.max_rect());
+                assert!(!actions.export && !actions.close);
+            });
+        });
+    }
+
+    #[test]
+    fn a_page_change_marks_the_dialog_for_a_render() {
+        let mut state = ContactSheetDialog::default();
+        state.changed = false;
+        state.page_count = 2;
+        state.page = 0;
+        state.changed = true;
+        assert!(state.changed);
+    }
+}

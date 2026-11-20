@@ -170,6 +170,9 @@ pub struct NegFeApp {
     renderer: crate::render_worker::RenderWorker,
     exporter: ExportWorker,
     scanner: crate::scan_worker::ScanWorker,
+    sheets: crate::contact_sheet_worker::SheetWorker,
+    sheet: crate::view::contact_sheet_dialog::ContactSheetDialog,
+    sheet_request: u64,
     /// The config hash of the request in flight, and of the frame on the canvas.
     requested: Option<String>,
     rendered: Option<String>,
@@ -197,6 +200,9 @@ impl NegFeApp {
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
+            sheets: crate::contact_sheet_worker::SheetWorker::start(),
+            sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
+            sheet_request: 0,
             requested: None,
             rendered: None,
             generation: 0,
@@ -223,6 +229,9 @@ impl NegFeApp {
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
+            sheets: crate::contact_sheet_worker::SheetWorker::start(),
+            sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
+            sheet_request: 0,
             requested: None,
             rendered: None,
             generation: 0,
@@ -372,6 +381,96 @@ impl NegFeApp {
                 {
                     self.open_requested_roll();
                 }
+            }
+            ctx.request_repaint();
+        }
+    }
+
+    fn sheet_entries(
+        &self,
+    ) -> Vec<negpy_backend::services::export::contact_sheet_page::SheetEntry> {
+        let profile = self.profile.clone();
+        self.strip
+            .iter()
+            .filter_map(|frame| {
+                let path = frame.path.clone()?;
+                let tile = crate::frame_source::load_thumbnail(&path, profile.as_deref(), 480)?;
+                Some(
+                    negpy_backend::services::export::contact_sheet_page::SheetEntry {
+                        name: frame.name.clone(),
+                        path: path.display().to_string(),
+                        config: crate::frame_source::stored_config(profile.as_deref(), &path),
+                        tile: negpy_backend::services::export::contact_sheet::Tile::new(
+                            tile.width,
+                            tile.height,
+                            tile.pixels,
+                        ),
+                    },
+                )
+            })
+            .collect()
+    }
+
+    fn request_sheet(&mut self, ctx: &egui::Context, export: bool) {
+        self.sheet_request += 1;
+        let entries = self.sheet_entries();
+        let library = self.profile.as_ref().map(|profile| {
+            let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+            negpy_backend::features::metadata::gear::GearLibrary::load(
+                Path::new(&app.gear_dir),
+                &negpy_backend::kernel::system::paths::resource_path("gear"),
+            )
+        });
+        let output = export.then(|| {
+            let folder = if self.rail.export.sidecar_path.trim().is_empty() {
+                self.profile.as_ref().map_or_else(
+                    || std::path::PathBuf::from("."),
+                    |profile| {
+                        std::path::PathBuf::from(
+                            negpy_backend::domain::types::AppConfig::for_user_dir(profile)
+                                .default_export_dir,
+                        )
+                    },
+                )
+            } else {
+                std::path::PathBuf::from(self.rail.export.sidecar_path.trim())
+            };
+            folder.join(format!("contact_sheet_{}.png", self.sheet.page + 1))
+        });
+        let roll_name = self
+            .source
+            .as_ref()
+            .map_or_else(|| "Roll".to_string(), |source| source.name.clone());
+        self.sheets
+            .submit(crate::contact_sheet_worker::SheetRequest {
+                entries,
+                settings: self.sheet.settings.clone(),
+                roll_name,
+                library,
+                page: self.sheet.page,
+                output,
+                request_id: self.sheet_request,
+            });
+        ctx.request_repaint();
+    }
+
+    fn receive_sheets(&mut self, ctx: &egui::Context) {
+        for report in self.sheets.drain() {
+            if report.request_id != self.sheet_request {
+                continue;
+            }
+            if let Some(error) = report.error {
+                self.sheet.status = error;
+            } else if let Some(path) = report.written {
+                self.sheet.status = format!(
+                    "Wrote {}.",
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("the sheet")
+                );
+            } else {
+                self.sheet
+                    .set_preview(ctx, report.width, report.height, &report.pixels);
             }
             ctx.request_repaint();
         }
@@ -610,6 +709,7 @@ impl NegFeApp {
         self.receive_exports(ctx);
         self.receive_render(ctx);
         self.receive_scans(ctx);
+        self.receive_sheets(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -664,8 +764,21 @@ impl NegFeApp {
             egui::CentralPanel::default()
                 .frame(Frame::NONE.fill(theme.bg_panel))
                 .show(ctx, |ui| {
-                    ui.painter().rect_filled(screen, 0.0, theme.bg_panel);
-                    contact_sheet::paint(ui.painter(), screen, texture);
+                    if self.view.view == "contact_sheet_dialog" {
+                        let actions = self.sheet.show(ui, screen);
+                        if actions.refresh {
+                            self.request_sheet(ctx, false);
+                        }
+                        if actions.export {
+                            self.request_sheet(ctx, true);
+                        }
+                        if actions.close {
+                            self.view.contact_sheet = false;
+                        }
+                    } else {
+                        ui.painter().rect_filled(screen, 0.0, theme.bg_panel);
+                        contact_sheet::paint(ui.painter(), screen, texture);
+                    }
                 });
             return;
         }
@@ -703,6 +816,12 @@ impl NegFeApp {
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
             self.rail.apply_optics_action(&mut self.edit);
+            if self.rail.export.take_contact_sheet_request() {
+                self.view.contact_sheet = true;
+                self.view.view = "contact_sheet_dialog".to_string();
+                self.sheet.page = 0;
+                self.request_sheet(ctx, false);
+            }
             self.open_requested_roll();
             self.view.tab = self.rail.tab;
             if let Some(tab) = switched {

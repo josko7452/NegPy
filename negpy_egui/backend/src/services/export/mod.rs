@@ -2,6 +2,7 @@
 
 pub mod contact_sheet;
 pub mod contact_sheet_layout;
+pub mod contact_sheet_page;
 pub mod contact_sheet_roll;
 pub mod encode;
 pub mod encoders;
