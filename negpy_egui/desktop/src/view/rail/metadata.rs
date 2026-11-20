@@ -56,6 +56,13 @@ pub struct MetadataState {
     pub preset_names: Vec<String>,
     pub cards_open: std::collections::BTreeMap<String, bool>,
     gear: GearLibrary,
+    pub clear_gear: bool,
+    pub infer_gear: bool,
+    pub clear_capture: bool,
+    pub clear_exposure: bool,
+    pub clear_process: bool,
+    pub clear_scanning: bool,
+    pub folder_name: String,
 }
 
 impl Default for MetadataState {
@@ -114,11 +121,23 @@ impl Default for MetadataState {
             preset_names: Vec::new(),
             cards_open: std::collections::BTreeMap::new(),
             gear: GearLibrary::default(),
+            clear_gear: false,
+            infer_gear: false,
+            clear_capture: false,
+            clear_exposure: false,
+            clear_process: false,
+            clear_scanning: false,
+            folder_name: String::new(),
         }
     }
 }
 
 impl MetadataState {
+    /// Set the folder name the Infer action reads.
+    pub fn set_folder_name(&mut self, name: impl Into<String>) {
+        self.folder_name = name.into();
+    }
+
     /// Show the metadata presets the profile holds.
     pub fn set_presets(&mut self, names: Vec<String>) {
         self.preset_names = names;
@@ -189,6 +208,62 @@ impl MetadataState {
 
     /// Write the controls to the edit and return whether any value changed.
     pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
+        let mut action = false;
+        if self.clear_gear {
+            action = true;
+            self.clear_gear = false;
+            self.camera.current = 0;
+            self.lens.current = 0;
+            self.film_stock.current = 0;
+        }
+        if self.clear_capture {
+            action = true;
+            self.clear_capture = false;
+            self.capture_date.clear();
+            self.place.clear();
+            edit.config.metadata.gps_latitude = None;
+            edit.config.metadata.gps_longitude = None;
+        }
+        if self.clear_exposure {
+            action = true;
+            self.clear_exposure = false;
+            self.exposure.clear();
+        }
+        if self.clear_process {
+            action = true;
+            self.clear_process = false;
+            self.saved_process.current = 0;
+            self.developer.clear();
+            self.dilution.clear();
+            self.push_pull.current = push_pull_index(0);
+            self.time.clear();
+            self.temperature.clear();
+        }
+        if self.clear_scanning {
+            action = true;
+            self.clear_scanning = false;
+            self.saved_setup.current = 0;
+            self.scanning.clear();
+            self.capture_roll.clear();
+            self.capture_frame.clear();
+        }
+        if self.infer_gear {
+            action = true;
+            self.infer_gear = false;
+            let matched = negpy_backend::services::assets::gear_match::match_gear_for_folder(
+                &self.folder_name,
+                &self.gear,
+            );
+            if !matched.camera_id.is_empty() {
+                self.camera.pick(&matched.camera_id);
+            }
+            if !matched.film_stock_id.is_empty() {
+                self.film_stock.pick(&matched.film_stock_id);
+            }
+            if !matched.capture_date.is_empty() && self.capture_date.is_empty() {
+                self.capture_date = matched.capture_date;
+            }
+        }
         let config = &mut edit.config.metadata;
         let push_pull = PUSH_PULL_VALUES[self.push_pull.current.min(PUSH_PULL_VALUES.len() - 1)];
         let format =
@@ -206,9 +281,8 @@ impl MetadataState {
             developer: self.developer.clone(),
             process_dilution: self.dilution.clone(),
             push_pull,
-            process_time_seconds: parse_dev_time(&self.time).or(config.process_time_seconds),
-            process_temperature_c: parse_temperature(&self.temperature)
-                .or(config.process_temperature_c),
+            process_time_seconds: parse_dev_time(&self.time),
+            process_temperature_c: parse_temperature(&self.temperature),
             scanning_id: picked(&self.saved_setup),
             scanning: self.scanning.clone(),
             capture_roll: self.capture_roll.clone(),
@@ -220,7 +294,7 @@ impl MetadataState {
             location_country: place.2,
             ..config.clone()
         };
-        let changed = *config != next;
+        let changed = action || *config != next;
         *config = next;
         changed
     }
@@ -247,7 +321,11 @@ impl MetadataState {
                     labeled_toggle(ui, "Protect Original Metadata", &mut self.protect).clicked();
                 ui.horizontal_wrapped(|ui| {
                     let _ = hint(ui, "Written to exported files on export.");
-                    let _ = labeled_action(ui, "Description...", ActionRank::Normal);
+                    let _ = ui.add_enabled(
+                        false,
+                        egui::Button::new("Description...")
+                            .min_size(Vec2::new(0.0, DEFAULT_BUTTON_HEIGHT)),
+                    );
                 });
                 ui.add_space(f32::from(Theme::default().space_sm));
                 let _ = section_subheader(ui, "SCAN");
@@ -305,18 +383,30 @@ impl MetadataState {
                 });
                 ui.horizontal(|ui| {
                     let width = (ui.available_width() - f32::from(Theme::default().space_sm)) / 2.0;
-                    ui.add_sized(
-                        Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
-                        egui::Button::new("Clear")
-                            .fill(Theme::default().bg_input)
-                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
-                    );
-                    ui.add_sized(
-                        Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
-                        egui::Button::new("Infer from Folder Name")
-                            .fill(Theme::default().bg_input)
-                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
-                    );
+                    if ui
+                        .add_sized(
+                            Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                            egui::Button::new("Clear")
+                                .fill(Theme::default().bg_input)
+                                .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                        )
+                        .clicked()
+                    {
+                        self.clear_gear = true;
+                        gear_changed = true;
+                    }
+                    if ui
+                        .add_sized(
+                            Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                            egui::Button::new("Infer from Folder Name")
+                                .fill(Theme::default().bg_input)
+                                .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                        )
+                        .clicked()
+                    {
+                        self.infer_gear = true;
+                        gear_changed = true;
+                    }
                 });
                 gear_changed
             });
@@ -408,7 +498,10 @@ impl MetadataState {
                     ui.label("Temperature (°C)");
                     process_changed |= ui.text_edit_singleline(&mut self.temperature).changed();
                 });
-                let _ = labeled_action(ui, "Clear", ActionRank::Normal);
+                if labeled_action(ui, "Clear", ActionRank::Normal).clicked() {
+                    self.clear_process = true;
+                    process_changed = true;
+                }
                 process_changed
             });
         self.cards_open.insert("Process".to_string(), process_open);
@@ -431,9 +524,16 @@ impl MetadataState {
                 ui.horizontal(|ui| {
                     ui.label("Frame");
                     scan_changed |= ui.text_edit_singleline(&mut self.capture_frame).changed();
-                    let _ = labeled_action(ui, "Sequence...", ActionRank::Normal);
+                    let _ = ui.add_enabled(
+                        false,
+                        egui::Button::new("Sequence...")
+                            .min_size(Vec2::new(0.0, DEFAULT_BUTTON_HEIGHT)),
+                    );
                 });
-                let _ = labeled_action(ui, "Clear", ActionRank::Normal);
+                if labeled_action(ui, "Clear", ActionRank::Normal).clicked() {
+                    self.clear_scanning = true;
+                    scan_changed = true;
+                }
                 scan_changed
             });
         self.cards_open.insert("Scanning".to_string(), scan_open);
@@ -664,6 +764,39 @@ mod tests {
         assert_eq!(edit.config.metadata.capture_date, "2024-05-01");
         assert_eq!(edit.config.metadata.location_city, "Bratislava");
         assert_eq!(edit.config.metadata.exposure_override, "1/125s f/2.8");
+    }
+
+    #[test]
+    fn clear_actions_empty_their_card() {
+        let mut state = MetadataState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.capture_date = "2024".to_string();
+        state.place = "Bratislava".to_string();
+        state.exposure = "1/125".to_string();
+        state.developer = "D-76".to_string();
+        state.scanning = "DSLR".to_string();
+        state.clear_capture = true;
+        state.clear_exposure = true;
+        state.clear_process = true;
+        state.clear_scanning = true;
+        assert!(state.store(&mut edit));
+        assert!(edit.config.metadata.capture_date.is_empty());
+        assert!(edit.config.metadata.location_city.is_empty());
+        assert!(edit.config.metadata.exposure_override.is_empty());
+        assert!(edit.config.metadata.developer.is_empty());
+        assert!(edit.config.metadata.scanning.is_empty());
+    }
+
+    #[test]
+    fn infer_reads_the_folder_name() {
+        let mut state = MetadataState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.folder_name = "2024-05-01".to_string();
+        state.infer_gear = true;
+        assert!(state.store(&mut edit));
+        assert_eq!(edit.config.metadata.capture_date, "2024-05-01");
     }
 
     #[test]

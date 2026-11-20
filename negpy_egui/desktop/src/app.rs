@@ -614,6 +614,12 @@ impl NegFeApp {
         }
         self.set_frame(frame);
         self.set_edit(edit);
+        self.rail.metadata.set_folder_name(
+            path.parent()
+                .and_then(|parent| parent.file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or_default(),
+        );
         self.rail
             .optics
             .set_profile(profile.as_deref(), &self.edit.config.flatfield.profile_id);
@@ -690,6 +696,12 @@ impl NegFeApp {
         self.set_strip(strip);
         self.selected = 0;
         if let Some(path) = open_path {
+            self.rail.metadata.set_folder_name(
+                path.parent()
+                    .and_then(|parent| parent.file_name())
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+            );
             let (rows, prints) = crate::frame_source::stored_history(Some(&profile), &path);
             self.set_history(&rows, &prints);
             self.set_roll_analysis(crate::view::rail::roll_analysis::RollAnalysisState::load(
