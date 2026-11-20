@@ -42,7 +42,20 @@ pub const RAIL_WIDTH: f32 = 514.0;
 /// The search field's height in the top bar.
 pub const SEARCH_HEIGHT: f32 = 36.0;
 
+/// A count and its singular or plural noun.
+#[must_use]
+pub fn count_of(count: usize, noun: &str) -> String {
+    format!("{count} {noun}{}", if count == 1 { "" } else { "s" })
+}
+
 /// The tab state the rail shows.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ExportStatus {
+    pub message: String,
+    pub failed: bool,
+    pub running: bool,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct RailState {
     pub tab: Tab,
@@ -68,6 +81,7 @@ pub struct RailState {
     pub readouts_open: bool,
     pub collapsed_sections: std::collections::BTreeMap<String, bool>,
     pub metrics: analysis::AnalysisMetrics,
+    pub export_status: ExportStatus,
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
     pub optics: optics::OpticsState,
@@ -137,6 +151,7 @@ impl RailState {
             readouts_open: false,
             collapsed_sections: std::collections::BTreeMap::new(),
             metrics: analysis::AnalysisMetrics::default(),
+            export_status: ExportStatus::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
             optics: optics::OpticsState::default(),
@@ -228,12 +243,24 @@ impl RailState {
                     .layout(egui::Layout::top_down(egui::Align::Min)),
             );
             footer_ui.set_width(footer.width() - 2.0 * f32::from(theme.space_xl));
-            let _ = crate::view::widgets::split_action::split_action(
+            let action = crate::view::widgets::split_action::split_action(
                 &mut footer_ui,
                 Icon::Export,
                 "Export Roll",
                 crate::styles::templates::ActionRank::Primary,
             );
+            if action.main.clicked() {
+                self.export.requested = true;
+            }
+            if !self.export_status.message.is_empty() {
+                let message = if self.export_status.failed {
+                    format!("Export failed: {}", self.export_status.message)
+                } else {
+                    self.export_status.message.clone()
+                };
+                footer_ui.add_space(f32::from(theme.space_sm));
+                let _ = hint(&mut footer_ui, &message);
+            }
         }
         switched
     }

@@ -16,6 +16,8 @@ use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
 use crate::view::rail::{RAIL_WIDTH, RailState};
 use negpy_backend::session::proof::ProofSettings;
+
+use crate::export_worker::{ExportRequest, ExportWorker};
 use std::path::Path;
 
 /// The visible tab of the right rail.
@@ -165,6 +167,7 @@ pub struct NegFeApp {
     /// The open frame's linear proxy, held until the frame changes.
     source: Option<std::sync::Arc<crate::render_worker::SourceFrame>>,
     renderer: crate::render_worker::RenderWorker,
+    exporter: ExportWorker,
     /// The config hash of the request in flight, and of the frame on the canvas.
     requested: Option<String>,
     rendered: Option<String>,
@@ -190,6 +193,7 @@ impl NegFeApp {
             selected: 0,
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
+            exporter: ExportWorker::start(),
             requested: None,
             rendered: None,
             generation: 0,
@@ -214,6 +218,7 @@ impl NegFeApp {
             selected: 0,
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
+            exporter: ExportWorker::start(),
             requested: None,
             rendered: None,
             generation: 0,
@@ -292,6 +297,62 @@ impl NegFeApp {
     }
 
     /// Show the newest finished preview.
+    fn receive_exports(&mut self, ctx: &egui::Context) {
+        for report in self.exporter.drain() {
+            self.rail.export_status.running = false;
+            if report.failed.is_empty() {
+                self.rail.export_status.failed = false;
+                self.rail.export_status.message = format!(
+                    "Wrote {}.",
+                    crate::view::rail::count_of(report.written.len(), "file")
+                );
+            } else {
+                self.rail.export_status.failed = true;
+                self.rail.export_status.message = report.failed.join(" ");
+            }
+            ctx.request_repaint();
+        }
+    }
+
+    fn request_export(&mut self, ctx: &egui::Context) {
+        if !self.rail.export.take_request() {
+            return;
+        }
+        let Some(profile) = self.profile.clone() else {
+            self.rail.export_status.failed = true;
+            self.rail.export_status.message = "Open a profile first.".to_string();
+            return;
+        };
+        let mut paths = Vec::new();
+        let mut configs = Vec::new();
+        for frame in &self.strip {
+            let Some(path) = &frame.path else {
+                continue;
+            };
+            paths.push(path.clone());
+            configs.push(crate::frame_source::stored_config(Some(&profile), path));
+        }
+        if paths.is_empty() {
+            self.rail.export_status.failed = true;
+            self.rail.export_status.message = "No frames to export.".to_string();
+            return;
+        }
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        self.rail.export_status.running = true;
+        self.rail.export_status.failed = false;
+        self.rail.export_status.message = format!(
+            "Exporting {}...",
+            crate::view::rail::count_of(paths.len(), "frame")
+        );
+        self.exporter.submit(ExportRequest {
+            paths,
+            configs,
+            color_space: self.edit.config.export.export_color_space.clone(),
+            user_icc_dir: std::path::PathBuf::from(app.user_icc_dir),
+        });
+        ctx.request_repaint();
+    }
+
     fn receive_render(&mut self, ctx: &egui::Context) -> bool {
         let mut shown = false;
         for output in self.renderer.drain() {
@@ -465,6 +526,7 @@ impl NegFeApp {
 
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
+        self.receive_exports(ctx);
         self.receive_render(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
@@ -497,6 +559,7 @@ impl NegFeApp {
                         self.select_frame(index);
                     }
                     let rail_rect = rail_rect(screen);
+                    self.request_export(ctx);
                     let proof = self.proof.clone();
                     let switched = self
                         .rail
@@ -549,6 +612,7 @@ impl NegFeApp {
                 self.next_frame();
             }
             self.request_render(ctx, false);
+            self.request_export(ctx);
             let proof = self.proof.clone();
             let switched = self
                 .rail

@@ -53,6 +53,7 @@ pub struct ExportState {
     pub alongside: bool,
     pub sidecars: bool,
     pub sidecar_path: String,
+    pub requested: bool,
 }
 
 impl Default for ExportState {
@@ -107,6 +108,7 @@ impl Default for ExportState {
             alongside: false,
             sidecars: false,
             sidecar_path: String::new(),
+            requested: false,
         }
     }
 }
@@ -136,6 +138,11 @@ impl ExportState {
         self.overwrite = export.overwrite;
         self.sidecars = export.export_sidecars_enabled;
         self.sidecar_path = export.contact_sheet_output_path.clone();
+    }
+
+    /// Take the one Export Roll request this frame.
+    pub fn take_request(&mut self) -> bool {
+        std::mem::take(&mut self.requested)
     }
 
     /// Show the export presets the profile holds.
