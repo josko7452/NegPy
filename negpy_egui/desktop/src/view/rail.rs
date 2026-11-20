@@ -444,7 +444,10 @@ impl RailState {
     fn show_analysis(&mut self, ui: &mut Ui) {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Analysis").with_guide();
-        section.expanded = self.analysis_open;
+        section.expanded = *self
+            .collapsed_sections
+            .entry("Analysis".to_string())
+            .or_insert(self.analysis_open);
         let (header, _) = section.show(ui, |ui| {
             let _ = card(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -593,7 +596,8 @@ impl RailState {
             });
         });
         let _ = header;
-        self.analysis_open = section.expanded;
+        self.collapsed_sections
+            .insert("Analysis".to_string(), section.expanded);
     }
 
     fn show_setup(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
@@ -989,6 +993,25 @@ mod tests {
         });
         assert_eq!(app.rail.collapsed_sections.get("Calibration"), Some(&false));
         assert!(!app.rail.roll_analysis.open);
+    }
+
+    #[test]
+    fn the_analysis_card_keeps_its_collapsed_state() {
+        let ctx = egui::Context::default();
+        let fixture = crate::fixture::ReferenceFixture::bundled().unwrap();
+        let mut app = crate::app::NegFeApp::new(&fixture);
+        app.rail.analysis_open = false;
+        app.rail
+            .collapsed_sections
+            .insert("Analysis".to_string(), false);
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = app
+                    .rail
+                    .show(ui, ui.max_rect(), &mut app.edit, &mut app.proof);
+            });
+        });
+        assert_eq!(app.rail.collapsed_sections.get("Analysis"), Some(&false));
     }
 
     #[test]
