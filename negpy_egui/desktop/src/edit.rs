@@ -53,6 +53,28 @@ impl FrameEdit {
         }
     }
 
+    /// Read the saved edit, then apply the roll defaults the frame has not locked.
+    #[must_use]
+    pub fn load_in_roll(profile: Option<&Path>, path: &Path, roll_id: Option<&str>) -> Self {
+        let mut edit = Self::load(profile, path);
+        let (Some(profile), Some(roll_id), Some(hash)) = (
+            profile,
+            roll_id,
+            edit.source.as_ref().map(|source| source.hash.clone()),
+        ) else {
+            return edit;
+        };
+        let app = AppConfig::for_user_dir(profile);
+        let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        edit.config = negpy_backend::services::assets::rolls::resolve_roll_config(
+            &repo,
+            Some(roll_id),
+            &hash,
+            &edit.config,
+        );
+        edit
+    }
+
     /// Mark the config as changed since the last save.
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
@@ -204,5 +226,31 @@ mod tests {
         let restored = edit.history_step(0).unwrap();
         edit.restore(restored);
         assert_eq!(edit.config.exposure.density, 0.8);
+    }
+
+    #[test]
+    fn a_roll_default_reaches_the_frame_that_has_not_locked_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("frame.orf");
+        std::fs::write(&photo, b"frame").unwrap();
+        let app = AppConfig::for_user_dir(dir.path());
+        let mut repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+        repo.initialize().unwrap();
+        let roll_id = negpy_backend::services::assets::rolls::create_virtual_roll(
+            &mut repo,
+            "Roll",
+            &[photo.display().to_string()],
+        );
+        negpy_backend::services::assets::rolls::set_roll_defaults(
+            &mut repo,
+            &roll_id,
+            serde_json::json!({"luma_range_clip": 0.12, "white_point_offset": 0.03})
+                .as_object()
+                .cloned()
+                .unwrap(),
+        );
+        let edit = FrameEdit::load_in_roll(Some(dir.path()), &photo, Some(&roll_id));
+        assert!((edit.config.process.luma_range_clip - 0.12).abs() < 1e-9);
+        assert!((edit.config.process.white_point_offset - 0.03).abs() < 1e-9);
     }
 }

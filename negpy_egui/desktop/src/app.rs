@@ -658,7 +658,11 @@ impl NegFeApp {
         else {
             return false;
         };
-        let edit = FrameEdit::load(profile.as_deref(), &path);
+        let edit = FrameEdit::load_in_roll(
+            profile.as_deref(),
+            &path,
+            self.rail.roll_analysis.roll_id.as_deref(),
+        );
         let config = edit.config.clone();
         if let Ok((source, _)) =
             crate::frame_source::load_linear_source(&path, profile.as_deref(), 1600)
@@ -732,7 +736,7 @@ impl NegFeApp {
         let edit = open_path
             .as_deref()
             .map_or_else(FrameEdit::default, |path| {
-                FrameEdit::load(Some(&profile), path)
+                FrameEdit::load_in_roll(Some(&profile), path, Some(roll_id))
             });
         let edit_config = edit.config.clone();
         if let Some(path) = open_path.as_deref()
