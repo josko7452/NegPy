@@ -2,8 +2,8 @@
 **Last Updated:** 2026-11-20 12:10 | **Last Commit:** `HEAD` desktop: store typed metadata fields
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. Wiring audit is complete; close the
-shell-session gaps before adding panels or dialogs.
+Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
+adding panels or dialogs; the next ten commits are authorized.
 
 ## UX Target (supersedes pixel parity)
 The goal is the same workflow, controls, order, grouping and density as NegPy.
@@ -15,9 +15,10 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
-2. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
-3. [ ] Map the remaining local masks and card actions.
+1. [ ] Wire the Library import status and open request.
+2. [ ] Give Optics real flat-field profile actions.
+3. [ ] Drive the Scan controls from the scanner service.
+4. [ ] Wire the remaining P3 card actions.
 
 ## Completed (Recent)
 - `HEAD` desktop: store typed metadata fields.

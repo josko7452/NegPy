@@ -211,6 +211,7 @@ impl LibraryState {
     /// Import one folder as a roll, or its subfolders as separate rolls.
     pub fn import(&mut self, parent: &Path, subfolders: bool) -> bool {
         let Some(profile) = self.profile.clone() else {
+            self.status = "Open a profile first.".to_string();
             return false;
         };
         let app = AppConfig::for_user_dir(&profile);
@@ -690,6 +691,14 @@ mod tests {
         assert_eq!(state.rolls.len(), 1);
         assert_eq!(state.rolls[0].name, "w1");
         assert_eq!(state.status(), "Imported 1 roll.");
+    }
+
+    #[test]
+    fn an_import_without_a_profile_reports_the_missing_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut state = LibraryState::load(None);
+        assert!(!state.import(dir.path(), false));
+        assert_eq!(state.status(), "Open a profile first.");
     }
 
     #[test]
