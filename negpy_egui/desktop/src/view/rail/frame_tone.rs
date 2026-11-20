@@ -688,6 +688,11 @@ impl ExposureState {
 
     fn show_local(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
+        let _ = hint(
+            ui,
+            "Draw to click a shape, Oval to drag a box, Card to drag a fade edge.",
+        );
+        ui.add_space(f32::from(Theme::default().space_xs));
         ui.horizontal(|ui| {
             if labeled_toggle(ui, "Draw", &mut self.local.draw).clicked() {
                 self.local.oval = false;

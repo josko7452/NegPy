@@ -900,6 +900,7 @@ impl NegFeApp {
                     &self.edit.config.local.masks,
                     self.rail.exposure.local.draw,
                     self.rail.exposure.local.oval,
+                    self.rail.exposure.local.card,
                 ),
                 &mut self.mask_drag,
             );
@@ -1167,7 +1168,12 @@ fn paint_shell(
         Option<(usize, usize)>,
     ),
     crop_drag: &mut Option<egui::Pos2>,
-    local: (&[negpy_backend::domain::models::LocalMask], bool, bool),
+    local: (
+        &[negpy_backend::domain::models::LocalMask],
+        bool,
+        bool,
+        bool,
+    ),
     mask_drag: &mut crate::view::canvas::MaskDrag,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
@@ -1242,8 +1248,16 @@ fn paint_shell(
             crop_drag,
         );
         hits.crop = crop;
-        hits.mask =
-            crate::view::canvas::local_tool(ui, photo, local.0, local.1, mask_drag, local.2);
+        let tool = if local.1 {
+            crate::view::canvas::MaskTool::Lasso
+        } else if local.2 {
+            crate::view::canvas::MaskTool::Oval
+        } else if local.3 {
+            crate::view::canvas::MaskTool::Card
+        } else {
+            crate::view::canvas::MaskTool::Off
+        };
+        hits.mask = crate::view::canvas::local_tool(ui, photo, local.0, tool, mask_drag);
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }

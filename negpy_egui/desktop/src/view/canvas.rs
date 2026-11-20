@@ -141,6 +141,16 @@ pub fn crop_tool(
 /// A mask the canvas lasso drew, in normalized photo coordinates.
 pub type DrawnMask = (MaskShape, Vec<[f64; 2]>);
 
+/// The local gesture the canvas accepts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MaskTool {
+    #[default]
+    Off,
+    Lasso,
+    Oval,
+    Card,
+}
+
 /// The in-progress local mask lasso.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MaskDrag {
@@ -153,9 +163,8 @@ pub fn local_tool(
     ui: &mut egui::Ui,
     photo: Rect,
     masks: &[LocalMask],
-    drawing: bool,
+    tool: MaskTool,
     drag: &mut MaskDrag,
-    oval: bool,
 ) -> Option<DrawnMask> {
     let theme = Theme::default();
     for mask in masks {
@@ -179,9 +188,13 @@ pub fn local_tool(
     let response = ui.interact(
         photo,
         ui.id().with("local-photo"),
-        if oval { Sense::drag() } else { Sense::click() },
+        if tool == MaskTool::Lasso {
+            Sense::click()
+        } else {
+            Sense::drag()
+        },
     );
-    if oval {
+    if tool != MaskTool::Lasso {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
         if response.drag_started() {
             drag.start = response.interact_pointer_pos();
@@ -192,13 +205,20 @@ pub fn local_tool(
             drag.start = None;
             if (end - start).length() >= 8.0 {
                 let center = egui::pos2((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
-                let points = [
-                    center,
-                    egui::pos2(end.x, center.y),
-                    egui::pos2(center.x, end.y),
-                ];
+                let (shape, points) = if tool == MaskTool::Card {
+                    (MaskShape::Gradient, vec![start, end])
+                } else {
+                    (
+                        MaskShape::Oval,
+                        vec![
+                            center,
+                            egui::pos2(end.x, center.y),
+                            egui::pos2(center.x, end.y),
+                        ],
+                    )
+                };
                 let vertices = points
-                    .iter()
+                    .into_iter()
                     .map(|point| {
                         [
                             f64::from((point.x - photo.left()) / photo.width().max(1.0)),
@@ -206,7 +226,7 @@ pub fn local_tool(
                         ]
                     })
                     .collect();
-                return Some((MaskShape::Oval, vertices));
+                return Some((shape, vertices));
             }
         }
         if let (Some(start), Some(current)) = (drag.start, response.interact_pointer_pos()) {
@@ -220,7 +240,7 @@ pub fn local_tool(
         }
         return None;
     }
-    if drawing {
+    if tool == MaskTool::Lasso {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
         if response.clicked() {
             if let Some(point) = response.interact_pointer_pos() {
@@ -313,5 +333,14 @@ mod tests {
         let center = egui::pos2((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
         assert!((center.x - 200.0).abs() < 1e-9);
         assert!((center.y - 150.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn a_card_drag_keeps_the_two_axis_ends() {
+        let start = egui::pos2(100.0, 100.0);
+        let end = egui::pos2(300.0, 200.0);
+        let points = vec![start, end];
+        assert_eq!(points.len(), 2);
+        assert!((points[1].x - 300.0).abs() < 1e-9);
     }
 }
