@@ -621,13 +621,18 @@ impl NegFeApp {
 
     /// Keep a confirmed crop once, and leave the Draw tool.
     fn confirm_crop(&mut self, rect: [f64; 4]) {
+        self.store_crop(rect);
+        self.rail.geometry.crop.draw = false;
+        self.rail.geometry.crop.has_crop = true;
+    }
+
+    /// Write a crop rect and clear the Auto Crop state it replaces.
+    fn store_crop(&mut self, rect: [f64; 4]) {
         let geometry = &mut self.edit.config.geometry;
         geometry.crop_rect = Some(rect.to_vec());
         geometry.crop_from_auto = false;
         geometry.crop_detect_key.clear();
         geometry.autocrop_squared = false;
-        self.rail.geometry.crop.draw = false;
-        self.rail.geometry.crop.has_crop = true;
         self.edit.mark_dirty();
     }
 
@@ -907,6 +912,7 @@ impl NegFeApp {
                     &self.edit.config.geometry,
                     self.frame.as_ref().map(|frame| (frame.width, frame.height)),
                 ),
+                self.rail.geometry.crop.draw,
                 &mut self.crop_drag,
                 (
                     &self.edit.config.local.masks,
@@ -929,11 +935,11 @@ impl NegFeApp {
                 self.next_frame();
             }
             match hits.crop {
-                crate::view::canvas::CropAction::Pending(rect) => {
-                    self.edit.config.geometry.crop_rect = Some(rect.to_vec());
-                    self.edit.mark_dirty();
+                crate::view::canvas::CropAction::Pending(rect) => self.store_crop(rect),
+                crate::view::canvas::CropAction::Confirm(rect) => {
+                    self.confirm_crop(rect);
+                    self.request_render(ctx, false);
                 }
-                crate::view::canvas::CropAction::Confirm(rect) => self.confirm_crop(rect),
                 crate::view::canvas::CropAction::None => {}
             }
             if let Some((shape, vertices)) = hits.mask {
@@ -1179,6 +1185,7 @@ fn paint_shell(
         &negpy_backend::domain::models::GeometryConfig,
         Option<(usize, usize)>,
     ),
+    crop_draw: bool,
     crop_drag: &mut Option<crate::view::canvas::CropDrag>,
     local: (
         &[negpy_backend::domain::models::LocalMask],
@@ -1251,12 +1258,12 @@ fn paint_shell(
             Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             Color32::WHITE,
         );
-        let draw = geometry.0.crop_rect.is_some() && !geometry.0.crop_from_auto;
         let crop = crate::view::canvas::crop_tool(
             ui,
             photo,
             geometry.0.crop_rect.as_deref(),
-            draw,
+            crop_draw,
+            geometry.0.crop_rect.is_some() && !geometry.0.crop_from_auto,
             crop_drag,
         );
         hits.crop = crop;

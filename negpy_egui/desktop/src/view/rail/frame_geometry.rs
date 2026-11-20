@@ -141,9 +141,6 @@ impl GeometryState {
         let geometry = &edit.config.geometry;
         self.crop.auto_crop = geometry.crop_from_auto;
         self.crop.has_crop = geometry.crop_rect.is_some() && !geometry.crop_from_auto;
-        if self.crop.has_crop {
-            self.crop.draw = false;
-        }
         self.crop.mode.current = usize::from(geometry.autocrop_mode == AutocropMode::Film);
         self.crop.ratio = StepCombo::new(
             ASPECT_RATIOS
@@ -509,6 +506,16 @@ mod tests {
             edit.config.geometry.crop_rect.as_deref(),
             Some(&[0.0, 0.0, 1.0, 1.0][..])
         );
+    }
+
+    #[test]
+    fn a_released_crop_keeps_draw_on_for_confirmation() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        state.crop.draw = true;
+        edit.config.geometry.crop_rect = Some(vec![0.2, 0.3, 0.8, 0.7]);
+        state.load(&edit);
+        assert!(state.crop.draw);
     }
 
     #[test]

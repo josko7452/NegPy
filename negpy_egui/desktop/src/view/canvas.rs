@@ -109,16 +109,23 @@ pub fn crop_tool(
     ui: &mut egui::Ui,
     photo: Rect,
     rect: Option<&[f64]>,
-    draw: bool,
+    active: bool,
+    show_box: bool,
     drag: &mut Option<CropDrag>,
 ) -> CropAction {
     let theme = Theme::default();
-    let response = ui.interact(photo, ui.id().with("crop-photo"), Sense::click_and_drag());
+    let response = ui.interact(
+        photo,
+        ui.id().with("crop-photo"),
+        if active {
+            Sense::click_and_drag()
+        } else {
+            Sense::hover()
+        },
+    );
     let mut action = CropAction::None;
-    if draw {
+    if active {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
-    }
-    if draw {
         if response.drag_started()
             && let Some(start) = response.interact_pointer_pos()
         {
@@ -139,10 +146,8 @@ pub fn crop_tool(
             *drag = Some(stopped);
             action = CropAction::Pending(stopped.pending);
         }
-    }
-    if draw {
         let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
-        let editing = ui.ctx().wants_keyboard_input();
+        let editing = text_has_cursor(ui);
         if let Some(rect) = confirmed_crop(
             drag.map(|active| active.pending),
             rect,
@@ -153,8 +158,6 @@ pub fn crop_tool(
             *drag = None;
             action = CropAction::Confirm(rect);
         }
-    }
-    if draw {
         let bounds = drag
             .and_then(|active| stored_rect(photo, &active.pending))
             .or_else(|| rect.and_then(|rect| stored_rect(photo, rect)));
@@ -162,8 +165,22 @@ pub fn crop_tool(
             paint_crop_box(ui, photo, bounds, drag.is_some(), &theme);
         }
         paint_crop_hint(ui, photo, &theme);
+    } else if show_box {
+        if let Some(bounds) = rect.and_then(|rect| stored_rect(photo, rect)) {
+            paint_crop_box(ui, photo, bounds, false, &theme);
+        }
     }
     action
+}
+
+/// Whether a text field is focused and has a cursor. A focused button must not block Enter.
+fn text_has_cursor(ui: &egui::Ui) -> bool {
+    ui.ctx().memory(|memory| {
+        memory
+            .focused()
+            .and_then(|id| egui::TextEdit::load_state(ui.ctx(), id))
+            .is_some_and(|state| state.cursor.char_range().is_some())
+    })
 }
 
 fn confirmed_crop(
@@ -289,6 +306,9 @@ pub fn local_tool(
                 Stroke::new(1.5_f32, theme.mark_photo),
             ));
         }
+    }
+    if tool == MaskTool::Off {
+        return None;
     }
     let response = ui.interact(
         photo,
@@ -468,6 +488,60 @@ mod tests {
             ),
             Some(stored)
         );
+    }
+
+    #[test]
+    fn the_off_mask_tool_claims_no_drag() {
+        let ctx = egui::Context::default();
+        let mut drag = MaskDrag::default();
+        let mut shape = None;
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![
+                    egui::Event::PointerButton {
+                        pos: egui::pos2(150.0, 100.0),
+                        button: egui::PointerButton::Primary,
+                        pressed: true,
+                        modifiers: egui::Modifiers::default(),
+                    },
+                    egui::Event::PointerMoved(egui::pos2(300.0, 180.0)),
+                ],
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    shape = local_tool(ui, photo(), &[], MaskTool::Off, &mut drag);
+                });
+            },
+        );
+        assert!(shape.is_none());
+        assert!(drag.start.is_none());
+    }
+
+    #[test]
+    fn an_inactive_crop_box_stays_painted_and_does_not_start_a_drag() {
+        let ctx = egui::Context::default();
+        let mut drag = None;
+        let mut action = CropAction::None;
+        let stored = [0.25, 0.25, 0.75, 0.75];
+        let _ = ctx.run(
+            egui::RawInput {
+                events: vec![egui::Event::PointerButton {
+                    pos: egui::pos2(200.0, 100.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                }],
+                ..egui::RawInput::default()
+            },
+            |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = crop_tool(ui, photo(), Some(&stored), false, true, &mut drag);
+                });
+            },
+        );
+        assert_eq!(action, CropAction::None);
+        assert!(drag.is_none());
     }
 
     #[test]
