@@ -4,8 +4,9 @@ use negpy_backend::domain::models::{AspectRatio, GeometryConfig};
 use negpy_backend::features::geometry::logic::{
     FINE_ROTATION_LIMIT, autocrop_detection_key, crops_frame, flip_geometry_and_analysis,
     has_manual_crop, holds_own_skew, meter_detection_key, mirror_normalized_rect,
-    rotate_geometry_and_analysis, rotate_normalized_rect, rotation_drag_angle, squares_on_arm,
-    straighten_delta_degrees, toggle_flip, translate_normalized_rect,
+    reshape_normalized_rect, rotate_geometry_and_analysis, rotate_normalized_rect,
+    rotation_drag_angle, squares_on_arm, straighten_delta_degrees, toggle_flip,
+    translate_normalized_rect,
 };
 
 fn close(actual: [f64; 4], expected: [f64; 4]) {
@@ -24,6 +25,20 @@ fn translating_a_rect_keeps_its_size_and_clamps() {
         translate_normalized_rect([0.8, 0.8, 1.0, 1.0], 0.5, 0.5),
         [0.8, 0.8, 1.0, 1.0],
     );
+}
+
+#[test]
+fn a_ratio_reshape_stays_inside_the_drawn_rect() {
+    let rect = reshape_normalized_rect([0.25, 0.25, 0.75, 0.75], AspectRatio::R4x5);
+    assert!((rect[2] - rect[0] - 0.4).abs() < 1e-9);
+    assert!((rect[3] - rect[1] - 0.5).abs() < 1e-9);
+    assert!((rect[0] - 0.3).abs() < 1e-9 && (rect[1] - 0.25).abs() < 1e-9);
+}
+
+#[test]
+fn a_free_ratio_keeps_the_drawn_rect() {
+    let rect = [0.2, 0.2, 0.8, 0.6];
+    assert_eq!(reshape_normalized_rect(rect, AspectRatio::Free), rect);
 }
 
 #[test]

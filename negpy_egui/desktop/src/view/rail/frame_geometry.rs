@@ -3,7 +3,9 @@
 use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
 use negpy_backend::domain::models::geometry::{AspectRatio, AutocropMode, with_auto_crop};
-use negpy_backend::features::geometry::logic::{rotate_geometry_and_analysis, toggle_flip};
+use negpy_backend::features::geometry::logic::{
+    reshape_normalized_rect, rotate_geometry_and_analysis, toggle_flip,
+};
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
@@ -194,6 +196,15 @@ impl GeometryState {
             } else {
                 None
             };
+        }
+        if !auto_crop
+            && ratio != geometry.autocrop_ratio
+            && let Some(rect) = geometry
+                .crop_rect
+                .as_deref()
+                .and_then(|rect| <[f64; 4]>::try_from(rect).ok())
+        {
+            geometry.crop_rect = Some(reshape_normalized_rect(rect, ratio).to_vec());
         }
         let geometry = &mut edit.config.geometry;
         geometry.autocrop_mode = mode;
@@ -493,6 +504,31 @@ mod tests {
     }
 
     #[test]
+    fn a_ratio_change_reshapes_a_drawn_crop_inside_its_footprint() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        edit.config.geometry.crop_rect = Some(vec![0.25, 0.25, 0.75, 0.75]);
+        state.load(&edit);
+        state.crop.ratio.pick("4:5");
+        state.store(&mut edit);
+        let rect = edit.config.geometry.crop_rect.as_deref().expect("a rect");
+        let width = rect[2] - rect[0];
+        let height = rect[3] - rect[1];
+        assert!((width / height - 0.8).abs() < 1e-6);
+        assert!(width <= 0.5 + 1e-9 && height <= 0.5 + 1e-9);
+    }
+
+    #[test]
+    fn square_first_writes_the_autocrop_field() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.crop.square_first = true;
+        state.store(&mut edit);
+        assert!(edit.config.geometry.autocrop_square);
+    }
+
+    #[test]
     fn the_geometry_page_paints_on_a_context() {
         let ctx = egui::Context::default();
         let mut state = GeometryState::default();
@@ -522,5 +558,19 @@ mod tests {
         assert!(!state.straighten.crop_empty);
         assert!((state.straighten.fine_rotation.value - 1.5).abs() < 1e-9);
         assert!(!state.store(&mut edit));
+    }
+
+    #[test]
+    fn turning_square_first_on_orders_a_new_auto_detection() {
+        use negpy_backend::features::geometry::logic::autocrop_detection_key;
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        edit.config.geometry.crop_from_auto = true;
+        edit.config.geometry.crop_rect = Some(vec![0.1, 0.1, 0.9, 0.9]);
+        edit.config.geometry.crop_detect_key = autocrop_detection_key(&edit.config.geometry);
+        state.load(&edit);
+        state.crop.square_first = true;
+        state.store(&mut edit);
+        assert!(edit.config.geometry.autocrop_square);
     }
 }

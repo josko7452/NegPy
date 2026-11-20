@@ -533,6 +533,41 @@ pub fn translate_normalized_rect(rect: [f64; 4], dx: f64, dy: f64) -> [f64; 4] {
     [nx1, ny1, nx1 + width, ny1 + height]
 }
 
+/// Shrink a normalized rect to `ratio` around its center, inside its own footprint.
+///
+/// A ratio change only narrows the window, so the metering bounds stay valid.
+#[must_use]
+pub fn reshape_normalized_rect(
+    rect: [f64; 4],
+    ratio: crate::domain::models::AspectRatio,
+) -> [f64; 4] {
+    let [x1, y1, x2, y2] = rect;
+    let (width, height) = (x2 - x1, y2 - y1);
+    if width <= 0.0 || height <= 0.0 {
+        return rect;
+    }
+    let Some(target) = ratio_aspect(ratio) else {
+        return rect;
+    };
+    let current = width / height;
+    let (new_width, new_height) = if target >= current {
+        (width, width / target)
+    } else {
+        (height * target, height)
+    };
+    if new_width > width || new_height > height {
+        return rect;
+    }
+    let cx = (x1 + x2) / 2.0;
+    let cy = (y1 + y2) / 2.0;
+    [
+        cx - new_width / 2.0,
+        cy - new_height / 2.0,
+        cx + new_width / 2.0,
+        cy + new_height / 2.0,
+    ]
+}
+
 /// Mirror a normalized rect across the vertical or horizontal center line.
 #[must_use]
 pub fn mirror_normalized_rect(rect: [f64; 4], horizontal: bool) -> [f64; 4] {
