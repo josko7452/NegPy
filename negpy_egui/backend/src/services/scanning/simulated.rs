@@ -238,6 +238,8 @@ impl SimulatedBackend {
         let (rgb, ir) = negative(height, width, params.frame.unwrap_or(0));
         Ok(ScanResult {
             rgb,
+            width,
+            height,
             ir: params.capture_ir.then_some(ir),
             dpi: params.dpi,
             device_model: device.model.clone(),

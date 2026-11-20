@@ -1,6 +1,8 @@
 //! The Scan tab: the scanner choice over its device, quality, framing and output cards.
 
 use eframe::egui::{self, Ui, Vec2};
+use negpy_backend::services::scanning::params::ScanParams;
+use negpy_backend::services::scanning::registry;
 
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
@@ -35,6 +37,9 @@ pub struct ScanState {
     pub device_open: bool,
     pub quality_open: bool,
     pub output_open: bool,
+    pub status: String,
+    pub scan_requested: bool,
+    pub devices: Vec<negpy_backend::services::scanning::transport::ScannerDevice>,
 }
 
 impl Default for ScanState {
@@ -80,11 +85,126 @@ impl Default for ScanState {
             device_open: false,
             quality_open: false,
             output_open: true,
+            status: String::new(),
+            scan_requested: false,
+            devices: Vec::new(),
         }
     }
 }
 
 impl ScanState {
+    /// Reload the device list for the selected backend.
+    pub fn refresh_devices(&mut self) -> bool {
+        let backend = self.backend.current_value();
+        match registry::list_devices(backend) {
+            Ok(devices) => {
+                self.devices = devices;
+                self.status.clear();
+                let choices = self.devices.iter().map(device_choice).collect();
+                let selected = self.device.current_value().to_string();
+                self.device = StepCombo::new(choices);
+                if self.devices.len() > 1 {
+                    self.device.pick(&selected);
+                }
+                let selected = self.selected_device().cloned();
+                if let Some(device) = selected {
+                    self.set_capabilities(&device);
+                }
+                true
+            }
+            Err(error) => {
+                self.devices.clear();
+                self.status = error;
+                false
+            }
+        }
+    }
+
+    fn set_capabilities(
+        &mut self,
+        device: &negpy_backend::services::scanning::transport::ScannerDevice,
+    ) {
+        let caps = &device.capabilities;
+        if !caps.supported_dpi.is_empty() {
+            let selected = self.resolution.current_value().to_string();
+            self.resolution = StepCombo::new(
+                caps.supported_dpi
+                    .iter()
+                    .map(|dpi| Choice::with_id(format!("{dpi} dpi"), dpi.to_string()))
+                    .collect(),
+            );
+            self.resolution.pick(&selected);
+        }
+        if !caps.supported_depths.is_empty() {
+            let selected = self.bit_depth.current_value().to_string();
+            self.bit_depth = StepCombo::new(
+                caps.supported_depths
+                    .iter()
+                    .map(|depth| Choice::with_id(format!("{depth} bit"), depth.to_string()))
+                    .collect(),
+            );
+            self.bit_depth.pick(&selected);
+        }
+        if !caps.film_formats.is_empty() {
+            let selected = self.film_format.current_value().to_string();
+            self.film_format = StepCombo::new(
+                caps.film_formats
+                    .iter()
+                    .map(|format| Choice::with_id(format, format))
+                    .collect(),
+            );
+            self.film_format.pick(&selected);
+        }
+        self.ir = self.ir && caps.ir_channel;
+        if !caps.ir_channel {
+            self.ir = false;
+        }
+    }
+
+    /// Whether the selected device offers the choice the scan needs.
+    #[must_use]
+    pub fn selected_device(
+        &self,
+    ) -> Option<&negpy_backend::services::scanning::transport::ScannerDevice> {
+        let id = self.device.current_value();
+        self.devices.iter().find(|device| device.id == id)
+    }
+
+    /// The one scan request the Scan action asked for.
+    pub fn take_scan_request(&mut self) -> bool {
+        std::mem::take(&mut self.scan_requested)
+    }
+
+    /// Show the result of the last scan.
+    pub fn set_status(&mut self, status: impl Into<String>) {
+        self.status = status.into();
+    }
+
+    /// Build the scan parameters from the visible controls.
+    #[must_use]
+    pub fn params(&self) -> ScanParams {
+        let dpi = self
+            .resolution
+            .current_value()
+            .split_whitespace()
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(3600);
+        let depth = self
+            .bit_depth
+            .current_value()
+            .split_whitespace()
+            .next()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(16);
+        ScanParams {
+            dpi,
+            depth,
+            capture_ir: self.ir,
+            ..ScanParams::default()
+        }
+    }
+
     /// Paint the tab. Returns whether a control changed the setup.
     pub fn show(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
@@ -108,13 +228,22 @@ impl ScanState {
                     let mut changed = false;
                     ui.horizontal(|ui| {
                         ui.label("Backend");
-                        changed |= self.backend.show(ui);
+                        if self.backend.show(ui) {
+                            changed = true;
+                            self.refresh_devices();
+                        }
                     });
                     ui.horizontal(|ui| {
                         ui.label("Device");
                         changed |= self.device.show(ui);
-                        let _ = labeled_action(ui, "Refresh", ActionRank::Normal);
+                        if labeled_action(ui, "Refresh", ActionRank::Normal).clicked() {
+                            changed = true;
+                            self.refresh_devices();
+                        }
                     });
+                    if !self.status.is_empty() {
+                        let _ = hint(ui, &self.status);
+                    }
                     let _ = hint(ui, "Writes nkscan.log with Trace for a bug report.");
                     changed
                 });
@@ -211,7 +340,13 @@ impl ScanState {
         self.output_open = output_open;
         changed |= output_changed;
         ui.add_space(f32::from(theme.space_md));
-        let _ = split_action(ui, Icon::Scan, "Scan", ActionRank::Primary);
+        if split_action(ui, Icon::Scan, "Scan", ActionRank::Primary)
+            .main
+            .clicked()
+        {
+            self.scan_requested = true;
+            changed = true;
+        }
         changed
     }
 
@@ -219,11 +354,21 @@ impl ScanState {
         let mut changed = false;
         ui.horizontal(|ui| {
             ui.label("Folder");
-            let _ = ui.add_sized(
-                Vec2::new(ui.available_width() - 36.0, DEFAULT_BUTTON_HEIGHT),
-                egui::TextEdit::singleline(&mut self.output_folder).hint_text("Output folder..."),
-            );
-            let _ = labeled_action(ui, "Folder", ActionRank::Normal);
+            changed |= ui
+                .add_sized(
+                    Vec2::new(ui.available_width() - 36.0, DEFAULT_BUTTON_HEIGHT),
+                    egui::TextEdit::singleline(&mut self.output_folder)
+                        .hint_text("Output folder..."),
+                )
+                .changed();
+            if labeled_action(ui, "Folder", ActionRank::Normal).clicked()
+                && let Some(folder) = rfd::FileDialog::new()
+                    .set_title("Scan Output Folder")
+                    .pick_folder()
+            {
+                self.output_folder = folder.display().to_string();
+                changed = true;
+            }
         });
         let _ = card(ui, |ui| {
             ui.horizontal(|ui| {
@@ -232,12 +377,19 @@ impl ScanState {
             });
             ui.horizontal(|ui| {
                 ui.label("Roll");
-                let _ = ui.text_edit_singleline(&mut self.filename);
+                changed |= ui.text_edit_singleline(&mut self.filename).changed();
                 let _ = labeled_action(ui, "+", ActionRank::Normal);
             });
         });
         changed
     }
+}
+
+fn device_choice(device: &negpy_backend::services::scanning::transport::ScannerDevice) -> Choice {
+    Choice::with_id(
+        format!("{} {}", device.vendor, device.model),
+        device.id.clone(),
+    )
 }
 
 fn scan_card(
@@ -287,5 +439,47 @@ mod tests {
                 assert!(!state.show(ui));
             });
         });
+    }
+
+    #[test]
+    fn a_device_limits_the_resolution_and_depth_choices() {
+        let mut state = ScanState::default();
+        state.set_capabilities(&negpy_backend::services::scanning::simulated::devices()[0]);
+        let labels: Vec<&str> = state
+            .resolution
+            .choices
+            .iter()
+            .map(|choice| choice.label.as_str())
+            .collect();
+        assert_eq!(labels, ["1000 dpi", "2000 dpi", "4000 dpi"]);
+        assert_eq!(state.bit_depth.current_label(), "8 bit");
+    }
+
+    #[test]
+    fn the_scan_action_uses_the_visible_quality_controls() {
+        let mut state = ScanState::default();
+        state.resolution = StepCombo::new(vec![Choice::with_id("2400 dpi", "2400")]);
+        state.bit_depth = StepCombo::new(vec![Choice::with_id("8 bit", "8")]);
+        state.ir = true;
+        let params = state.params();
+        assert_eq!(params.dpi, 2400);
+        assert_eq!(params.depth, 8);
+        assert!(params.capture_ir);
+    }
+
+    #[test]
+    fn an_unavailable_backend_reports_its_hint() {
+        let mut state = ScanState::default();
+        state.backend = StepCombo::new(vec![Choice::with_id("PIEUSB", "pieusb")]);
+        assert!(!state.refresh_devices());
+        assert!(state.status.contains("PIEUSB"));
+    }
+
+    #[test]
+    fn the_scan_action_leaves_one_request() {
+        let mut state = ScanState::default();
+        state.scan_requested = true;
+        assert!(state.take_scan_request());
+        assert!(!state.take_scan_request());
     }
 }

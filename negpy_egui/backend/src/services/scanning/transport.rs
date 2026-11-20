@@ -77,12 +77,22 @@ impl std::error::Error for StripReturned {}
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScanResult {
     pub rgb: Vec<u8>,
+    pub width: usize,
+    pub height: usize,
     pub ir: Option<Vec<u8>>,
     pub dpi: i64,
     pub device_model: String,
     pub ir_valid_mask: Option<Vec<u8>>,
     pub exposures: Option<BTreeMap<String, i64>>,
     pub icc_profile: Option<Vec<u8>>,
+}
+
+impl ScanResult {
+    /// The image size the buffer holds.
+    #[must_use]
+    pub fn size(&self) -> (usize, usize) {
+        (self.width, self.height)
+    }
 }
 
 /// What a device can do.

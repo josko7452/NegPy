@@ -169,6 +169,7 @@ pub struct NegFeApp {
     source: Option<std::sync::Arc<crate::render_worker::SourceFrame>>,
     renderer: crate::render_worker::RenderWorker,
     exporter: ExportWorker,
+    scanner: crate::scan_worker::ScanWorker,
     /// The config hash of the request in flight, and of the frame on the canvas.
     requested: Option<String>,
     rendered: Option<String>,
@@ -195,6 +196,7 @@ impl NegFeApp {
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
+            scanner: crate::scan_worker::ScanWorker::start(),
             requested: None,
             rendered: None,
             generation: 0,
@@ -220,6 +222,7 @@ impl NegFeApp {
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
+            scanner: crate::scan_worker::ScanWorker::start(),
             requested: None,
             rendered: None,
             generation: 0,
@@ -319,6 +322,56 @@ impl NegFeApp {
             } else {
                 self.rail.export_status.failed = true;
                 self.rail.export_status.message = report.failed.join(" ");
+            }
+            ctx.request_repaint();
+        }
+    }
+
+    fn request_scan(&mut self, ctx: &egui::Context) {
+        if !self.rail.scan.take_scan_request() {
+            return;
+        }
+        let Some(device) = self.rail.scan.selected_device().cloned() else {
+            self.rail.scan.set_status("Select a scanner first.");
+            return;
+        };
+        let folder = if self.rail.scan.output_folder.trim().is_empty() {
+            let Some(profile) = self.profile.clone() else {
+                self.rail.scan.set_status("Open a profile first.");
+                return;
+            };
+            negpy_backend::domain::types::AppConfig::for_user_dir(&profile).default_export_dir
+        } else {
+            self.rail.scan.output_folder.clone()
+        };
+        self.rail.scan.set_status("Scanning...");
+        self.scanner.submit(crate::scan_worker::ScanRequest {
+            backend: self.rail.scan.backend.current_value().to_string(),
+            device: device.id,
+            params: self.rail.scan.params(),
+            output_folder: std::path::PathBuf::from(&folder),
+            filename_pattern: self.rail.scan.filename.clone(),
+            output_format: self.rail.scan.output_format.current_value().to_string(),
+        });
+        ctx.request_repaint();
+    }
+
+    fn receive_scans(&mut self, ctx: &egui::Context) {
+        for report in self.scanner.drain() {
+            if let Some(error) = report.error {
+                self.rail.scan.set_status(error);
+            } else if let Some(path) = report.path {
+                self.rail.scan.set_status(format!(
+                    "Wrote {}.",
+                    path.file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("the scan")
+                ));
+                if let Some(parent) = path.parent()
+                    && self.rail.library.import(parent, false)
+                {
+                    self.open_requested_roll();
+                }
             }
             ctx.request_repaint();
         }
@@ -556,6 +609,7 @@ impl NegFeApp {
     pub fn draw(&mut self, ctx: &egui::Context) {
         self.receive_exports(ctx);
         self.receive_render(ctx);
+        self.receive_scans(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -588,6 +642,7 @@ impl NegFeApp {
                     }
                     let rail_rect = rail_rect(screen);
                     self.request_export(ctx);
+                    self.request_scan(ctx);
                     let proof = self.proof.clone();
                     let switched = self
                         .rail
@@ -642,6 +697,7 @@ impl NegFeApp {
             }
             self.request_render(ctx, false);
             self.request_export(ctx);
+            self.request_scan(ctx);
             let proof = self.proof.clone();
             let switched = self
                 .rail

@@ -68,6 +68,8 @@ impl ScannerSession for FlakySession {
         }
         Ok(ScanResult {
             rgb: vec![0; 12],
+            width: 2,
+            height: 2,
             dpi: params.dpi,
             device_model: "Flaky".to_string(),
             ..ScanResult::default()
@@ -262,6 +264,8 @@ impl FrameScanner for RecordingScanner {
         }
         Ok(ScanResult {
             rgb: vec![0; 4 * 4 * 3],
+            width: 4,
+            height: 4,
             dpi: params.dpi,
             ..ScanResult::default()
         })

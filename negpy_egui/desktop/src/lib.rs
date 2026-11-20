@@ -8,5 +8,6 @@ pub mod fixture;
 pub mod frame_source;
 pub mod launch;
 pub mod render_worker;
+pub mod scan_worker;
 pub mod styles;
 pub mod view;

@@ -5,9 +5,10 @@
 //! retired id falls back instead of failing a scan. A transport that needs a system
 //! driver reports the install hint.
 
+use crate::services::scanning::service::ScannerService;
 use crate::services::scanning::settings::default_backend_id;
 use crate::services::scanning::simulated::SimulatedBackend;
-use crate::services::scanning::transport::{ScannerBackend, ScannerUnavailable};
+use crate::services::scanning::transport::{ScannerBackend, ScannerDevice, ScannerUnavailable};
 
 /// One selectable backend: its saved id and the label the dropdown shows.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +109,12 @@ pub fn create_backend(id: &str) -> Result<Box<dyn ScannerBackend>, ScannerUnavai
     }
 }
 
+/// List the devices the backend with `id` offers, or its install hint.
+pub fn list_devices(id: &str) -> Result<Vec<ScannerDevice>, String> {
+    let backend = create_backend(id).map_err(|error| error.to_string())?;
+    ScannerService::new(backend).list_devices()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +148,12 @@ mod tests {
     #[test]
     fn a_hardware_transport_names_its_install_hint() {
         let error = create_backend("plustek").err().expect("a hint").0;
+        assert!(error.contains("plustek"));
+    }
+
+    #[test]
+    fn an_unavailable_backend_reports_its_hint_from_the_device_list() {
+        let error = list_devices("plustek").err().expect("a hint");
         assert!(error.contains("plustek"));
     }
 }

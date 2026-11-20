@@ -89,6 +89,11 @@ impl ScannerService {
         width: usize,
         height: usize,
     ) -> Result<std::path::PathBuf, String> {
+        let (width, height) = if width == 0 || height == 0 {
+            result.size()
+        } else {
+            (width, height)
+        };
         let date = chrono::Local::now().format("%Y%m%d").to_string();
         write_scan(
             result,

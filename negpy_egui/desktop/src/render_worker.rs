@@ -385,12 +385,16 @@ mod tests {
         worker.submit(first);
         worker.submit(second);
         let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        let mut outputs = Vec::new();
-        while outputs.is_empty() {
-            outputs = worker.drain();
+        loop {
+            let outputs = worker.drain();
+            if let Some(output) = outputs.last()
+                && output.generation == 2
+            {
+                assert_eq!(output.config_hash, newest);
+                break;
+            }
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(outputs.last().unwrap().config_hash, newest);
     }
 }
