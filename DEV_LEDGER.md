@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 19:00 | **Last Commit:** `309c0ea2` frame: keep the region channel and retouch tool
+**Last Updated:** 2026-11-20 19:45 | **Last Commit:** `6d785001` roll: use the open frame as the baseline
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
@@ -15,8 +15,10 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Compute and save roll baseline bounds from the analysis metrics.
-2. [ ] Add canvas tools for the local masks and retouch strokes.
+1. [ ] Manual Crop: show a crop cursor and drag the crop rectangle on the canvas.
+2. [ ] Auto Crop: measure the frame and apply the detected crop rectangle.
+3. [ ] Compute and save roll baseline bounds from the analysis metrics.
+4. [ ] Add canvas tools for the local masks and retouch strokes.
 
 ## Completed (Recent)
 - `309c0ea2` frame: keep the region channel and retouch tool.
@@ -28,9 +30,6 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - `bb49cda0` scan: run the selected device from the tab.
 - `05eb456e` optics: load and edit flat-field profiles.
 - `460c4f0e` library: report an import without a profile.
-- `cea3ec8e` desktop: map paper and transform controls.
-- `041f7b0d` desktop: map filtration and tone channels.
-- `9e0eac36` desktop: map export ICC fields to the edit.
 - `1f931b2e` desktop: map geometry fields to their config.
 - `7f91674a` desktop: map exposure fields to their config.
 - `00401b1c` desktop: apply soft proof to the preview.
