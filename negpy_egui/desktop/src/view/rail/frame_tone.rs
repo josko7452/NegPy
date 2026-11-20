@@ -26,6 +26,8 @@ pub struct FiltrationState {
     pub magenta: CompactSlider,
     pub yellow: CompactSlider,
     pub cast_removal: CompactSlider,
+    pub region_yellow: [f64; 3],
+    pub region_magenta: [f64; 3],
     pub open: bool,
 }
 
@@ -49,6 +51,8 @@ impl Default for FiltrationState {
             magenta: CompactSlider::new(SliderSpec::new(-1.0, 1.0, 0.01, 2).with_default(0.0)),
             yellow: CompactSlider::new(SliderSpec::new(-1.0, 1.0, 0.01, 2).with_default(0.0)),
             cast_removal: CompactSlider::new(SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.0)),
+            region_yellow: [0.0; 3],
+            region_magenta: [0.0; 3],
             open: false,
         }
     }
@@ -68,6 +72,8 @@ pub struct ToneState {
     pub preflash: CompactSlider,
     pub diffusion: CompactSlider,
     pub aids_open: bool,
+    pub channel_trims: [[f64; 3]; 3],
+    pub channel_grade: CompactSlider,
     pub open: bool,
 }
 
@@ -101,6 +107,10 @@ impl Default for ToneState {
             preflash: CompactSlider::new(SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.0)),
             diffusion: CompactSlider::new(SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.0)),
             aids_open: true,
+            channel_trims: [[0.0; 3]; 3],
+            channel_grade: CompactSlider::new(
+                SliderSpec::new(-20.0, 20.0, 1.0, 0).with_default(0.0),
+            ),
             open: true,
         }
     }
@@ -212,15 +222,40 @@ impl ExposureState {
         let exposure = &edit.config.exposure;
         let process = &edit.config.process;
         self.filtration.filter.current = bw_filter_index(exposure.bw_filter);
+        let region_channels = [
+            (exposure.wb_cyan, exposure.wb_magenta, exposure.wb_yellow),
+            (
+                exposure.shadow_cyan,
+                exposure.shadow_magenta,
+                exposure.shadow_yellow,
+            ),
+            (
+                exposure.highlight_cyan,
+                exposure.highlight_magenta,
+                exposure.highlight_yellow,
+            ),
+        ];
+        self.filtration.region_yellow = [
+            region_channels[0].2,
+            region_channels[1].2,
+            region_channels[2].2,
+        ];
+        self.filtration.region_magenta = [
+            region_channels[0].1,
+            region_channels[1].1,
+            region_channels[2].1,
+        ];
+        let region = self.filtration.region.current.min(2);
         if !self.temperature_dirty {
-            self.filtration
-                .temperature
-                .set_value(wb_to_kelvin(exposure.wb_magenta, exposure.wb_yellow));
+            self.filtration.temperature.set_value(wb_to_kelvin(
+                region_channels[region].1,
+                region_channels[region].2,
+            ));
         }
         self.temperature_dirty = false;
-        self.filtration.cyan.set_value(exposure.wb_cyan);
-        self.filtration.magenta.set_value(exposure.wb_magenta);
-        self.filtration.yellow.set_value(exposure.wb_yellow);
+        self.filtration.cyan.set_value(region_channels[region].0);
+        self.filtration.magenta.set_value(region_channels[region].1);
+        self.filtration.yellow.set_value(region_channels[region].2);
         self.filtration
             .cast_removal
             .set_value(exposure.cast_removal_strength);
@@ -230,10 +265,39 @@ impl ExposureState {
         self.tone
             .highlights_density
             .set_value(exposure.highlight_density);
-        self.tone.shadows_grade.set_value(exposure.shadow_grade);
-        self.tone
-            .highlights_grade
-            .set_value(exposure.highlight_grade);
+        self.tone.channel_trims = [
+            [
+                exposure.grade_trim_red,
+                exposure.grade_trim_green,
+                exposure.grade_trim_blue,
+            ],
+            [
+                exposure.shadow_grade_trim_red,
+                exposure.shadow_grade_trim_green,
+                exposure.shadow_grade_trim_blue,
+            ],
+            [
+                exposure.highlight_grade_trim_red,
+                exposure.highlight_grade_trim_green,
+                exposure.highlight_grade_trim_blue,
+            ],
+        ];
+        let channel = self.tone.channel.current.saturating_sub(1).min(2);
+        self.tone.channel_grade.set_value(if channel > 0 {
+            self.tone.channel_trims[0][channel - 1]
+        } else {
+            0.0
+        });
+        self.tone.shadows_grade.set_value(if channel > 0 {
+            self.tone.channel_trims[1][channel - 1]
+        } else {
+            exposure.shadow_grade
+        });
+        self.tone.highlights_grade.set_value(if channel > 0 {
+            self.tone.channel_trims[2][channel - 1]
+        } else {
+            exposure.highlight_grade
+        });
         self.tone.preflash.set_value(exposure.preflash);
         self.tone.diffusion.set_value(exposure.diffusion);
         self.tone
@@ -274,27 +338,37 @@ impl ExposureState {
     pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
         let exposure = &mut edit.config.exposure;
         let filter = BW_FILTERS[self.filtration.filter.current.min(BW_FILTERS.len() - 1)];
+        let region = self.filtration.region.current.min(2);
         let cyan = self.filtration.cyan.value;
         let temperature = self.filtration.temperature.value;
-        let (magenta, yellow) = if !near(
-            wb_to_kelvin(self.filtration.magenta.value, self.filtration.yellow.value),
-            temperature,
-        ) {
-            kelvin_to_wb(
-                temperature,
-                self.filtration.magenta.value,
-                self.filtration.yellow.value,
-            )
-        } else {
-            (self.filtration.magenta.value, self.filtration.yellow.value)
-        };
+        let (mut magenta, mut yellow) =
+            (self.filtration.magenta.value, self.filtration.yellow.value);
+        if !near(wb_to_kelvin(magenta, yellow), temperature) {
+            (magenta, yellow) = kelvin_to_wb(temperature, magenta, yellow);
+        }
+        self.filtration.region_yellow[region] = yellow;
+        self.filtration.region_magenta[region] = magenta;
+        let region_yellow = self.filtration.region_yellow;
         let cast = self.filtration.cast_removal.value;
         let density = self.tone.print_density.value;
         let grade = self.tone.grade.value;
         let shadow_density = self.tone.shadows_density.value;
         let highlight_density = self.tone.highlights_density.value;
-        let shadow_grade = self.tone.shadows_grade.value;
-        let highlight_grade = self.tone.highlights_grade.value;
+        let channel = self.tone.channel.current.saturating_sub(1).min(2);
+        if channel > 0 {
+            self.tone.channel_trims[0][channel - 1] = self.tone.channel_grade.value;
+            self.tone.channel_trims[1][channel - 1] = self.tone.shadows_grade.value;
+            self.tone.channel_trims[2][channel - 1] = self.tone.highlights_grade.value;
+        }
+        let (shadow_grade, highlight_grade) = if channel > 0 {
+            (exposure.shadow_grade, exposure.highlight_grade)
+        } else {
+            (
+                self.tone.shadows_grade.value,
+                self.tone.highlights_grade.value,
+            )
+        };
+        let trims = self.tone.channel_trims;
         let preflash = self.tone.preflash.value;
         let diffusion = self.tone.diffusion.value;
         let contrast = self.tone.contrast_mask.value;
@@ -307,10 +381,31 @@ impl ExposureState {
         let toe_width = self.paper.toe_width.value;
         let shoulder = self.paper.shoulder.value;
         let shoulder_width = self.paper.shoulder_width.value;
+        let region_channels = match region {
+            1 => (exposure.shadow_cyan, exposure.shadow_magenta),
+            2 => (exposure.highlight_cyan, exposure.highlight_magenta),
+            _ => (exposure.wb_cyan, exposure.wb_magenta),
+        };
         let changed = exposure.bw_filter != filter
-            || !near(exposure.wb_cyan, cyan)
-            || !near(exposure.wb_magenta, magenta)
-            || !near(exposure.wb_yellow, yellow)
+            || !near(region_channels.0, cyan)
+            || !near(region_channels.1, magenta)
+            || !near(
+                match region {
+                    1 => exposure.shadow_yellow,
+                    2 => exposure.highlight_yellow,
+                    _ => exposure.wb_yellow,
+                },
+                region_yellow[region],
+            )
+            || !near(exposure.grade_trim_red, trims[0][0])
+            || !near(exposure.grade_trim_green, trims[0][1])
+            || !near(exposure.grade_trim_blue, trims[0][2])
+            || !near(exposure.shadow_grade_trim_red, trims[1][0])
+            || !near(exposure.shadow_grade_trim_green, trims[1][1])
+            || !near(exposure.shadow_grade_trim_blue, trims[1][2])
+            || !near(exposure.highlight_grade_trim_red, trims[2][0])
+            || !near(exposure.highlight_grade_trim_green, trims[2][1])
+            || !near(exposure.highlight_grade_trim_blue, trims[2][2])
             || !near(exposure.cast_removal_strength, cast)
             || !near(exposure.density, density)
             || !near(exposure.grade, grade)
@@ -331,12 +426,41 @@ impl ExposureState {
             || !near(exposure.shoulder, shoulder)
             || !near(exposure.shoulder_width, shoulder_width);
         exposure.bw_filter = filter;
-        exposure.wb_cyan = cyan;
-        exposure.wb_magenta = magenta;
-        exposure.wb_yellow = yellow;
+        match region {
+            1 => {
+                exposure.shadow_cyan = cyan;
+                exposure.shadow_magenta = magenta;
+                exposure.shadow_yellow = region_yellow[1];
+            }
+            2 => {
+                exposure.highlight_cyan = cyan;
+                exposure.highlight_magenta = magenta;
+                exposure.highlight_yellow = region_yellow[2];
+            }
+            _ => {
+                exposure.wb_cyan = cyan;
+                exposure.wb_magenta = magenta;
+                exposure.wb_yellow = region_yellow[0];
+            }
+        }
         exposure.cast_removal_strength = cast;
         exposure.density = density;
         exposure.grade = grade;
+        [
+            exposure.grade_trim_red,
+            exposure.grade_trim_green,
+            exposure.grade_trim_blue,
+        ] = trims[0];
+        [
+            exposure.shadow_grade_trim_red,
+            exposure.shadow_grade_trim_green,
+            exposure.shadow_grade_trim_blue,
+        ] = trims[1];
+        [
+            exposure.highlight_grade_trim_red,
+            exposure.highlight_grade_trim_green,
+            exposure.highlight_grade_trim_blue,
+        ] = trims[2];
         exposure.shadow_density = shadow_density;
         exposure.highlight_density = highlight_density;
         exposure.shadow_grade = shadow_grade;
@@ -394,7 +518,22 @@ impl ExposureState {
             changed |= self.filtration.filter.show(ui);
         });
         ui.add_space(f32::from(theme.space_sm));
+        let previous_region = self.filtration.region.current;
         changed |= self.filtration.region.show(ui).is_some();
+        if self.filtration.region.current != previous_region {
+            let region = self.filtration.region.current.min(2);
+            self.filtration
+                .magenta
+                .set_value(self.filtration.region_magenta[region]);
+            self.filtration
+                .yellow
+                .set_value(self.filtration.region_yellow[region]);
+            self.filtration.temperature.set_value(wb_to_kelvin(
+                self.filtration.region_magenta[region],
+                self.filtration.region_yellow[region],
+            ));
+            self.temperature_dirty = false;
+        }
         ui.add_space(f32::from(theme.space_sm));
         if self.filtration.temperature.show(ui, "Temperature").1 {
             self.temperature_dirty = true;
@@ -409,10 +548,29 @@ impl ExposureState {
 
     fn show_tone(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
+        let previous_channel = self.tone.channel.current;
         let mut changed = self.tone.channel.show(ui).is_some();
+        if self.tone.channel.current != previous_channel {
+            let channel = self.tone.channel.current.saturating_sub(1).min(2);
+            if channel > 0 {
+                self.tone
+                    .channel_grade
+                    .set_value(self.tone.channel_trims[0][channel - 1]);
+                self.tone
+                    .shadows_grade
+                    .set_value(self.tone.channel_trims[1][channel - 1]);
+                self.tone
+                    .highlights_grade
+                    .set_value(self.tone.channel_trims[2][channel - 1]);
+            }
+        }
         ui.add_space(f32::from(theme.space_sm));
         changed |= self.tone.print_density.show(ui, "Print Density").1;
-        changed |= self.tone.grade.show(ui, "ISO-R Grade").1;
+        if self.tone.channel.current == 0 {
+            changed |= self.tone.grade.show(ui, "ISO-R Grade").1;
+        } else {
+            changed |= self.tone.channel_grade.show(ui, "Grade Trim").1;
+        }
         changed |= self.tone.shadows_density.show(ui, "Shadows Density").1;
         changed |= self
             .tone
@@ -553,6 +711,51 @@ mod tests {
             ) - 7000.0)
                 .abs()
                 < 50.0
+        );
+    }
+
+    #[test]
+    fn each_region_writes_its_own_white_balance_pair() {
+        let mut edit = FrameEdit::default();
+        edit.config.exposure.wb_cyan = 0.11;
+        edit.config.exposure.shadow_cyan = 0.22;
+        edit.config.exposure.highlight_cyan = 0.33;
+        edit.config.exposure.wb_magenta = 0.07;
+        edit.config.exposure.shadow_magenta = 0.14;
+        edit.config.exposure.highlight_magenta = 0.21;
+        let mut state = ExposureState::default();
+        for region in 0..3 {
+            state.filtration.region.current = region;
+            state.load(&edit);
+            assert!((state.filtration.cyan.value - [0.11, 0.22, 0.33][region]).abs() < 1e-9);
+            assert!((state.filtration.magenta.value - [0.07, 0.14, 0.21][region]).abs() < 1e-9);
+        }
+    }
+
+    #[test]
+    fn each_channel_writes_its_grade_trims() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.tone.channel_trims = [[3.0, 4.0, 5.0], [4.0, 5.0, 6.0], [5.0, 6.0, 7.0]];
+        state.tone.channel.current = 0;
+        state.store(&mut edit);
+        let exposure = &edit.config.exposure;
+        assert_eq!(
+            [
+                exposure.grade_trim_red,
+                exposure.grade_trim_green,
+                exposure.grade_trim_blue,
+            ],
+            [3.0, 4.0, 5.0]
+        );
+        assert_eq!(
+            [
+                exposure.shadow_grade_trim_red,
+                exposure.shadow_grade_trim_green,
+                exposure.shadow_grade_trim_blue,
+            ],
+            [4.0, 5.0, 6.0]
         );
     }
 
