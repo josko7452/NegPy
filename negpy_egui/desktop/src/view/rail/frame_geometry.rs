@@ -30,6 +30,8 @@ const ASPECT_RATIOS: &[&str] = &[
 #[derive(Clone, Debug, PartialEq)]
 pub struct CropState {
     pub draw: bool,
+    /// Whether a manual crop rect is stored, independent of the Draw tool.
+    pub has_crop: bool,
     pub auto_crop: bool,
     pub ratio: StepCombo,
     pub guide: StepCombo,
@@ -44,6 +46,7 @@ impl Default for CropState {
     fn default() -> Self {
         Self {
             draw: false,
+            has_crop: false,
             auto_crop: false,
             ratio: StepCombo::new(vec![
                 Choice::with_id("Free", "Free"),
@@ -137,7 +140,10 @@ impl GeometryState {
     pub fn load(&mut self, edit: &FrameEdit) {
         let geometry = &edit.config.geometry;
         self.crop.auto_crop = geometry.crop_from_auto;
-        self.crop.draw = geometry.crop_rect.is_some() && !geometry.crop_from_auto;
+        self.crop.has_crop = geometry.crop_rect.is_some() && !geometry.crop_from_auto;
+        if self.crop.has_crop {
+            self.crop.draw = false;
+        }
         self.crop.mode.current = usize::from(geometry.autocrop_mode == AutocropMode::Film);
         self.crop.ratio = StepCombo::new(
             ASPECT_RATIOS
@@ -163,7 +169,6 @@ impl GeometryState {
     pub fn store(&mut self, edit: &mut FrameEdit) -> bool {
         let geometry = &mut edit.config.geometry;
         let auto_crop = self.crop.auto_crop;
-        let draw = self.crop.draw;
         let mode = if self.crop.mode.current == 1 {
             AutocropMode::Film
         } else {
@@ -176,7 +181,7 @@ impl GeometryState {
         let converge_v = self.straighten.tilt.value;
         let converge_h = self.straighten.swing.value;
         let mut changed = geometry.crop_from_auto != auto_crop
-            || (geometry.crop_rect.is_some() != draw)
+            || (geometry.crop_rect.is_some() != self.crop.has_crop)
             || geometry.autocrop_mode != mode
             || geometry.autocrop_ratio != ratio
             || (geometry.converge_v - converge_v).abs() > 1e-9
@@ -190,12 +195,8 @@ impl GeometryState {
             edit.config = with_auto_crop(edit.config.clone(), auto_crop);
         }
         let geometry = &mut edit.config.geometry;
-        if !auto_crop && draw != geometry.crop_rect.is_some() {
-            geometry.crop_rect = if draw {
-                Some(vec![0.0, 0.0, 1.0, 1.0])
-            } else {
-                None
-            };
+        if !auto_crop && !self.crop.has_crop {
+            geometry.crop_rect = None;
         }
         if !auto_crop
             && ratio != geometry.autocrop_ratio
@@ -205,6 +206,9 @@ impl GeometryState {
                 .and_then(|rect| <[f64; 4]>::try_from(rect).ok())
         {
             geometry.crop_rect = Some(reshape_normalized_rect(rect, ratio).to_vec());
+        }
+        if !auto_crop && self.crop.has_crop && geometry.crop_rect.is_none() {
+            geometry.crop_rect = Some(vec![0.0, 0.0, 1.0, 1.0]);
         }
         let geometry = &mut edit.config.geometry;
         geometry.autocrop_mode = mode;
@@ -254,7 +258,7 @@ impl GeometryState {
         let theme = Theme::default();
         let columns = RowColumns::new();
         let mut section = CollapsibleSection::new("Crop").with_guide();
-        section.modified = usize::from(self.crop.auto_crop || self.crop.draw);
+        section.modified = usize::from(self.crop.auto_crop || self.crop.has_crop);
         section.expanded = self.crop_open;
         let mut changed = false;
         section.show(ui, |ui| {
@@ -309,6 +313,9 @@ impl GeometryState {
                     .clicked()
                 {
                     self.crop.draw = !self.crop.draw;
+                    if self.crop.draw {
+                        self.crop.has_crop = true;
+                    }
                     changed = true;
                 }
                 if ui
@@ -495,6 +502,7 @@ mod tests {
         state.load(&edit);
         state.crop.auto_crop = false;
         state.crop.draw = true;
+        state.crop.has_crop = true;
         state.store(&mut edit);
         assert!(!edit.config.geometry.crop_from_auto);
         assert_eq!(

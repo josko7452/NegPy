@@ -91,7 +91,7 @@ pub struct ShellHits {
     pub previous: bool,
     pub next: bool,
     pub tile: Option<usize>,
-    pub crop: Option<[f64; 4]>,
+    pub crop: crate::view::canvas::CropAction,
     pub mask: Option<crate::view::canvas::DrawnMask>,
 }
 
@@ -619,6 +619,18 @@ impl NegFeApp {
         self.rail.roll_analysis.stale = true;
     }
 
+    /// Keep a confirmed crop once, and leave the Draw tool.
+    fn confirm_crop(&mut self, rect: [f64; 4]) {
+        let geometry = &mut self.edit.config.geometry;
+        geometry.crop_rect = Some(rect.to_vec());
+        geometry.crop_from_auto = false;
+        geometry.crop_detect_key.clear();
+        geometry.autocrop_squared = false;
+        self.rail.geometry.crop.draw = false;
+        self.rail.geometry.crop.has_crop = true;
+        self.edit.mark_dirty();
+    }
+
     fn proof_request(&self) -> ProofRequest {
         ProofRequest {
             enabled: self.proof.enabled,
@@ -916,13 +928,13 @@ impl NegFeApp {
             if hits.next {
                 self.next_frame();
             }
-            if let Some(rect) = hits.crop {
-                self.edit.config.geometry.crop_rect = Some(rect.to_vec());
-                self.edit.config.geometry.crop_from_auto = false;
-                self.edit.config.geometry.crop_detect_key.clear();
-                self.edit.config.geometry.autocrop_squared = false;
-                self.edit.mark_dirty();
-                ctx.request_repaint();
+            match hits.crop {
+                crate::view::canvas::CropAction::Pending(rect) => {
+                    self.edit.config.geometry.crop_rect = Some(rect.to_vec());
+                    self.edit.mark_dirty();
+                }
+                crate::view::canvas::CropAction::Confirm(rect) => self.confirm_crop(rect),
+                crate::view::canvas::CropAction::None => {}
             }
             if let Some((shape, vertices)) = hits.mask {
                 self.edit
@@ -1881,6 +1893,25 @@ mod tests {
             squared: false,
         };
         assert!(freeze_autocrop_geometry(&geometry, &resolved).is_none());
+    }
+
+    #[test]
+    fn a_confirmed_crop_writes_once_and_leaves_draw() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.geometry.crop_from_auto = true;
+        app.edit.config.geometry.crop_detect_key = "stale".to_string();
+        app.rail.geometry.crop.draw = true;
+        app.confirm_crop([0.1, 0.2, 0.8, 0.9]);
+        assert_eq!(
+            app.edit.config.geometry.crop_rect.as_deref(),
+            Some(&[0.1, 0.2, 0.8, 0.9][..])
+        );
+        assert!(!app.edit.config.geometry.crop_from_auto);
+        assert!(app.edit.config.geometry.crop_detect_key.is_empty());
+        assert!(!app.rail.geometry.crop.draw);
+        assert!(app.rail.geometry.crop.has_crop);
+        assert!(app.edit.is_dirty());
     }
 
     #[test]

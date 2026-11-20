@@ -19,6 +19,15 @@ pub struct CropDrag {
     pub pending: [f64; 4],
 }
 
+/// What the crop tool did this frame.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum CropAction {
+    #[default]
+    None,
+    Pending([f64; 4]),
+    Confirm([f64; 4]),
+}
+
 impl CropDrag {
     /// Start a drag at `start`, clamped inside `photo`.
     #[must_use]
@@ -102,9 +111,10 @@ pub fn crop_tool(
     rect: Option<&[f64]>,
     draw: bool,
     drag: &mut Option<CropDrag>,
-) -> Option<[f64; 4]> {
+) -> CropAction {
     let theme = Theme::default();
-    let response = ui.interact(photo, ui.id().with("crop-photo"), Sense::drag());
+    let response = ui.interact(photo, ui.id().with("crop-photo"), Sense::click_and_drag());
+    let mut action = CropAction::None;
     if draw {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
     }
@@ -124,8 +134,24 @@ pub fn crop_tool(
         if response.drag_stopped()
             && let (Some(active), Some(current)) = (*drag, response.interact_pointer_pos())
         {
+            let mut stopped = active;
+            stopped.update(photo, current);
+            *drag = Some(stopped);
+            action = CropAction::Pending(stopped.pending);
+        }
+    }
+    if draw {
+        let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
+        let editing = ui.ctx().wants_keyboard_input();
+        if let Some(rect) = confirmed_crop(
+            drag.map(|active| active.pending),
+            rect,
+            enter,
+            editing,
+            response.secondary_clicked(),
+        ) {
             *drag = None;
-            return Some(drag_rect(photo, active.start, current));
+            action = CropAction::Confirm(rect);
         }
     }
     if draw {
@@ -137,7 +163,22 @@ pub fn crop_tool(
         }
         paint_crop_hint(ui, photo, &theme);
     }
-    None
+    action
+}
+
+fn confirmed_crop(
+    pending: Option<[f64; 4]>,
+    stored: Option<&[f64]>,
+    enter: bool,
+    editing_text: bool,
+    secondary_click: bool,
+) -> Option<[f64; 4]> {
+    if !(enter && !editing_text) && !secondary_click {
+        return None;
+    }
+    pending
+        .filter(|rect| rect[2] - rect[0] >= MIN_CROP && rect[3] - rect[1] >= MIN_CROP)
+        .or_else(|| stored.and_then(|rect| <[f64; 4]>::try_from(rect).ok()))
 }
 
 fn paint_crop_box(ui: &egui::Ui, photo: Rect, bounds: Rect, dragging: bool, theme: &Theme) {
@@ -402,6 +443,31 @@ mod tests {
         let bounds = stored_rect(photo(), &drag.pending).expect("a pending box paints");
         assert!(bounds.width() > 0.0);
         assert!(bounds.height() > 0.0);
+    }
+
+    #[test]
+    fn enter_confirms_the_pending_crop_once() {
+        let pending = [0.2, 0.3, 0.8, 0.7];
+        assert_eq!(
+            confirmed_crop(Some(pending), None, true, false, false),
+            Some(pending)
+        );
+        assert_eq!(confirmed_crop(Some(pending), None, true, true, false), None);
+    }
+
+    #[test]
+    fn a_small_pending_crop_does_not_replace_the_stored_rect() {
+        let stored = [0.1, 0.2, 0.9, 0.8];
+        assert_eq!(
+            confirmed_crop(
+                Some([0.2, 0.2, 0.21, 0.21]),
+                Some(&stored),
+                false,
+                false,
+                true
+            ),
+            Some(stored)
+        );
     }
 
     #[test]
