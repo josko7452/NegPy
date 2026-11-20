@@ -2,7 +2,7 @@
 
 use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
-use negpy_backend::domain::models::geometry::{AutocropMode, with_auto_crop};
+use negpy_backend::domain::models::geometry::{AspectRatio, AutocropMode, with_auto_crop};
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
@@ -18,6 +18,11 @@ use crate::view::widgets::tab_header::TabSummary;
 
 /// The crop options in the Crop card.
 const TOGGLE_CHIP_HEIGHT: f32 = 40.0;
+const ASPECT_RATIOS: &[&str] = &[
+    "Free", "Original", "1:1", "3:2", "4:3", "5:4", "6:7", "7:5", "65:24", "16:9", "16:10",
+    "8.5:11", "1:1.4142", "2:3", "3:4", "4:5", "7:6", "5:7", "24:65", "9:16", "10:16", "11:8.5",
+    "1.4142:1",
+];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct CropState {
@@ -38,10 +43,11 @@ impl Default for CropState {
             draw: false,
             auto_crop: false,
             ratio: StepCombo::new(vec![
-                Choice::new("Original"),
-                Choice::new("1:1"),
-                Choice::new("4:5"),
-                Choice::new("2:3"),
+                Choice::with_id("Free", "Free"),
+                Choice::with_id("Original", "Original"),
+                Choice::with_id("1:1", "1:1"),
+                Choice::with_id("4:5", "4:5"),
+                Choice::with_id("2:3", "2:3"),
             ]),
             guide: StepCombo::new(vec![
                 Choice::new("Thirds"),
@@ -128,6 +134,15 @@ impl GeometryState {
         self.crop.auto_crop = geometry.crop_from_auto;
         self.crop.draw = geometry.crop_rect.is_some() && !geometry.crop_from_auto;
         self.crop.mode.current = usize::from(geometry.autocrop_mode == AutocropMode::Film);
+        self.crop.ratio = StepCombo::new(
+            ASPECT_RATIOS
+                .iter()
+                .map(|ratio| Choice::with_id(*ratio, *ratio))
+                .collect(),
+        );
+        self.crop.ratio.pick(geometry.autocrop_ratio.as_str());
+        self.straighten.tilt.set_value(geometry.converge_v);
+        self.straighten.swing.set_value(geometry.converge_h);
         self.crop.square_first = geometry.autocrop_square;
         self.crop.offset.set_value(geometry.autocrop_offset as f64);
         self.crop
@@ -152,9 +167,15 @@ impl GeometryState {
         let offset = self.crop.offset.value.round() as i64;
         let rebate = self.crop.rebate_trim.value / 100.0;
         let crop_to_valid = !self.straighten.crop_empty;
+        let ratio = AspectRatio::coerce(self.crop.ratio.current_value());
+        let converge_v = self.straighten.tilt.value;
+        let converge_h = self.straighten.swing.value;
         let changed = geometry.crop_from_auto != auto_crop
             || (geometry.crop_rect.is_some() != draw)
             || geometry.autocrop_mode != mode
+            || geometry.autocrop_ratio != ratio
+            || (geometry.converge_v - converge_v).abs() > 1e-9
+            || (geometry.converge_h - converge_h).abs() > 1e-9
             || geometry.autocrop_square != self.crop.square_first
             || geometry.autocrop_offset != offset
             || (geometry.autocrop_rebate_trim - rebate).abs() > 1e-9
@@ -171,6 +192,9 @@ impl GeometryState {
         }
         let geometry = &mut edit.config.geometry;
         geometry.autocrop_mode = mode;
+        geometry.autocrop_ratio = ratio;
+        geometry.converge_v = converge_v;
+        geometry.converge_h = converge_h;
         geometry.autocrop_square = self.crop.square_first;
         geometry.autocrop_offset = offset;
         geometry.autocrop_rebate_trim = rebate;
@@ -367,7 +391,7 @@ mod tests {
     #[test]
     fn the_geometry_page_names_its_two_cards() {
         let state = GeometryState::default();
-        assert_eq!(state.crop.ratio.current_label(), "Original");
+        assert_eq!(state.crop.ratio.current_label(), "Free");
         assert_eq!(state.crop.guide.current_label(), "Thirds");
         assert_eq!(state.crop.mode.current_label(), "Image only");
         assert!(state.straighten.crop_empty);
@@ -389,6 +413,20 @@ mod tests {
         assert!(!state.crop_open);
         assert!(!state.straighten_open);
         assert!(!state.crop.settings.open);
+    }
+
+    #[test]
+    fn the_crop_ratio_and_tilt_write_their_geometry_fields() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.crop.ratio.pick("4:5");
+        state.straighten.tilt.set_value(4.0);
+        state.straighten.swing.set_value(-3.0);
+        state.store(&mut edit);
+        assert_eq!(edit.config.geometry.autocrop_ratio.as_str(), "4:5");
+        assert_eq!(edit.config.geometry.converge_v, 4.0);
+        assert_eq!(edit.config.geometry.converge_h, -3.0);
     }
 
     #[test]
