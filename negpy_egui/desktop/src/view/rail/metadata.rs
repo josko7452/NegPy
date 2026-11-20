@@ -324,19 +324,24 @@ impl MetadataState {
         changed |= gear_changed;
         let (capture_open, capture_changed) =
             metadata_card(ui, "Capture", self.card_open("Capture"), |ui| {
+                let mut capture_changed = false;
                 field_row(ui, columns, "Date", |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.capture_date)
-                            .hint_text("YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DD HH:MM"),
-                    );
+                    capture_changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.capture_date)
+                                .hint_text("YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DD HH:MM"),
+                        )
+                        .changed();
                 });
                 field_row(ui, columns, "Place", |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.place)
-                            .hint_text("Pick on a map, or paste coordinates"),
-                    );
+                    capture_changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.place)
+                                .hint_text("Pick on a map, or paste coordinates"),
+                        )
+                        .changed();
                 });
-                false
+                capture_changed
             });
         self.cards_open.insert("Capture".to_string(), capture_open);
         changed |= capture_changed;
@@ -349,8 +354,11 @@ impl MetadataState {
                     ui,
                     "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.",
                 );
+                let mut exposure_changed = false;
                 field_row(ui, columns, "Exposure", |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.exposure).hint_text("—"));
+                    exposure_changed |= ui
+                        .add(egui::TextEdit::singleline(&mut self.exposure).hint_text("—"))
+                        .changed();
                     let _ = ui.add_sized(
                         Vec2::splat(DEFAULT_BUTTON_HEIGHT),
                         egui::Button::new("🔒")
@@ -358,7 +366,7 @@ impl MetadataState {
                             .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
                     );
                 });
-                false
+                exposure_changed
             },
         );
         self.cards_open
@@ -382,11 +390,11 @@ impl MetadataState {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Developer");
-                    let _ = ui.text_edit_singleline(&mut self.developer);
+                    process_changed |= ui.text_edit_singleline(&mut self.developer).changed();
                 });
                 ui.horizontal(|ui| {
                     ui.label("Dilution");
-                    let _ = ui.text_edit_singleline(&mut self.dilution);
+                    process_changed |= ui.text_edit_singleline(&mut self.dilution).changed();
                 });
                 ui.horizontal(|ui| {
                     ui.label("Push / Pull");
@@ -394,11 +402,11 @@ impl MetadataState {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Time");
-                    let _ = ui.text_edit_singleline(&mut self.time);
+                    process_changed |= ui.text_edit_singleline(&mut self.time).changed();
                 });
                 ui.horizontal(|ui| {
                     ui.label("Temperature (°C)");
-                    let _ = ui.text_edit_singleline(&mut self.temperature);
+                    process_changed |= ui.text_edit_singleline(&mut self.temperature).changed();
                 });
                 let _ = labeled_action(ui, "Clear", ActionRank::Normal);
                 process_changed
@@ -414,15 +422,15 @@ impl MetadataState {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Scanning");
-                    let _ = ui.text_edit_singleline(&mut self.scanning);
+                    scan_changed |= ui.text_edit_singleline(&mut self.scanning).changed();
                 });
                 ui.horizontal(|ui| {
                     ui.label("Roll");
-                    let _ = ui.text_edit_singleline(&mut self.capture_roll);
+                    scan_changed |= ui.text_edit_singleline(&mut self.capture_roll).changed();
                 });
                 ui.horizontal(|ui| {
                     ui.label("Frame");
-                    let _ = ui.text_edit_singleline(&mut self.capture_frame);
+                    scan_changed |= ui.text_edit_singleline(&mut self.capture_frame).changed();
                     let _ = labeled_action(ui, "Sequence...", ActionRank::Normal);
                 });
                 let _ = labeled_action(ui, "Clear", ActionRank::Normal);
@@ -642,6 +650,20 @@ mod tests {
         let mut state = MetadataState::default();
         state.set_presets(vec!["Golden Hour".to_string()]);
         assert_eq!(state.preset_names, ["Golden Hour"]);
+    }
+
+    #[test]
+    fn typed_capture_fields_are_stored() {
+        let mut state = MetadataState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.capture_date = "2024-05-01".to_string();
+        state.place = "Bratislava".to_string();
+        state.exposure = "1/125s f/2.8".to_string();
+        assert!(state.store(&mut edit));
+        assert_eq!(edit.config.metadata.capture_date, "2024-05-01");
+        assert_eq!(edit.config.metadata.location_city, "Bratislava");
+        assert_eq!(edit.config.metadata.exposure_override, "1/125s f/2.8");
     }
 
     #[test]

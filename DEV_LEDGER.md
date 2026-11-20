@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 11:30 | **Last Commit:** `pending` desktop: map paper and transform controls
+**Last Updated:** 2026-11-20 12:10 | **Last Commit:** `HEAD` desktop: store typed metadata fields
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Wiring audit is complete; close the
@@ -17,10 +17,11 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 ## Next Steps (Ordered)
 1. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
 2. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
-3. [ ] Map the remaining P3b fields: metadata saves and local masks.
+3. [ ] Map the remaining local masks and card actions.
 
 ## Completed (Recent)
-- `pending` desktop: map paper and transform controls.
+- `HEAD` desktop: store typed metadata fields.
+- `cea3ec8e` desktop: map paper and transform controls.
 - `041f7b0d` desktop: map filtration and tone channels.
 - `9e0eac36` desktop: map export ICC fields to the edit.
 - `1f931b2e` desktop: map geometry fields to their config.
@@ -29,20 +30,6 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - `cb46520f` desktop: export the roll on a worker.
 - `e9f27f85` desktop: keep card folds in page state.
 - `c64741b4` desktop: feed render metrics into Analysis.
-- `2cc2b7c9` desktop: render edits on a worker.
-- `4a39af15` desktop: select frames from the strip.
-- `66a42371` desktop: paint the empty workspace.
-- `1dacaff8` desktop: open the Library roll.
-- `2f578cec` desktop: resolve the launch profile.
-- `7b6f6e14` desktop: justify the Light Table rows.
-- `96c75264` desktop: refresh the Library rolls.
-- `d1bec40b` desktop: sort the Library rows.
-- `89192452` desktop: wire the Library Import menu.
-- `5bfe2236` backend: store the proof condition in session settings.
-- `c2bb6ed8` backend: keep the proof condition out of the export edit.
-- `9be68fcc` desktop: load the saved export and metadata presets.
-- `7d7efc33` desktop: bind the Export proof and sidecars.
-- `99a8313a` desktop: bind the Export file page to the edit.
 
 ## Verification
 - `cargo test --workspace`, `cargo check --workspace` and
