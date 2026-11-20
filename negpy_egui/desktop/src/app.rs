@@ -548,6 +548,7 @@ impl NegFeApp {
             }
             self.rendered = Some(output.config_hash);
             self.freeze_autocrop(&output.metrics);
+            self.store_measured_bounds(&output.metrics);
             self.rail
                 .set_metrics(crate::view::rail::analysis::AnalysisMetrics::from_values(
                     &self.edit.config,
@@ -565,6 +566,34 @@ impl NegFeApp {
             ctx.request_repaint();
         }
         shown
+    }
+
+    /// Store the per-frame bounds the render measured, unless the frame rides the roll.
+    fn store_measured_bounds(
+        &mut self,
+        metrics: &std::collections::BTreeMap<String, serde_json::Value>,
+    ) {
+        if self.edit.config.process.lock_bounds
+            || (self.edit.config.process.use_luma_average
+                && self.edit.config.process.use_color_average)
+        {
+            return;
+        }
+        let Some(bounds) = metrics.get("final_bounds").and_then(|value| {
+            serde_json::from_value::<
+                negpy_backend::features::exposure::normalization::LogNegativeBounds,
+            >(value.clone())
+            .ok()
+        }) else {
+            return;
+        };
+        let process = &mut self.edit.config.process;
+        if process.local_floors == bounds.floors && process.local_ceils == bounds.ceils {
+            return;
+        }
+        process.local_floors = bounds.floors;
+        process.local_ceils = bounds.ceils;
+        self.edit.mark_dirty();
     }
 
     /// Store the crop a render found, unless the frame moved to another crop meanwhile.
@@ -1768,5 +1797,40 @@ mod tests {
             squared: false,
         };
         assert!(freeze_autocrop_geometry(&geometry, &resolved).is_none());
+    }
+
+    #[test]
+    fn a_measured_bounds_pair_reaches_the_frame_process() {
+        use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.process.local_floors = [0.0; 3];
+        app.edit.config.process.local_ceils = [0.0; 3];
+        let bounds = LogNegativeBounds::new([0.1, 0.2, 0.3], [0.7, 0.8, 0.9]);
+        let mut metrics = std::collections::BTreeMap::new();
+        metrics.insert(
+            "final_bounds".to_string(),
+            serde_json::to_value(bounds).unwrap(),
+        );
+        app.store_measured_bounds(&metrics);
+        assert_eq!(app.edit.config.process.local_floors, [0.1, 0.2, 0.3]);
+        assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_frame_locked_to_its_own_bounds_keeps_them() {
+        use negpy_backend::features::exposure::normalization::LogNegativeBounds;
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.process.lock_bounds = true;
+        app.edit.config.process.local_floors = [0.4; 3];
+        let bounds = LogNegativeBounds::new([0.1, 0.2, 0.3], [0.7, 0.8, 0.9]);
+        let mut metrics = std::collections::BTreeMap::new();
+        metrics.insert(
+            "final_bounds".to_string(),
+            serde_json::to_value(bounds).unwrap(),
+        );
+        app.store_measured_bounds(&metrics);
+        assert_eq!(app.edit.config.process.local_floors, [0.4; 3]);
     }
 }
