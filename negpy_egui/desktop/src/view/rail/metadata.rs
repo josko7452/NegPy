@@ -54,6 +54,7 @@ pub struct MetadataState {
     pub capture_frame: String,
     pub presets: Vec<String>,
     pub preset_names: Vec<String>,
+    pub cards_open: std::collections::BTreeMap<String, bool>,
     gear: GearLibrary,
 }
 
@@ -111,6 +112,7 @@ impl Default for MetadataState {
             capture_frame: String::new(),
             presets: Vec::new(),
             preset_names: Vec::new(),
+            cards_open: std::collections::BTreeMap::new(),
             gear: GearLibrary::default(),
         }
     }
@@ -288,142 +290,152 @@ impl MetadataState {
     fn show_shot(&mut self, ui: &mut Ui) -> bool {
         let mut changed = TabSummary::new(3).show(ui) != Default::default();
         let columns = RowColumns::new();
-        let (gear_open, gear_changed) = metadata_card(ui, "Analog Gear", true, |ui| {
-            let _ = hint(ui, "Searches the gear that you declared as your own.");
-            let mut gear_changed = false;
-            field_row(ui, columns, "Camera", |ui| {
-                gear_changed |= self.camera.show(ui);
+        let (gear_open, gear_changed) =
+            metadata_card(ui, "Analog Gear", self.card_open("Analog Gear"), |ui| {
+                let _ = hint(ui, "Searches the gear that you declared as your own.");
+                let mut gear_changed = false;
+                field_row(ui, columns, "Camera", |ui| {
+                    gear_changed |= self.camera.show(ui);
+                });
+                field_row(ui, columns, "Lens", |ui| {
+                    gear_changed |= self.lens.show(ui);
+                });
+                field_row(ui, columns, "Film stock", |ui| {
+                    gear_changed |= self.film_stock.show(ui);
+                });
+                ui.horizontal(|ui| {
+                    let width = (ui.available_width() - f32::from(Theme::default().space_sm)) / 2.0;
+                    ui.add_sized(
+                        Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                        egui::Button::new("Clear")
+                            .fill(Theme::default().bg_input)
+                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                    );
+                    ui.add_sized(
+                        Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
+                        egui::Button::new("Infer from Folder Name")
+                            .fill(Theme::default().bg_input)
+                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                    );
+                });
+                gear_changed
             });
-            field_row(ui, columns, "Lens", |ui| {
-                gear_changed |= self.lens.show(ui);
-            });
-            field_row(ui, columns, "Film stock", |ui| {
-                gear_changed |= self.film_stock.show(ui);
-            });
-            ui.horizontal(|ui| {
-                let width = (ui.available_width() - f32::from(Theme::default().space_sm)) / 2.0;
-                ui.add_sized(
-                    Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
-                    egui::Button::new("Clear")
-                        .fill(Theme::default().bg_input)
-                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
-                );
-                ui.add_sized(
-                    Vec2::new(width, DEFAULT_BUTTON_HEIGHT),
-                    egui::Button::new("Infer from Folder Name")
-                        .fill(Theme::default().bg_input)
-                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
-                );
-            });
-            gear_changed
-        });
-        let _ = gear_open;
+        self.cards_open.insert("Analog Gear".to_string(), gear_open);
         changed |= gear_changed;
-        let (capture_open, capture_changed) = metadata_card(ui, "Capture", true, |ui| {
-            field_row(ui, columns, "Date", |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.capture_date)
-                        .hint_text("YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DD HH:MM"),
-                );
+        let (capture_open, capture_changed) =
+            metadata_card(ui, "Capture", self.card_open("Capture"), |ui| {
+                field_row(ui, columns, "Date", |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.capture_date)
+                            .hint_text("YYYY, YYYY-MM, YYYY-MM-DD or YYYY-MM-DD HH:MM"),
+                    );
+                });
+                field_row(ui, columns, "Place", |ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.place)
+                            .hint_text("Pick on a map, or paste coordinates"),
+                    );
+                });
+                false
             });
-            field_row(ui, columns, "Place", |ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.place)
-                        .hint_text("Pick on a map, or paste coordinates"),
-                );
-            });
-            false
-        });
-        let _ = capture_open;
+        self.cards_open.insert("Capture".to_string(), capture_open);
         changed |= capture_changed;
-        let (exposure_open, exposure_changed) = metadata_card(ui, "Exposure", true, |ui| {
-            let _ = hint(
-                ui,
-                "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.",
-            );
-            field_row(ui, columns, "Exposure", |ui| {
-                ui.add(egui::TextEdit::singleline(&mut self.exposure).hint_text("—"));
-                let _ = ui.add_sized(
-                    Vec2::splat(DEFAULT_BUTTON_HEIGHT),
-                    egui::Button::new("🔒")
-                        .fill(Theme::default().bg_input)
-                        .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+        let (exposure_open, exposure_changed) = metadata_card(
+            ui,
+            "Exposure",
+            self.card_open("Exposure"),
+            |ui| {
+                let _ = hint(
+                    ui,
+                    "The exposure of the original shot, if you know it. Click the lock to type free text such as 1/125s f/2.8 ISO 400 -1/3ev.",
                 );
-            });
-            false
-        });
-        let _ = exposure_open;
+                field_row(ui, columns, "Exposure", |ui| {
+                    ui.add(egui::TextEdit::singleline(&mut self.exposure).hint_text("—"));
+                    let _ = ui.add_sized(
+                        Vec2::splat(DEFAULT_BUTTON_HEIGHT),
+                        egui::Button::new("🔒")
+                            .fill(Theme::default().bg_input)
+                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                    );
+                });
+                false
+            },
+        );
+        self.cards_open
+            .insert("Exposure".to_string(), exposure_open);
         changed |= exposure_changed;
         changed
     }
 
     fn show_process(&mut self, ui: &mut Ui) -> bool {
         let mut changed = TabSummary::new(2).show(ui) != Default::default();
-        let (process_open, process_changed) = metadata_card(ui, "Process", true, |ui| {
-            let mut process_changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Saved process");
-                process_changed |= self.saved_process.show(ui);
+        let (process_open, process_changed) =
+            metadata_card(ui, "Process", self.card_open("Process"), |ui| {
+                let mut process_changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Saved process");
+                    process_changed |= self.saved_process.show(ui);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Film format");
+                    process_changed |= self.film_format.show(ui);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Developer");
+                    let _ = ui.text_edit_singleline(&mut self.developer);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Dilution");
+                    let _ = ui.text_edit_singleline(&mut self.dilution);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Push / Pull");
+                    process_changed |= self.push_pull.show(ui);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Time");
+                    let _ = ui.text_edit_singleline(&mut self.time);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Temperature (°C)");
+                    let _ = ui.text_edit_singleline(&mut self.temperature);
+                });
+                let _ = labeled_action(ui, "Clear", ActionRank::Normal);
+                process_changed
             });
-            ui.horizontal(|ui| {
-                ui.label("Film format");
-                process_changed |= self.film_format.show(ui);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Developer");
-                let _ = ui.text_edit_singleline(&mut self.developer);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Dilution");
-                let _ = ui.text_edit_singleline(&mut self.dilution);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Push / Pull");
-                process_changed |= self.push_pull.show(ui);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Time");
-                let _ = ui.text_edit_singleline(&mut self.time);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Temperature (°C)");
-                let _ = ui.text_edit_singleline(&mut self.temperature);
-            });
-            let _ = labeled_action(ui, "Clear", ActionRank::Normal);
-            process_changed
-        });
-        let _ = process_open;
+        self.cards_open.insert("Process".to_string(), process_open);
         changed |= process_changed;
-        let (scan_open, scan_changed) = metadata_card(ui, "Scanning", true, |ui| {
-            let mut scan_changed = false;
-            ui.horizontal(|ui| {
-                ui.label("Saved setup");
-                scan_changed |= self.saved_setup.show(ui);
+        let (scan_open, scan_changed) =
+            metadata_card(ui, "Scanning", self.card_open("Scanning"), |ui| {
+                let mut scan_changed = false;
+                ui.horizontal(|ui| {
+                    ui.label("Saved setup");
+                    scan_changed |= self.saved_setup.show(ui);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Scanning");
+                    let _ = ui.text_edit_singleline(&mut self.scanning);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Roll");
+                    let _ = ui.text_edit_singleline(&mut self.capture_roll);
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Frame");
+                    let _ = ui.text_edit_singleline(&mut self.capture_frame);
+                    let _ = labeled_action(ui, "Sequence...", ActionRank::Normal);
+                });
+                let _ = labeled_action(ui, "Clear", ActionRank::Normal);
+                scan_changed
             });
-            ui.horizontal(|ui| {
-                ui.label("Scanning");
-                let _ = ui.text_edit_singleline(&mut self.scanning);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Roll");
-                let _ = ui.text_edit_singleline(&mut self.capture_roll);
-            });
-            ui.horizontal(|ui| {
-                ui.label("Frame");
-                let _ = ui.text_edit_singleline(&mut self.capture_frame);
-                let _ = labeled_action(ui, "Sequence...", ActionRank::Normal);
-            });
-            let _ = labeled_action(ui, "Clear", ActionRank::Normal);
-            scan_changed
-        });
-        let _ = scan_open;
+        self.cards_open.insert("Scanning".to_string(), scan_open);
         changed |= scan_changed;
         changed
     }
 
     fn show_presets(&mut self, ui: &mut Ui) -> bool {
         let _ = TabSummary::new(1).show(ui);
-        metadata_card(ui, "Presets", true, |ui| {
+        let (open, changed) = metadata_card(ui, "Presets", self.card_open("Presets"), |ui| {
             if self.preset_names.is_empty() {
                 let _ = hint(ui, "No presets yet.");
             } else {
@@ -432,13 +444,14 @@ impl MetadataState {
                 }
             }
             false
-        })
-        .1
+        });
+        self.cards_open.insert("Presets".to_string(), open);
+        changed
     }
 
     fn show_gear(&mut self, ui: &mut Ui) -> bool {
         let _ = TabSummary::new(1).show(ui);
-        metadata_card(ui, "My Gear", true, |ui| {
+        let (open, changed) = metadata_card(ui, "My Gear", self.card_open("My Gear"), |ui| {
             let _ = hint(ui, "The gear that you declared as your own.");
             for item in ["Camera", "Lens", "Film stock", "Process", "Scan setup"] {
                 let (row, _) = ui.allocate_exact_size(
@@ -460,8 +473,13 @@ impl MetadataState {
                 );
             }
             false
-        })
-        .1
+        });
+        self.cards_open.insert("My Gear".to_string(), open);
+        changed
+    }
+
+    fn card_open(&self, title: &str) -> bool {
+        self.cards_open.get(title).copied().unwrap_or(true)
     }
 }
 

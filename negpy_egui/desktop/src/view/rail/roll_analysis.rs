@@ -13,6 +13,7 @@ pub struct RollAnalysisState {
     pub roll_name: Option<String>,
     pub baseline: String,
     pub stale: bool,
+    pub open: bool,
 }
 
 impl RollAnalysisState {
@@ -56,6 +57,7 @@ impl RollAnalysisState {
             roll_name,
             baseline: rolls::baseline_label(repo, process),
             stale: rolls::frame_baseline_stale(repo, process),
+            open: true,
         };
         if state.roll_name.is_none() {
             state.roll_name = rolls::saved_rolls(repo)
@@ -79,6 +81,7 @@ impl RollAnalysisState {
             roll_name: process.roll_name.clone(),
             baseline: rolls::baseline_label_without_repo(process),
             stale: false,
+            open: true,
         }
     }
 

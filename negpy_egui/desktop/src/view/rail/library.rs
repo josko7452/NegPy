@@ -70,6 +70,7 @@ pub struct LibraryState {
     pub rolls: Vec<RollRow>,
     pub filter: String,
     pub sort: SortButton,
+    pub open: bool,
     profile: Option<PathBuf>,
     status: String,
     imported: Option<String>,
@@ -81,6 +82,7 @@ impl Default for LibraryState {
             rolls: Vec::new(),
             filter: String::new(),
             sort: library_sort("name", false),
+            open: true,
             profile: None,
             status: String::new(),
             imported: None,
@@ -134,6 +136,7 @@ impl LibraryState {
             rolls: rows,
             filter: String::new(),
             sort: library_sort(order, descending),
+            open: true,
             profile: Some(profile.to_path_buf()),
             status: String::new(),
             imported: None,
@@ -171,6 +174,7 @@ impl LibraryState {
             rolls: rows,
             filter: String::new(),
             sort: library_sort("name", false),
+            open: true,
             profile: None,
             status: String::new(),
             imported: None,
@@ -290,7 +294,7 @@ impl LibraryState {
     pub fn show(&mut self, ui: &mut Ui, footer_y: Option<f32>) -> Option<String> {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Library").with_guide();
-        section.expanded = true;
+        section.expanded = self.open;
         let (_, result) = section.show(ui, |ui| {
             card(ui, |ui| {
                 let mut import = None;
@@ -366,6 +370,7 @@ impl LibraryState {
                 opened
             })
         });
+        self.open = section.expanded;
         let opened = result.flatten();
         if opened.is_some() {
             self.imported = opened.clone();

@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 07:50 | **Last Commit:** `pending` desktop: feed render metrics into Analysis
+**Last Updated:** 2026-11-20 08:20 | **Last Commit:** `pending` desktop: keep card folds in page state
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Wiring audit is complete; close the
@@ -15,14 +15,14 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Keep every section's open state in page state; test each header toggle.
-2. [ ] Wire Export Roll and the Export footer to the export service.
-3. [ ] Apply soft proof to the preview.
-4. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
-5. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
+1. [ ] Wire Export Roll and the Export footer to the export service.
+2. [ ] Apply soft proof to the preview.
+3. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
+4. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
 
 ## Completed (Recent)
-- `pending` desktop: feed render metrics into Analysis.
+- `pending` desktop: keep card folds in page state.
+- `c64741b4` desktop: feed render metrics into Analysis.
 - `2cc2b7c9` desktop: render edits on a worker.
 - `4a39af15` desktop: select frames from the strip.
 - `66a42371` desktop: paint the empty workspace.

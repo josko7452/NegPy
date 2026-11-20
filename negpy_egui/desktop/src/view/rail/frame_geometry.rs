@@ -12,6 +12,7 @@ use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::field_row::{RowColumns, field_row};
+use crate::view::widgets::fold::Fold;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::tab_header::TabSummary;
 
@@ -28,7 +29,7 @@ pub struct CropState {
     pub offset: CompactSlider,
     pub rebate_trim: CompactSlider,
     pub square_first: bool,
-    pub settings_open: bool,
+    pub settings: Fold,
 }
 
 impl Default for CropState {
@@ -59,7 +60,7 @@ impl Default for CropState {
                     .with_unit("%"),
             ),
             square_first: false,
-            settings_open: true,
+            settings: Fold::new("crop_auto_settings").open_by_default(),
         }
     }
 }
@@ -105,6 +106,8 @@ impl Default for StraightenState {
 pub struct GeometryState {
     pub crop: CropState,
     pub straighten: StraightenState,
+    pub crop_open: bool,
+    pub straighten_open: bool,
 }
 
 impl Default for GeometryState {
@@ -112,6 +115,8 @@ impl Default for GeometryState {
         Self {
             crop: CropState::default(),
             straighten: StraightenState::default(),
+            crop_open: true,
+            straighten_open: true,
         }
     }
 }
@@ -193,6 +198,7 @@ impl GeometryState {
         let columns = RowColumns::new();
         let mut section = CollapsibleSection::new("Crop").with_guide();
         section.modified = usize::from(self.crop.auto_crop || self.crop.draw);
+        section.expanded = self.crop_open;
         let mut changed = false;
         section.show(ui, |ui| {
             let _ = card(ui, |ui| {
@@ -262,15 +268,16 @@ impl GeometryState {
                 field_row(ui, columns, "Guide", |ui| {
                     changed |= self.crop.guide.show(ui);
                 });
-                self.crop.settings_open = true;
-                let _ = section_subheader(ui, "AUTO CROP SETTINGS");
-                field_row(ui, columns, "Mode", |ui| {
-                    changed |= self.crop.mode.show(ui);
-                });
-                let (_, offset) = self.crop.offset.show(ui, "Crop Offset");
-                changed |= offset;
-                let (_, rebate) = self.crop.rebate_trim.show(ui, "Rebate Trim");
-                changed |= rebate;
+                self.crop.settings.group_header(ui, "Auto Crop Settings");
+                if self.crop.settings.open {
+                    let _ = field_row(ui, columns, "Mode", |ui| {
+                        changed |= self.crop.mode.show(ui);
+                    });
+                    let (_, offset) = self.crop.offset.show(ui, "Crop Offset");
+                    changed |= offset;
+                    let (_, rebate) = self.crop.rebate_trim.show(ui, "Rebate Trim");
+                    changed |= rebate;
+                }
                 ui.horizontal(|ui| {
                     changed |=
                         labeled_toggle(ui, "Square First", &mut self.crop.square_first).clicked();
@@ -278,12 +285,14 @@ impl GeometryState {
                 });
             });
         });
+        self.crop_open = section.expanded;
         changed
     }
 
     fn show_straighten(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Straighten").with_guide();
+        section.expanded = self.straighten_open;
         section.modified = usize::from(
             !self.straighten.fine_rotation.is_neutral()
                 || !self.straighten.tilt.is_neutral()
@@ -346,6 +355,7 @@ impl GeometryState {
                         .clicked();
             });
         });
+        self.straighten_open = section.expanded;
         changed
     }
 }
@@ -361,6 +371,24 @@ mod tests {
         assert_eq!(state.crop.guide.current_label(), "Thirds");
         assert_eq!(state.crop.mode.current_label(), "Image only");
         assert!(state.straighten.crop_empty);
+    }
+
+    #[test]
+    fn the_page_keeps_the_open_state_it_loads() {
+        let ctx = egui::Context::default();
+        let mut state = GeometryState::default();
+        state.crop_open = false;
+        state.straighten_open = false;
+        state.crop.settings.open = false;
+        let mut edit = FrameEdit::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit);
+            });
+        });
+        assert!(!state.crop_open);
+        assert!(!state.straighten_open);
+        assert!(!state.crop.settings.open);
     }
 
     #[test]

@@ -25,6 +25,8 @@ pub struct ScanState {
     pub ir: bool,
     pub dust_removal: SegmentedChoice<'static>,
     pub framing_open: bool,
+    pub camera_open: bool,
+    pub preset_open: bool,
     pub camera: StepCombo,
     pub light: SegmentedChoice<'static>,
     pub output_format: StepCombo,
@@ -68,6 +70,8 @@ impl Default for ScanState {
             ir: false,
             dust_removal: SegmentedChoice::new(&["Off", "Auto"]),
             framing_open: false,
+            camera_open: true,
+            preset_open: false,
             camera: StepCombo::new(vec![Choice::new("No camera"), Choice::new("OM-3")]),
             light: SegmentedChoice::new(&["White Light", "Narrowband Light"]),
             output_format: StepCombo::new(vec![Choice::new("DNG"), Choice::new("TIFF")]),
@@ -158,31 +162,47 @@ impl ScanState {
             self.framing_open = framing_open;
             changed |= framing_changed;
         }
-        let (_, camera_changed) = scan_card(ui, "Camera", Icon::Camera, camera_active, |ui| {
-            let mut changed = false;
-            let _ = hint(
-                ui,
-                "Camera scanning needs python-gphoto2 (`pip install gphoto2`), which has no Windows build. See docs/CAMERA_SCANNING.md.",
-            );
-            let _ = hint(
-                ui,
-                "Connect the camera by USB, in PC Remote mode. NegPy finds it by itself.",
-            );
-            ui.horizontal(|ui| {
-                ui.label("● Camera");
-                ui.add_space(f32::from(theme.space_lg));
-                ui.label("● Light");
-            });
-            ui.horizontal(|ui| {
-                ui.label("Camera");
-                changed |= self.camera.show(ui);
-            });
-            changed
-        });
+        let camera_expanded = if camera_active {
+            self.camera_open
+        } else {
+            false
+        };
+        let (camera_open, camera_changed) = scan_card(
+            ui,
+            "Camera",
+            Icon::Camera,
+            camera_expanded,
+            |ui| {
+                let mut changed = false;
+                let _ = hint(
+                    ui,
+                    "Camera scanning needs python-gphoto2 (`pip install gphoto2`), which has no Windows build. See docs/CAMERA_SCANNING.md.",
+                );
+                let _ = hint(
+                    ui,
+                    "Connect the camera by USB, in PC Remote mode. NegPy finds it by itself.",
+                );
+                ui.horizontal(|ui| {
+                    ui.label("● Camera");
+                    ui.add_space(f32::from(theme.space_lg));
+                    ui.label("● Light");
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Camera");
+                    changed |= self.camera.show(ui);
+                });
+                changed
+            },
+        );
+        if camera_active {
+            self.camera_open = camera_open;
+        }
         changed |= camera_changed;
-        let (_, light_changed) = scan_card(ui, "Preset", Icon::Lightbulb, false, |ui| {
-            self.light.show(ui).is_some()
-        });
+        let (preset_open, light_changed) =
+            scan_card(ui, "Preset", Icon::Lightbulb, self.preset_open, |ui| {
+                self.light.show(ui).is_some()
+            });
+        self.preset_open = preset_open;
         changed |= light_changed;
         let (output_open, output_changed) =
             scan_card(ui, "Output", Icon::FolderOpen, self.output_open, |ui| {

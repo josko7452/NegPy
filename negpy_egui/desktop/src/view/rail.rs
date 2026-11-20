@@ -66,6 +66,7 @@ pub struct RailState {
     pub history: history::HistoryState,
     pub analysis_open: bool,
     pub readouts_open: bool,
+    pub collapsed_sections: std::collections::BTreeMap<String, bool>,
     pub metrics: analysis::AnalysisMetrics,
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
@@ -134,6 +135,7 @@ impl RailState {
             history: history::HistoryState::default(),
             analysis_open: view.analysis_open,
             readouts_open: false,
+            collapsed_sections: std::collections::BTreeMap::new(),
             metrics: analysis::AnalysisMetrics::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
@@ -540,24 +542,30 @@ impl RailState {
             .with_guide()
             .with_icon(Icon::Stack);
         section.modified = 3;
-        section.expanded = true;
-        section.show(ui, |ui| self.show_roll_analysis_body(ui, edit));
+        section.expanded = self.roll_analysis.open;
+        let _ = section.show(ui, |ui| self.show_roll_analysis_body(ui, edit));
+        self.roll_analysis.open = section.expanded;
     }
 
     fn show_collapsed(&mut self, ui: &mut Ui, title: &str, modified: usize) {
+        let open = *self
+            .collapsed_sections
+            .entry(title.to_string())
+            .or_insert(title == "Calibration");
         let mut section = CollapsibleSection::new(title).with_guide();
         section.modified = modified;
+        section.expanded = open;
         if title == "Calibration" {
-            section.expanded = true;
-            section.show(ui, |ui| self.show_calibration_body(ui));
+            let _ = section.show(ui, |ui| self.show_calibration_body(ui));
         } else {
-            section.expanded = false;
-            section.show(ui, |ui| {
+            let _ = section.show(ui, |ui| {
                 let _ = card(ui, |ui| {
                     let _ = hint(ui, "This card has no controls yet.");
                 });
             });
         }
+        self.collapsed_sections
+            .insert(title.to_string(), section.expanded);
     }
 
     fn show_roll_analysis_body(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
@@ -854,6 +862,26 @@ mod tests {
         assert_eq!(RailState::for_view(&view).metadata.page, 1);
         let view = ViewState::from_capture("export", "", "proof", "canvas", 0.0);
         assert_eq!(RailState::for_view(&view).export.page, 1);
+    }
+
+    #[test]
+    fn a_collapsed_roll_card_keeps_its_state_across_frames() {
+        let ctx = egui::Context::default();
+        let fixture = crate::fixture::ReferenceFixture::bundled().unwrap();
+        let mut app = crate::app::NegFeApp::new(&fixture);
+        app.rail
+            .collapsed_sections
+            .insert("Calibration".to_string(), false);
+        app.rail.roll_analysis.open = false;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = app
+                    .rail
+                    .show(ui, ui.max_rect(), &mut app.edit, &mut app.proof);
+            });
+        });
+        assert_eq!(app.rail.collapsed_sections.get("Calibration"), Some(&false));
+        assert!(!app.rail.roll_analysis.open);
     }
 
     #[test]
