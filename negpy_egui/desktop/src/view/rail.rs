@@ -265,6 +265,47 @@ impl RailState {
         switched
     }
 
+    /// Run the profile action the Optics card asked for. Returns whether the edit changed.
+    pub fn apply_optics_action(&mut self, edit: &mut FrameEdit) -> bool {
+        match self.optics.take_action() {
+            Some(crate::view::rail::optics::FlatFieldAction::Add) => {
+                let Some(reference) = rfd::FileDialog::new()
+                    .set_title("Add Flat Field Profile")
+                    .add_filter(
+                        "Images",
+                        &[
+                            "tif", "tiff", "dng", "orf", "nef", "fff", "cr2", "arw", "raf", "jpg",
+                            "jpeg", "png",
+                        ],
+                    )
+                    .pick_file()
+                else {
+                    return false;
+                };
+                let Some(id) = self
+                    .optics
+                    .add_profile(&reference, edit.config.geometry.distortion_k1)
+                else {
+                    return false;
+                };
+                edit.config.flatfield.profile_id = id;
+                edit.config.flatfield.apply = true;
+                edit.mark_dirty();
+                true
+            }
+            Some(crate::view::rail::optics::FlatFieldAction::Remove) => {
+                if !self.optics.remove_profile() {
+                    return false;
+                }
+                edit.config.flatfield.profile_id.clear();
+                edit.config.flatfield.apply = false;
+                edit.mark_dirty();
+                true
+            }
+            None => false,
+        }
+    }
+
     fn show_body(
         &mut self,
         ui: &mut Ui,

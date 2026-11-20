@@ -241,6 +241,9 @@ impl NegFeApp {
             &negpy_backend::kernel::system::paths::resource_path("gear"),
         );
         self.rail.metadata.set_gear(gear);
+        self.rail
+            .optics
+            .set_profile(Some(profile), &self.edit.config.flatfield.profile_id);
         let repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
             app.edits_db_path.clone(),
             app.settings_db_path.clone(),
@@ -439,6 +442,9 @@ impl NegFeApp {
         }
         self.set_frame(frame);
         self.set_edit(edit);
+        self.rail
+            .optics
+            .set_profile(profile.as_deref(), &self.edit.config.flatfield.profile_id);
         self.selected = index;
         if let Some(profile) = profile.as_deref() {
             let (rows, prints) = crate::frame_source::stored_history(Some(profile), &path);
@@ -505,6 +511,9 @@ impl NegFeApp {
             self.set_source(Some(source));
         }
         self.set_edit(edit);
+        self.rail
+            .optics
+            .set_profile(Some(&profile), &self.edit.config.flatfield.profile_id);
         self.set_frame(frame);
         self.set_strip(strip);
         self.selected = 0;
@@ -583,6 +592,7 @@ impl NegFeApp {
                     let switched = self
                         .rail
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+                    self.rail.apply_optics_action(&mut self.edit);
                     self.open_requested_roll();
                     self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
@@ -636,6 +646,7 @@ impl NegFeApp {
             let switched = self
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+            self.rail.apply_optics_action(&mut self.edit);
             self.open_requested_roll();
             self.view.tab = self.rail.tab;
             if let Some(tab) = switched {
