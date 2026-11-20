@@ -7,7 +7,7 @@
 use qcms::{DataType, Intent, Profile, Transform};
 
 use super::color_mgmt::WORKING_COLOR_SPACE;
-use super::icc_lut::{Lut3Data, grid_codes};
+use super::icc_lut::{Lut3Data, apply_lut_u16, grid_codes};
 
 /// The proof LUT grid edge, finer than the display LUT because a proof clips at the
 /// output gamut boundary.
@@ -259,6 +259,29 @@ pub fn soft_proof_lut(
         }
     }
     Some(Lut3Data { size, table })
+}
+
+/// The display frame after the proof table and the monitor transform.
+///
+/// The working-space pixels enter as a 16-bit code and sample the proof table. The
+/// table's last leg already ends on the monitor, or on sRGB when none is set.
+#[must_use]
+pub fn apply_soft_proof(
+    rgb: &[u8],
+    condition: &ProofCondition,
+    working_icc: &[u8],
+    monitor_icc: Option<&[u8]>,
+    size: usize,
+) -> Option<Vec<u8>> {
+    if rgb.len() % 3 != 0 {
+        return None;
+    }
+    let mut condition = condition.clone();
+    condition.monitor_icc = monitor_icc.map(<[u8]>::to_vec);
+    let lut = soft_proof_lut(&condition, working_icc, size)?;
+    let codes = super::color_mgmt::u8_to_u16_codes(rgb);
+    let proofed = apply_lut_u16(&codes, &lut)?;
+    Some(super::color_mgmt::u16_to_u8_codes(&proofed))
 }
 
 fn println_proof(

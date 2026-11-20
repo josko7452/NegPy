@@ -4,7 +4,8 @@
 use negpy_backend::infrastructure::display::color_mgmt::{WORKING_COLOR_SPACE, profile_bytes};
 use negpy_backend::infrastructure::display::icc_lut::Lut3Data;
 use negpy_backend::infrastructure::display::proof_lut::{
-    GAMUT_LUT_SIZE, GAMUT_WARNING_COLOR, ProofCondition, ProofIntent, gamut_lut, soft_proof_lut,
+    GAMUT_LUT_SIZE, GAMUT_WARNING_COLOR, ProofCondition, ProofIntent, apply_soft_proof, gamut_lut,
+    soft_proof_lut,
 };
 use std::path::Path;
 
@@ -155,4 +156,17 @@ fn an_rgb_profile_is_not_a_print_proof() {
         )
         .is_none()
     );
+}
+
+#[test]
+fn a_proofed_frame_moves_saturated_pixels() {
+    let condition = ProofCondition {
+        output_icc: Some(space("sRGB")),
+        ..ProofCondition::default()
+    };
+    let pixels = [220u8, 20, 20, 10, 10, 10, 128, 128, 128];
+    let proofed =
+        apply_soft_proof(&pixels, &condition, &working(), None, 17).expect("proofed frame");
+    assert_eq!(proofed.len(), pixels.len());
+    assert_ne!(proofed, pixels);
 }

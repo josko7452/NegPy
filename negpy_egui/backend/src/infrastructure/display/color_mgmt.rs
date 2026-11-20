@@ -227,6 +227,20 @@ pub fn transform_u16(img: &[u16], source: &[u8], dest: &[u8]) -> Option<Vec<u16>
     apply_profile_pair_u16(img, source, dest)
 }
 
+/// The 8-bit code widened to the 16-bit code with the same value.
+#[must_use]
+pub fn u8_to_u16_codes(img: &[u8]) -> Vec<u16> {
+    img.iter().map(|value| u16::from(*value) * 257).collect()
+}
+
+/// The 16-bit code narrowed to the nearest 8-bit code.
+#[must_use]
+pub fn u16_to_u8_codes(img: &[u16]) -> Vec<u8> {
+    img.iter()
+        .map(|value| ((u32::from(*value) + 128) / 257).min(255) as u8)
+        .collect()
+}
+
 /// Store a user ICC profile under `dest_dir` and return its path.
 ///
 /// The bytes must open as a profile. A name taken by different bytes stores beside it

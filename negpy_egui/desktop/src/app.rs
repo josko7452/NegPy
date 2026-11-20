@@ -18,6 +18,7 @@ use crate::view::rail::{RAIL_WIDTH, RailState};
 use negpy_backend::session::proof::ProofSettings;
 
 use crate::export_worker::{ExportRequest, ExportWorker};
+use crate::render_worker::ProofRequest;
 use std::path::Path;
 
 /// The visible tab of the right rail.
@@ -279,7 +280,13 @@ impl NegFeApp {
         let Some(source) = self.source.clone() else {
             return;
         };
-        let hash = negpy_backend::kernel::caching::logic::calculate_config_hash(&self.edit.config);
+        let request = crate::render_worker::RenderRequest {
+            generation: self.generation + 1,
+            source: source.clone(),
+            config: self.edit.config.clone(),
+            proof: self.proof_request(),
+        };
+        let hash = request.config_hash();
         if self.rendered.as_deref() == Some(hash.as_str())
             || self.requested.as_deref() == Some(hash.as_str())
         {
@@ -287,11 +294,7 @@ impl NegFeApp {
         }
         self.generation += 1;
         self.requested = Some(hash);
-        self.renderer.submit(crate::render_worker::RenderRequest {
-            generation: self.generation,
-            source,
-            config: self.edit.config.clone(),
-        });
+        self.renderer.submit(request);
         ctx.request_repaint();
         let _ = interactive;
     }
@@ -377,6 +380,18 @@ impl NegFeApp {
             ctx.request_repaint();
         }
         shown
+    }
+
+    fn proof_request(&self) -> ProofRequest {
+        ProofRequest {
+            enabled: self.proof.enabled,
+            icc_path: self.proof.icc_path.clone(),
+            intent: self.proof.intent.clone(),
+            black_point: self.proof.black_point,
+            paper_white: self.proof.paper_white,
+            ink_black: self.proof.ink_black,
+            gamut_warning: self.proof.gamut_warning,
+        }
     }
 
     fn source_name(&self) -> String {

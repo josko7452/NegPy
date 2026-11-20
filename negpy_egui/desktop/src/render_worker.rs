@@ -5,11 +5,16 @@
 //! The engine stays on the worker, so a stage above the changed one reuses its cache.
 
 use std::collections::BTreeMap;
+use std::path::Path;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
 use negpy_backend::domain::models::WorkspaceConfig;
+use negpy_backend::infrastructure::display::color_mgmt::{WORKING_COLOR_SPACE, profile_bytes};
+use negpy_backend::infrastructure::display::proof_lut::{
+    PROOF_LUT_SIZE, ProofCondition, ProofIntent, apply_soft_proof,
+};
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::kernel::caching::logic::calculate_config_hash;
 use negpy_backend::kernel::image::logic::float_to_uint8;
@@ -25,19 +30,97 @@ pub struct SourceFrame {
     pub image: ImageBuffer,
 }
 
+/// The soft proof the preview applies after the pipeline.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProofRequest {
+    pub enabled: bool,
+    pub icc_path: Option<String>,
+    pub intent: String,
+    pub black_point: bool,
+    pub paper_white: bool,
+    pub ink_black: bool,
+    pub gamut_warning: bool,
+}
+
+impl ProofRequest {
+    fn monitor_key(&self) -> u64 {
+        negpy_backend::infrastructure::display::monitor_profile::detect_monitor_icc("", "").map_or(
+            0,
+            |bytes| {
+                use std::hash::{Hash, Hasher};
+                let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                bytes.hash(&mut hasher);
+                hasher.finish()
+            },
+        )
+    }
+
+    /// The proof conditions the transform reads.
+    #[must_use]
+    pub fn condition(&self) -> Option<ProofCondition> {
+        let output_icc = self
+            .icc_path
+            .as_deref()
+            .and_then(|path| std::fs::read(path).ok());
+        let monitor_icc =
+            negpy_backend::infrastructure::display::monitor_profile::detect_monitor_icc("", "");
+        let input_icc = None;
+        if !self.enabled || (input_icc.is_none() && output_icc.is_none()) {
+            return None;
+        }
+        Some(ProofCondition {
+            working_color_space: WORKING_COLOR_SPACE.to_string(),
+            input_icc,
+            output_icc,
+            monitor_icc,
+            intent: ProofIntent::coerce(&self.intent),
+            black_point: self.black_point,
+            paper_white: self.paper_white,
+            ink_black: self.ink_black,
+            gamut_warning: self.gamut_warning && self.icc_path.is_some(),
+        })
+    }
+}
+
 /// One request: the frame stays shared, the config is the edit's snapshot.
 #[derive(Clone, Debug)]
 pub struct RenderRequest {
     pub generation: u64,
     pub source: Arc<SourceFrame>,
     pub config: WorkspaceConfig,
+    pub proof: ProofRequest,
+}
+
+impl Default for ProofRequest {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            icc_path: None,
+            intent: "relative_colorimetric".to_string(),
+            black_point: false,
+            paper_white: false,
+            ink_black: false,
+            gamut_warning: false,
+        }
+    }
 }
 
 impl RenderRequest {
     /// The config hash this request renders, so a result can be matched to it.
     #[must_use]
     pub fn config_hash(&self) -> String {
-        calculate_config_hash(&self.config)
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            calculate_config_hash(&self.config),
+            self.proof.enabled,
+            self.proof.icc_path.as_deref().unwrap_or(""),
+            self.proof.intent,
+            self.proof.black_point,
+            self.proof.paper_white,
+            self.proof.ink_black,
+            self.proof.gamut_warning,
+            self.proof.monitor_key()
+        )
     }
 }
 
@@ -96,11 +179,23 @@ impl RenderWorker {
                     &request.source.hash,
                     &mut context,
                 );
-                let frame = DisplayFrame::from_rgb(
-                    output.width,
-                    output.height,
-                    float_to_uint8(&output.pixels),
-                );
+                let mut pixels = float_to_uint8(&output.pixels);
+                if let Some(condition) = request.proof.condition() {
+                    let working = profile_bytes(WORKING_COLOR_SPACE, Path::new("/nonexistent"))
+                        .map(|profile| profile.bytes);
+                    if let Some(working) = working {
+                        if let Some(proofed) = apply_soft_proof(
+                            &pixels,
+                            &condition,
+                            &working,
+                            condition.monitor_icc.as_deref(),
+                            PROOF_LUT_SIZE,
+                        ) {
+                            pixels = proofed;
+                        }
+                    }
+                }
+                let frame = DisplayFrame::from_rgb(output.width, output.height, pixels);
                 let metrics = context.metrics;
                 if tx
                     .send(RenderOutput {
@@ -186,6 +281,7 @@ mod tests {
             generation: 1,
             source: source(),
             config: WorkspaceConfig::default(),
+            proof: ProofRequest::default(),
         };
         let hash = request.config_hash();
         worker.submit(request);
@@ -204,6 +300,69 @@ mod tests {
     }
 
     #[test]
+    fn a_proofed_preview_differs_from_the_plain_preview() {
+        let dir = tempfile::tempdir().unwrap();
+        let icc = dir.path().join("paper.icc");
+        let source_icc =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../icc/sRGB-v4.icc");
+        std::fs::copy(source_icc, &icc).unwrap();
+        let worker = RenderWorker::start();
+        let plain = RenderRequest {
+            generation: 1,
+            source: source(),
+            config: WorkspaceConfig::default(),
+            proof: ProofRequest::default(),
+        };
+        let proofed = RenderRequest {
+            generation: 2,
+            source: source(),
+            config: WorkspaceConfig::default(),
+            proof: ProofRequest {
+                enabled: true,
+                icc_path: Some(icc.display().to_string()),
+                ..ProofRequest::default()
+            },
+        };
+        worker.submit(plain);
+        let first = wait_for(&worker);
+        worker.submit(proofed);
+        let second = wait_for(&worker);
+        assert_ne!(first.frame.pixels, second.frame.pixels);
+    }
+
+    fn wait_for(worker: &RenderWorker) -> RenderOutput {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        loop {
+            if let Some(output) = worker.drain().into_iter().next() {
+                return output;
+            }
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    #[test]
+    fn the_proof_changes_the_config_hash() {
+        let before = RenderRequest {
+            generation: 1,
+            source: source(),
+            config: WorkspaceConfig::default(),
+            proof: ProofRequest::default(),
+        };
+        let after = RenderRequest {
+            generation: 1,
+            source: source(),
+            config: WorkspaceConfig::default(),
+            proof: ProofRequest {
+                enabled: true,
+                icc_path: Some("/tmp/paper.icc".to_string()),
+                ..ProofRequest::default()
+            },
+        };
+        assert_ne!(before.config_hash(), after.config_hash());
+    }
+
+    #[test]
     fn only_the_newest_pending_request_runs() {
         let worker = RenderWorker::start();
         let mut config = WorkspaceConfig::default();
@@ -212,6 +371,7 @@ mod tests {
             generation: 1,
             source: source(),
             config,
+            proof: ProofRequest::default(),
         };
         let mut config = WorkspaceConfig::default();
         config.exposure.density = 1.4;
@@ -219,6 +379,7 @@ mod tests {
             generation: 2,
             source: source(),
             config,
+            proof: ProofRequest::default(),
         };
         let newest = second.config_hash();
         worker.submit(first);
