@@ -56,6 +56,8 @@ pub struct ExportState {
     pub sidecar_path: String,
     pub requested: bool,
     pub contact_sheet_requested: bool,
+    pub save_preset_requested: bool,
+    pub status: String,
 }
 
 impl Default for ExportState {
@@ -113,6 +115,8 @@ impl Default for ExportState {
             sidecar_path: String::new(),
             requested: false,
             contact_sheet_requested: false,
+            save_preset_requested: false,
+            status: String::new(),
         }
     }
 }
@@ -158,9 +162,45 @@ impl ExportState {
         std::mem::take(&mut self.contact_sheet_requested)
     }
 
+    /// Take the one Save Preset request this frame.
+    pub fn take_save_preset_request(&mut self) -> bool {
+        std::mem::take(&mut self.save_preset_requested)
+    }
+
+    /// Show the result of the last preset action.
+    pub fn set_status(&mut self, status: impl Into<String>) {
+        self.status = status.into();
+    }
+
     /// Show the export presets the profile holds.
     pub fn set_presets(&mut self, presets: Vec<negpy_backend::domain::models::ExportPreset>) {
         self.presets = presets;
+    }
+
+    /// The preset the current form describes, under `name`.
+    #[must_use]
+    pub fn preset_named(&self, name: &str) -> negpy_backend::domain::models::ExportPreset {
+        negpy_backend::domain::models::ExportPreset {
+            name: name.to_string(),
+            export_fmt: ExportFormat::coerce(self.format.current_value()),
+            jpeg_quality: self.jpeg_quality.value.round() as i64,
+            jpeg_progressive: self.progressive,
+            export_resolution_mode: match self.resolution.current {
+                1 => ExportResolutionMode::Print,
+                2 => ExportResolutionMode::TargetPx,
+                _ => ExportResolutionMode::Original,
+            },
+            export_target_long_edge_px: self.long_edge.value.round() as i64,
+            paper_aspect_ratio: self.paper_ratio.current_value().to_string(),
+            output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
+            output_subfolder: self.subfolder.clone(),
+            filename_pattern: self.filename.clone(),
+            overwrite: self.overwrite,
+            export_color_space: self.export_profile.current_value().to_string(),
+            icc_input_path: optional_path(self.input_icc.current_value()),
+            icc_output_path: optional_path(self.output_icc.current_value()),
+            ..negpy_backend::domain::models::ExportPreset::default()
+        }
     }
 
     /// Show the ICC profiles the profile holds for the Input and Output fields.
@@ -340,8 +380,15 @@ impl ExportState {
                 );
             }
         }
-        let _ = labeled_action(ui, "Save Preset...", ActionRank::Normal);
-        false
+        if !self.status.is_empty() {
+            let _ = hint(ui, &self.status);
+        }
+        if labeled_action(ui, "Save Preset...", ActionRank::Normal).clicked() {
+            self.save_preset_requested = true;
+            true
+        } else {
+            false
+        }
     }
 
     fn show_alongside(&mut self, ui: &mut Ui) -> bool {
@@ -530,10 +577,46 @@ mod tests {
     }
 
     #[test]
+    fn alongside_is_a_session_flag_not_a_frame_field() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.alongside = true;
+        state.store(&mut edit);
+        assert!(
+            !serde_json::to_string(&edit.config.export)
+                .unwrap_or_default()
+                .contains("alongside")
+        );
+        assert!(state.alongside);
+    }
+
+    #[test]
     fn the_contact_sheet_action_leaves_one_request() {
         let mut state = ExportState::default();
         state.contact_sheet_requested = true;
         assert!(state.take_contact_sheet_request());
         assert!(!state.take_contact_sheet_request());
+    }
+
+    #[test]
+    fn save_preset_leaves_one_request() {
+        let mut state = ExportState::default();
+        state.save_preset_requested = true;
+        assert!(state.take_save_preset_request());
+        assert!(!state.take_save_preset_request());
+    }
+
+    #[test]
+    fn a_preset_captures_the_form() {
+        let mut state = ExportState::default();
+        state.format.pick("TIFF");
+        state.jpeg_quality.set_value(77.0);
+        state.subfolder = "out".to_string();
+        let preset = state.preset_named("My TIFF");
+        assert_eq!(preset.name, "My TIFF");
+        assert_eq!(preset.export_fmt, ExportFormat::Tiff);
+        assert_eq!(preset.jpeg_quality, 77);
+        assert_eq!(preset.output_subfolder, "out");
     }
 }

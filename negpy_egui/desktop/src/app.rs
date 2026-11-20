@@ -515,6 +515,26 @@ impl NegFeApp {
         ctx.request_repaint();
     }
 
+    fn save_export_preset(&mut self) {
+        if !self.rail.export.take_save_preset_request() {
+            return;
+        }
+        let Some(repo) = &mut self.settings else {
+            self.rail.export.set_status("Open a profile first.");
+            return;
+        };
+        let name = format!("Preset {}", self.rail.export.presets.len() + 1);
+        let mut presets = self.rail.export.presets.clone();
+        presets.push(self.rail.export.preset_named(&name));
+        match repo.save_export_presets(&presets) {
+            Ok(()) => {
+                self.rail.export.set_presets(presets);
+                self.rail.export.set_status(format!("Saved {name}."));
+            }
+            Err(error) => self.rail.export.set_status(error.to_string()),
+        }
+    }
+
     fn receive_render(&mut self, ctx: &egui::Context) -> bool {
         let mut shown = false;
         for output in self.renderer.drain() {
@@ -811,6 +831,7 @@ impl NegFeApp {
             }
             self.request_render(ctx, false);
             self.request_export(ctx);
+            self.save_export_preset();
             self.request_scan(ctx);
             let proof = self.proof.clone();
             let switched = self

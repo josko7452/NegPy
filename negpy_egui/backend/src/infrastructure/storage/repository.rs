@@ -945,6 +945,33 @@ mod tests {
     }
 
     #[test]
+    fn a_saved_preset_carries_its_output_settings() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut repo = StorageRepository::new(
+            dir.path().join("edits.db").display().to_string(),
+            dir.path().join("settings.db").display().to_string(),
+        );
+        repo.initialize().unwrap();
+        let presets = vec![ExportPreset {
+            name: "Print TIFF".to_string(),
+            export_fmt: ExportFormat::Tiff,
+            jpeg_quality: 81,
+            output_mode: crate::domain::models::ExportPresetOutputMode::Absolute,
+            output_subfolder: "out".to_string(),
+            ..ExportPreset::default()
+        }];
+        repo.save_export_presets(&presets).unwrap();
+        let loaded = repo.load_export_presets();
+        assert_eq!(loaded[0].export_fmt, ExportFormat::Tiff);
+        assert_eq!(loaded[0].jpeg_quality, 81);
+        assert_eq!(
+            loaded[0].output_mode,
+            crate::domain::models::ExportPresetOutputMode::Absolute
+        );
+        assert_eq!(loaded[0].output_subfolder, "out");
+    }
+
+    #[test]
     fn an_absent_export_preset_list_uses_the_three_built_ins() {
         let dir = tempfile::tempdir().unwrap();
         let repo = StorageRepository::new(
