@@ -26,6 +26,18 @@ pub struct MeteringState {
     pub picks: Fold,
     pub points: Fold,
     pub open: bool,
+    pub measure_alone: bool,
+    pub pick: MeteringPick,
+    pub reset_requested: bool,
+}
+
+/// The manual bound the next canvas click sets.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum MeteringPick {
+    #[default]
+    Off,
+    Dmin,
+    Dmax,
 }
 
 impl Default for MeteringState {
@@ -50,6 +62,9 @@ impl Default for MeteringState {
             picks: Fold::new("metering_picks"),
             points: Fold::new("metering_points"),
             open: false,
+            measure_alone: false,
+            pick: MeteringPick::Off,
+            reset_requested: false,
         }
     }
 }
@@ -65,6 +80,7 @@ impl MeteringState {
         self.color_clip.set_value(process.color_range_clip);
         self.white_point.set_value(process.white_point_offset);
         self.black_point.set_value(process.black_point_offset);
+        self.measure_alone = !process.use_luma_average && !process.use_color_average;
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -77,7 +93,9 @@ impl MeteringState {
             || !same(process.luma_range_clip, self.luma_clip.value)
             || !same(process.color_range_clip, self.color_clip.value)
             || !same(process.white_point_offset, self.white_point.value)
-            || !same(process.black_point_offset, self.black_point.value);
+            || !same(process.black_point_offset, self.black_point.value)
+            || process.use_luma_average == self.measure_alone
+            || process.use_color_average == self.measure_alone;
         process.analysis_buffer = self.analysis_buffer.value;
         process.lock_bounds = self.lock_bounds;
         if !draw_region {
@@ -87,7 +105,29 @@ impl MeteringState {
         process.color_range_clip = self.color_clip.value;
         process.white_point_offset = self.white_point.value;
         process.black_point_offset = self.black_point.value;
+        process.use_luma_average = !self.measure_alone;
+        process.use_color_average = !self.measure_alone;
         changed
+    }
+
+    /// Reset every metering trim to the defaults of a fresh frame.
+    pub fn reset(&mut self, edit: &mut FrameEdit) {
+        let process = &mut edit.config.process;
+        process.analysis_buffer = 0.05;
+        process.lock_bounds = false;
+        process.analysis_rect = None;
+        process.luma_range_clip = 0.0;
+        process.color_range_clip = 0.0;
+        process.white_point_offset = 0.0;
+        process.black_point_offset = 0.0;
+        process.manual_dmin = None;
+        process.manual_dmax = None;
+        process.manual_dmin_at = None;
+        process.manual_dmax_at = None;
+        process.use_luma_average = true;
+        process.use_color_average = true;
+        self.load(edit);
+        edit.mark_dirty();
     }
 
     /// Paint the card. Returns whether a control changed the edit.
@@ -99,7 +139,12 @@ impl MeteringState {
         section.expanded = self.open;
         let (_, result) = section.show(ui, |ui| card(ui, |ui| self.show_body(ui)));
         self.open = section.expanded;
-        let changed = result.unwrap_or(false);
+        let mut changed = result.unwrap_or(false);
+        if self.reset_requested {
+            self.reset_requested = false;
+            self.reset(edit);
+            changed = true;
+        }
         if changed {
             self.store(edit);
         }
@@ -115,14 +160,18 @@ impl MeteringState {
             });
         });
         ui.horizontal(|ui| {
-            changed |= action_with_icon(
+            if action_with_icon(
                 ui,
                 Icon::Reset,
                 "Measure Alone",
                 ActionRank::Normal,
                 "Take this frame off the roll average and measure it on its own",
             )
-            .clicked();
+            .clicked()
+            {
+                self.measure_alone = !self.measure_alone;
+                changed = true;
+            }
             changed |= labeled_toggle(ui, "Draw Region", &mut self.draw_region).clicked();
         });
         changed |= self.analysis_buffer.show(ui, "Analysis Buffer").1;
@@ -131,8 +180,25 @@ impl MeteringState {
         let _ = self.picks.group_header(ui, "Pick by Hand");
         if self.picks.open {
             ui.horizontal(|ui| {
-                changed |= labeled_toggle(ui, "Dmin", &mut false).clicked();
-                changed |= labeled_toggle(ui, "Dmax", &mut false).clicked();
+                let mut dmin = self.pick == MeteringPick::Dmin;
+                let mut dmax = self.pick == MeteringPick::Dmax;
+                if labeled_toggle(ui, "Dmin", &mut dmin).clicked() {
+                    self.pick = if self.pick == MeteringPick::Dmin {
+                        MeteringPick::Off
+                    } else {
+                        MeteringPick::Dmin
+                    };
+                    dmax = false;
+                    changed = true;
+                }
+                if labeled_toggle(ui, "Dmax", &mut dmax).clicked() {
+                    self.pick = if self.pick == MeteringPick::Dmax {
+                        MeteringPick::Off
+                    } else {
+                        MeteringPick::Dmax
+                    };
+                    changed = true;
+                }
             });
             let _ = hint(
                 ui,
@@ -145,7 +211,10 @@ impl MeteringState {
             changed |= self.white_point.show(ui, "White Point").1;
             changed |= self.black_point.show(ui, "Black Point").1;
         }
-        let _ = labeled_action(ui, "Reset Metering", ActionRank::Normal);
+        if labeled_action(ui, "Reset Metering", ActionRank::Normal).clicked() {
+            self.reset_requested = true;
+            changed = true;
+        }
         changed
     }
 }
@@ -208,5 +277,35 @@ mod tests {
         assert!((state.white_point.value - 0.03).abs() < 1e-9);
         assert!((state.black_point.value + 0.02).abs() < 1e-9);
         assert!(!state.store(&mut edit));
+    }
+
+    #[test]
+    fn measure_alone_turns_off_both_roll_averages() {
+        let mut edit = FrameEdit::default();
+        edit.config.process.use_luma_average = true;
+        edit.config.process.use_color_average = true;
+        let mut state = MeteringState::default();
+        state.load(&edit);
+        state.measure_alone = true;
+        assert!(state.store(&mut edit));
+        assert!(!edit.config.process.use_luma_average);
+        assert!(!edit.config.process.use_color_average);
+    }
+
+    #[test]
+    fn reset_metering_clears_the_trims_and_manual_bounds() {
+        let mut edit = FrameEdit::default();
+        edit.config.process.white_point_offset = 0.1;
+        edit.config.process.black_point_offset = -0.1;
+        edit.config.process.manual_dmin = Some(vec![0.0; 3]);
+        edit.config.process.manual_dmax = Some(vec![1.0; 3]);
+        edit.config.process.lock_bounds = true;
+        let mut state = MeteringState::default();
+        state.reset(&mut edit);
+        assert_eq!(edit.config.process.white_point_offset, 0.0);
+        assert_eq!(edit.config.process.black_point_offset, 0.0);
+        assert!(edit.config.process.manual_dmin.is_none());
+        assert!(edit.config.process.manual_dmax.is_none());
+        assert!(!edit.config.process.lock_bounds);
     }
 }
