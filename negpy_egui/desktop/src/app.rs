@@ -299,6 +299,11 @@ impl NegFeApp {
                 continue;
             }
             self.rendered = Some(output.config_hash);
+            self.rail
+                .set_metrics(crate::view::rail::analysis::AnalysisMetrics::from_values(
+                    &self.edit.config,
+                    &output.metrics,
+                ));
             self.view.texture_size = Some(Vec2::new(
                 output.frame.width as f32,
                 output.frame.height as f32,

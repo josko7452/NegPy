@@ -4,6 +4,7 @@
 //! the pending request and the worker takes the newest when it finishes the last one.
 //! The engine stays on the worker, so a stage above the changed one reuses its cache.
 
+use std::collections::BTreeMap;
 use std::sync::mpsc::{Receiver, TryRecvError, channel};
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
@@ -14,6 +15,7 @@ use negpy_backend::kernel::caching::logic::calculate_config_hash;
 use negpy_backend::kernel::image::logic::float_to_uint8;
 use negpy_backend::render_engine::{DarkroomEngine, PipelineContext};
 use negpy_backend::services::rendering::display_frame::DisplayFrame;
+use serde_json::Value;
 
 /// The linear proxy of the open frame.
 #[derive(Debug)]
@@ -45,7 +47,7 @@ pub struct RenderOutput {
     pub generation: u64,
     pub config_hash: String,
     pub frame: DisplayFrame,
-    pub metrics: Vec<(String, f64)>,
+    pub metrics: BTreeMap<String, Value>,
 }
 
 #[derive(Default)]
@@ -99,11 +101,7 @@ impl RenderWorker {
                     output.height,
                     float_to_uint8(&output.pixels),
                 );
-                let metrics = context
-                    .metrics
-                    .iter()
-                    .filter_map(|(key, value)| value.as_f64().map(|value| (key.clone(), value)))
-                    .collect();
+                let metrics = context.metrics;
                 if tx
                     .send(RenderOutput {
                         generation: request.generation,

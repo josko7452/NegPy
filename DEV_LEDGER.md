@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 01:45 | **Last Commit:** `HEAD` desktop: render edits on a worker
+**Last Updated:** 2026-11-20 07:50 | **Last Commit:** `pending` desktop: feed render metrics into Analysis
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Wiring audit is complete; close the
@@ -15,19 +15,15 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Feed real render metrics into Analysis and its readouts. The worker already
-   returns them in `RenderOutput.metrics`; the card still paints a fixed curve.
-2. [ ] Keep every section's open state in page state; test each header toggle.
-3. [ ] Re-render the canvas on edit changes through one coalesced request.
-4. [ ] Feed real render metrics into Analysis and its readouts.
-5. [ ] Keep every section's open state in page state; test each header toggle.
-6. [ ] Wire Export Roll and the Export footer to the export service.
-7. [ ] Apply soft proof to the preview and expose Favorites/Presets.
-8. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
-9. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
+1. [ ] Keep every section's open state in page state; test each header toggle.
+2. [ ] Wire Export Roll and the Export footer to the export service.
+3. [ ] Apply soft proof to the preview.
+4. [ ] Wire Scan and Contact Sheet actions; propagate Library open/status.
+5. [ ] Wire the P3 card actions, then add dialogs and shortcuts.
 
 ## Completed (Recent)
-- `HEAD` desktop: render edits on a worker.
+- `pending` desktop: feed render metrics into Analysis.
+- `2cc2b7c9` desktop: render edits on a worker.
 - `4a39af15` desktop: select frames from the strip.
 - `66a42371` desktop: paint the empty workspace.
 - `1dacaff8` desktop: open the Library roll.

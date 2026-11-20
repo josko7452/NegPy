@@ -517,31 +517,7 @@ pub fn render_negative(
             },
         );
     }
-    let solved = solve_print(settings);
-    let paper = crate::features::exposure::papers::effective_paper_profile(
-        &exposure.paper_profile,
-        Some(settings.mode),
-    );
-    let d_min = if exposure.paper_dmin {
-        paper.tonal.d_min
-    } else {
-        0.0
-    };
-    let cmy = curve::filtration_offsets(
-        [exposure.wb_cyan, exposure.wb_magenta, exposure.wb_yellow],
-        settings.bounds,
-    );
-    let cmy_max = c2::CMY_MAX_DENSITY;
-    let shadow_cmy = [
-        exposure.shadow_cyan * cmy_max,
-        exposure.shadow_magenta * cmy_max,
-        exposure.shadow_yellow * cmy_max,
-    ];
-    let highlight_cmy = [
-        exposure.highlight_cyan * cmy_max,
-        exposure.highlight_magenta * cmy_max,
-        exposure.highlight_yellow * cmy_max,
-    ];
+    let (settings_out, solved, paper) = print_settings(settings);
     let is_bw = settings.mode == crate::domain::models::ProcessMode::BW;
     let input = if is_bw {
         let weights =
@@ -552,70 +528,6 @@ pub fn render_negative(
         out
     } else {
         image.to_vec()
-    };
-    let midtone_gamma = curve::effective_midtone_gamma(Some(paper), exposure.midtone_gamma);
-    let (dye_separation, separation_damping) = if is_bw {
-        ([1.0; 3], 0.0)
-    } else {
-        (
-            per_channel_dye_separation(
-                exposure.dye_separation,
-                [
-                    exposure.dye_separation_trim_red,
-                    exposure.dye_separation_trim_green,
-                    exposure.dye_separation_trim_blue,
-                ],
-            ),
-            exposure.separation_damping,
-        )
-    };
-    let settings_out = PrintSettings {
-        params: PrintParams {
-            slope: solved.slopes[1],
-            pivot: solved.pivots[1],
-            d_min,
-            midtone_gamma,
-        },
-        toe: solved.toe,
-        toe_width: exposure.toe_width,
-        shoulder: solved.shoulder,
-        shoulder_width: exposure.shoulder_width,
-        toe_trims: [
-            exposure.toe_trim_red,
-            exposure.toe_trim_green,
-            exposure.toe_trim_blue,
-        ],
-        shoulder_trims: [
-            exposure.shoulder_trim_red,
-            exposure.shoulder_trim_green,
-            exposure.shoulder_trim_blue,
-        ],
-        toe_width_trims: [
-            exposure.toe_width_trim_red,
-            exposure.toe_width_trim_green,
-            exposure.toe_width_trim_blue,
-        ],
-        shoulder_width_trims: [
-            exposure.shoulder_width_trim_red,
-            exposure.shoulder_width_trim_green,
-            exposure.shoulder_width_trim_blue,
-        ],
-        midtone_gamma_trims: [
-            exposure.midtone_gamma_trim_red,
-            exposure.midtone_gamma_trim_green,
-            exposure.midtone_gamma_trim_blue,
-        ],
-        cmy_offsets: cmy.map(|value| value as f32),
-        shadow_cmy: shadow_cmy.map(|value| value as f32),
-        highlight_cmy: highlight_cmy.map(|value| value as f32),
-        shadow_density: solved.shadow_density,
-        highlight_density: solved.highlight_density,
-        bpc: !exposure.paper_black,
-        black_hold: settings.base_black_hold,
-        preflash: exposure.preflash,
-        grade: exposure.grade,
-        dye_separation,
-        separation_damping,
     };
     let mut curve = print_curve(&settings_out, Some(paper));
     curve.pivots = solved.pivots.map(|value| value as f32);
@@ -670,6 +582,161 @@ pub fn render_negative(
         out = lum.iter().flat_map(|value| [*value; 3]).collect();
     }
     out
+}
+
+/// The print settings and solved curve one render uses.
+fn print_settings(
+    settings: &PrintRenderSettings<'_>,
+) -> (PrintSettings, SolvedPrint, &'static PaperProfile) {
+    let exposure = settings.config;
+    let paper = crate::features::exposure::papers::effective_paper_profile(
+        &exposure.paper_profile,
+        Some(settings.mode),
+    );
+    let d_min = if exposure.paper_dmin {
+        paper.tonal.d_min
+    } else {
+        0.0
+    };
+    let cmy = curve::filtration_offsets(
+        [exposure.wb_cyan, exposure.wb_magenta, exposure.wb_yellow],
+        settings.bounds,
+    );
+    let cmy_max = c2::CMY_MAX_DENSITY;
+    let shadow_cmy = [
+        exposure.shadow_cyan * cmy_max,
+        exposure.shadow_magenta * cmy_max,
+        exposure.shadow_yellow * cmy_max,
+    ];
+    let highlight_cmy = [
+        exposure.highlight_cyan * cmy_max,
+        exposure.highlight_magenta * cmy_max,
+        exposure.highlight_yellow * cmy_max,
+    ];
+    let is_bw = settings.mode == crate::domain::models::ProcessMode::BW;
+    let midtone_gamma = curve::effective_midtone_gamma(Some(paper), exposure.midtone_gamma);
+    let (dye_separation, separation_damping) = if is_bw {
+        ([1.0; 3], 0.0)
+    } else {
+        (
+            per_channel_dye_separation(
+                exposure.dye_separation,
+                [
+                    exposure.dye_separation_trim_red,
+                    exposure.dye_separation_trim_green,
+                    exposure.dye_separation_trim_blue,
+                ],
+            ),
+            exposure.separation_damping,
+        )
+    };
+    let solved = solve_print(settings);
+    let settings_out = PrintSettings {
+        params: PrintParams {
+            slope: solved.slopes[1],
+            pivot: solved.pivots[1],
+            d_min,
+            midtone_gamma,
+        },
+        toe: solved.toe,
+        toe_width: exposure.toe_width,
+        shoulder: solved.shoulder,
+        shoulder_width: exposure.shoulder_width,
+        toe_trims: [
+            exposure.toe_trim_red,
+            exposure.toe_trim_green,
+            exposure.toe_trim_blue,
+        ],
+        shoulder_trims: [
+            exposure.shoulder_trim_red,
+            exposure.shoulder_trim_green,
+            exposure.shoulder_trim_blue,
+        ],
+        toe_width_trims: [
+            exposure.toe_width_trim_red,
+            exposure.toe_width_trim_green,
+            exposure.toe_width_trim_blue,
+        ],
+        shoulder_width_trims: [
+            exposure.shoulder_width_trim_red,
+            exposure.shoulder_width_trim_green,
+            exposure.shoulder_width_trim_blue,
+        ],
+        midtone_gamma_trims: [
+            exposure.midtone_gamma_trim_red,
+            exposure.midtone_gamma_trim_green,
+            exposure.midtone_gamma_trim_blue,
+        ],
+        cmy_offsets: cmy.map(|value| value as f32),
+        shadow_cmy: shadow_cmy.map(|value| value as f32),
+        highlight_cmy: highlight_cmy.map(|value| value as f32),
+        shadow_density: solved.shadow_density,
+        highlight_density: solved.highlight_density,
+        bpc: !exposure.paper_black,
+        black_hold: settings.base_black_hold,
+        preflash: exposure.preflash,
+        grade: exposure.grade,
+        dye_separation,
+        separation_damping,
+    };
+    (settings_out, solved, paper)
+}
+
+/// The achromatic print curve sampled from `x_min` to `x_max` into display codes.
+///
+/// The curve is the same solved curve the render uses, so the chart cannot drift from
+/// the preview.
+#[must_use]
+pub fn sample_curve(
+    settings: &PrintRenderSettings<'_>,
+    x_min: f64,
+    x_max: f64,
+    samples: usize,
+) -> Vec<[f64; 2]> {
+    if samples < 2 || x_max <= x_min {
+        return Vec::new();
+    }
+    if settings.config.render_intent == RenderIntent::Flat {
+        let (gain, lift) = flat_curve_params();
+        return (0..samples)
+            .map(|index| {
+                let t = index as f64 / (samples - 1) as f64;
+                let x = x_min + t * (x_max - x_min);
+                [x, (lift + gain * (1.0 - x)).clamp(0.0, 1.0)]
+            })
+            .collect();
+    }
+    let (settings_out, solved, paper) = print_settings(settings);
+    let mut curve = print_curve(&settings_out, Some(paper));
+    curve.pivots = solved.pivots.map(|value| value as f32);
+    curve.slopes = solved.slopes.map(|value| value as f32);
+    curve.curvatures = solved.curvatures.map(|value| value as f32);
+    curve.shadow_grade = solved.shadow_grade;
+    curve.highlight_grade = solved.highlight_grade;
+    let points: Vec<f32> = (0..samples)
+        .map(|index| {
+            let t = index as f64 / (samples - 1) as f64;
+            (x_min + t * (x_max - x_min)) as f32
+        })
+        .collect();
+    let mut density = vec![0.0f32; samples * 3];
+    for (index, value) in points.iter().enumerate() {
+        density[index * 3] = *value;
+        density[index * 3 + 1] = *value;
+        density[index * 3 + 2] = *value;
+    }
+    let mut display = vec![0.0f32; density.len()];
+    apply_print_curve(&density, samples, &curve, &mut display);
+    (0..samples)
+        .map(|index| {
+            let encoded = crate::features::exposure::analysis::working_oetf_encode(&[
+                display[index * 3],
+                display[index * 3 + 1],
+                display[index * 3 + 2],
+            ]);
+            [points[index] as f64, encoded[1] as f64]
+        })
+        .collect()
 }
 
 /// The Contrast Mask's seven kernel coefficients, or `None` when the slider is off.
@@ -727,4 +794,35 @@ pub fn diffusion_mix(diffusion: f64) -> f64 {
 #[must_use]
 pub const fn flat_curve_params() -> (f64, f64) {
     (c::FLAT_LOG_GAIN, c::FLAT_LOG_LIFT)
+}
+
+#[cfg(test)]
+mod curve_tests {
+    use super::*;
+    use crate::domain::models::{ExposureConfig, ProcessConfig, ProcessMode};
+
+    #[test]
+    fn a_sampled_curve_is_monotone_over_the_chart_domain() {
+        let exposure = ExposureConfig::default();
+        let process = ProcessConfig::default();
+        let settings = PrintRenderSettings {
+            config: &exposure,
+            process: &process,
+            density_range: Some(1.0),
+            textural_range: Some(1.0),
+            shadow_point: None,
+            highlight_point: None,
+            anchor: None,
+            bounds: None,
+            neutral_axis: None,
+            mode: ProcessMode::C41,
+            base_black_hold: 0.0,
+            mask: None,
+            diffusion: None,
+        };
+        let points = sample_curve(&settings, -0.1, 1.1, 33);
+        assert_eq!(points.len(), 33);
+        assert!(points[0][1] >= points[32][1]);
+        assert!(points.iter().all(|point| point[1].is_finite()));
+    }
 }

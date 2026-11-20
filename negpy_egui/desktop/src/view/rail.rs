@@ -22,6 +22,7 @@ use crate::view::widgets::tab_header::TabSummary;
 use negpy_backend::domain::models::process::{ProcessMode, scan_setup_values, with_process_mode};
 use negpy_backend::session::proof::ProofSettings;
 
+pub mod analysis;
 pub mod export;
 pub mod frame_color;
 pub mod frame_finish;
@@ -46,7 +47,6 @@ pub const SEARCH_HEIGHT: f32 = 36.0;
 pub struct RailState {
     pub tab: Tab,
     pub frame_subtab: SubTabState,
-    pub analysis: CollapsibleSection,
     pub setup: CollapsibleSection,
     pub process_mode: SegmentedChoice<'static>,
     pub rig: SegmentedChoice<'static>,
@@ -64,6 +64,9 @@ pub struct RailState {
     pub export: export::ExportState,
     pub scan: scan::ScanState,
     pub history: history::HistoryState,
+    pub analysis_open: bool,
+    pub readouts_open: bool,
+    pub metrics: analysis::AnalysisMetrics,
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
     pub optics: optics::OpticsState,
@@ -79,8 +82,6 @@ impl RailState {
             &subtabs,
             (!view.subtab.is_empty()).then_some(view.subtab.as_str()),
         );
-        let mut analysis = CollapsibleSection::new("Analysis").with_guide();
-        analysis.expanded = view.analysis_open;
         let mut setup = CollapsibleSection::new("Setup").with_guide();
         setup.expanded = true;
         let mut metadata = metadata::MetadataState::default();
@@ -94,7 +95,6 @@ impl RailState {
         Self {
             tab: view.tab,
             frame_subtab,
-            analysis,
             setup,
             process_mode: SegmentedChoice {
                 labels: &["Color", "B&W", "Slide"],
@@ -132,11 +132,19 @@ impl RailState {
             export,
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
+            analysis_open: view.analysis_open,
+            readouts_open: false,
+            metrics: analysis::AnalysisMetrics::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
             optics: optics::OpticsState::default(),
             metering: metering::MeteringState::default(),
         }
+    }
+
+    /// Show the metrics the newest render measured.
+    pub fn set_metrics(&mut self, metrics: analysis::AnalysisMetrics) {
+        self.metrics = metrics;
     }
 
     /// Select the tab and page a capture or a launch asks for, keeping every card's state.
@@ -334,7 +342,9 @@ impl RailState {
 
     fn show_analysis(&mut self, ui: &mut Ui) {
         let theme = Theme::default();
-        self.analysis.show(ui, |ui| {
+        let mut section = CollapsibleSection::new("Analysis").with_guide();
+        section.expanded = self.analysis_open;
+        let (header, _) = section.show(ui, |ui| {
             let _ = card(ui, |ui| {
                 ui.horizontal(|ui| {
                     let tab_height = DEFAULT_BUTTON_HEIGHT;
@@ -400,19 +410,24 @@ impl RailState {
                         egui::StrokeKind::Inside,
                     );
                     let bottom = chart.bottom() - 34.0;
-                    let points: Vec<egui::Pos2> = (0..33)
-                        .map(|index| {
-                            let t = index as f32 / 32.0;
+                    let points: Vec<egui::Pos2> = self
+                        .metrics
+                        .curve
+                        .iter()
+                        .map(|[x, y]| {
+                            let t = ((*x + 0.1) / 1.2).clamp(0.0, 1.0) as f32;
                             egui::pos2(
                                 chart.left() + 10.0 + t * (chart.width() - 20.0),
-                                bottom - t.powf(0.45) * (chart.height() - 44.0),
+                                bottom - *y as f32 * (chart.height() - 44.0),
                             )
                         })
                         .collect();
-                    ui.painter().add(egui::Shape::line(
-                        points,
-                        Stroke::new(1.5_f32, theme.text_primary),
-                    ));
+                    if points.len() >= 2 {
+                        ui.painter().add(egui::Shape::line(
+                            points,
+                            Stroke::new(1.5_f32, theme.text_primary),
+                        ));
+                    }
                     let wedge = Rect::from_min_size(
                         egui::pos2(chart.left() + 2.0, bottom + 2.0),
                         Vec2::new(chart.width() - 4.0, 22.0),
@@ -443,12 +458,41 @@ impl RailState {
                 });
                 ui.add_space(f32::from(theme.space_md));
                 let mut readouts = CollapsibleSection::new("Readouts");
-                readouts.expanded = false;
-                readouts.show(ui, |ui| {
-                    let _ = hint(ui, "Double-click to reset");
+                readouts.expanded = self.readouts_open;
+                let _ = readouts.show(ui, |ui| {
+                    if self.metrics.rows.is_empty() {
+                        let _ = hint(ui, "Double-click to reset");
+                        return;
+                    }
+                    for row in &self.metrics.rows {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new(row.name.as_str())
+                                    .size(f32::from(theme.font_size_small))
+                                    .color(theme.text_secondary),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(
+                                        RichText::new(&row.value)
+                                            .size(f32::from(theme.font_size_small))
+                                            .color(if row.warn {
+                                                theme.warn_amber
+                                            } else {
+                                                theme.text_primary
+                                            }),
+                                    );
+                                },
+                            );
+                        });
+                    }
                 });
+                self.readouts_open = readouts.expanded;
             });
         });
+        let _ = header;
+        self.analysis_open = section.expanded;
     }
 
     fn show_setup(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {
