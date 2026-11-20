@@ -16,7 +16,7 @@ use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 const METER_MEMO_SIZE: usize = 64;
 
 /// What an armed Auto Crop resolved, for the controller to freeze.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct ArmedCrop {
     /// `None` when no crop was found.
     pub rect: Option<[f64; 4]>,

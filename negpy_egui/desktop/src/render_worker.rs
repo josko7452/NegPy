@@ -19,6 +19,7 @@ use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::kernel::caching::logic::calculate_config_hash;
 use negpy_backend::kernel::image::logic::float_to_uint8;
 use negpy_backend::render_engine::{DarkroomEngine, PipelineContext};
+use negpy_backend::services::rendering::auto_geometry::resolve_armed_autocrop;
 use negpy_backend::services::rendering::display_frame::DisplayFrame;
 use serde_json::Value;
 
@@ -172,13 +173,32 @@ impl RenderWorker {
                 let Some(request) = request else {
                     break;
                 };
+                let preview_size =
+                    negpy_backend::kernel::system::config::app_config().preview_render_size as f64;
+                let (config, autocrop) =
+                    resolve_armed_autocrop(&request.source.image, &request.config, preview_size);
+                let config_hash = if autocrop.is_some() {
+                    RenderRequest {
+                        config: config.clone(),
+                        ..request.clone()
+                    }
+                    .config_hash()
+                } else {
+                    request.config_hash()
+                };
                 let mut context = PipelineContext::new();
                 let output = engine.process(
                     &request.source.image,
-                    &request.config,
+                    &config,
                     &request.source.hash,
                     &mut context,
                 );
+                if autocrop.is_some() {
+                    context.metrics.insert(
+                        "autocrop_resolved".to_string(),
+                        serde_json::to_value(&autocrop).unwrap_or(Value::Null),
+                    );
+                }
                 let mut pixels = float_to_uint8(&output.pixels);
                 if let Some(condition) = request.proof.condition() {
                     let working = profile_bytes(WORKING_COLOR_SPACE, Path::new("/nonexistent"))
@@ -200,7 +220,7 @@ impl RenderWorker {
                 if tx
                     .send(RenderOutput {
                         generation: request.generation,
-                        config_hash: request.config_hash(),
+                        config_hash,
                         frame,
                         metrics,
                     })
@@ -396,5 +416,25 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn an_armed_crop_reports_the_rect_it_froze() {
+        let worker = RenderWorker::start();
+        let mut config = WorkspaceConfig::default();
+        config.geometry.crop_from_auto = true;
+        let request = RenderRequest {
+            generation: 1,
+            source: source(),
+            config,
+            proof: ProofRequest::default(),
+        };
+        worker.submit(request);
+        let output = wait_for(&worker);
+        let resolved: Option<negpy_backend::services::rendering::auto_geometry::ArmedCrop> = output
+            .metrics
+            .get("autocrop_resolved")
+            .and_then(|value| serde_json::from_value(value.clone()).ok());
+        assert!(resolved.is_some());
     }
 }

@@ -547,6 +547,7 @@ impl NegFeApp {
                 continue;
             }
             self.rendered = Some(output.config_hash);
+            self.freeze_autocrop(&output.metrics);
             self.rail
                 .set_metrics(crate::view::rail::analysis::AnalysisMetrics::from_values(
                     &self.edit.config,
@@ -564,6 +565,24 @@ impl NegFeApp {
             ctx.request_repaint();
         }
         shown
+    }
+
+    /// Store the crop a render found, unless the frame moved to another crop meanwhile.
+    fn freeze_autocrop(&mut self, metrics: &std::collections::BTreeMap<String, serde_json::Value>) {
+        let Some(resolved) = metrics.get("autocrop_resolved").and_then(|value| {
+            serde_json::from_value::<negpy_backend::services::rendering::auto_geometry::ArmedCrop>(
+                value.clone(),
+            )
+            .ok()
+        }) else {
+            return;
+        };
+        let Some(geometry) = freeze_autocrop_geometry(&self.edit.config.geometry, &resolved) else {
+            return;
+        };
+        self.edit.config.geometry = geometry;
+        self.edit.mark_dirty();
+        self.rail.roll_analysis.stale = true;
     }
 
     fn proof_request(&self) -> ProofRequest {
@@ -998,6 +1017,37 @@ impl eframe::App for NegFeApp {
 
 fn surface() -> Color32 {
     Theme::default().bg_panel
+}
+
+/// The geometry that freezes a resolved Auto Crop, or `None` when the arm changed.
+fn freeze_autocrop_geometry(
+    current: &negpy_backend::domain::models::GeometryConfig,
+    resolved: &negpy_backend::services::rendering::auto_geometry::ArmedCrop,
+) -> Option<negpy_backend::domain::models::GeometryConfig> {
+    use negpy_backend::features::geometry::logic::{autocrop_detection_key, squares_on_arm};
+    let mut geometry = current.clone();
+    if !geometry.crop_from_auto {
+        return None;
+    }
+    if resolved.squared {
+        if !squares_on_arm(&geometry) {
+            return None;
+        }
+        if let Some([fine, converge_v, converge_h]) = resolved.skew {
+            geometry.fine_rotation = fine;
+            geometry.converge_v = converge_v;
+            geometry.converge_h = converge_h;
+        }
+        geometry.autocrop_squared = true;
+    }
+    if autocrop_detection_key(&geometry) != resolved.key {
+        return None;
+    }
+    if let Some(rect) = resolved.rect {
+        geometry.crop_rect = Some(rect.to_vec());
+        geometry.crop_detect_key = resolved.key.clone();
+    }
+    (geometry != *current).then_some(geometry)
 }
 
 fn canvas() -> Color32 {
@@ -1689,5 +1739,34 @@ mod tests {
                 .current_key(),
             "tone"
         );
+    }
+
+    #[test]
+    fn a_resolved_crop_lands_once_the_arm_still_matches() {
+        use negpy_backend::services::rendering::auto_geometry::ArmedCrop;
+        let mut geometry = negpy_backend::domain::models::GeometryConfig::default();
+        geometry.crop_from_auto = true;
+        let resolved = ArmedCrop {
+            rect: Some([0.1, 0.1, 0.9, 0.9]),
+            key: negpy_backend::features::geometry::logic::autocrop_detection_key(&geometry),
+            skew: None,
+            squared: false,
+        };
+        let frozen = freeze_autocrop_geometry(&geometry, &resolved).expect("a crop freezes");
+        assert_eq!(frozen.crop_rect, Some(vec![0.1, 0.1, 0.9, 0.9]));
+    }
+
+    #[test]
+    fn a_resolved_crop_is_dropped_after_the_arm_changed() {
+        use negpy_backend::services::rendering::auto_geometry::ArmedCrop;
+        let mut geometry = negpy_backend::domain::models::GeometryConfig::default();
+        geometry.crop_from_auto = true;
+        let resolved = ArmedCrop {
+            rect: Some([0.1, 0.1, 0.9, 0.9]),
+            key: "another geometry".to_string(),
+            skew: None,
+            squared: false,
+        };
+        assert!(freeze_autocrop_geometry(&geometry, &resolved).is_none());
     }
 }
