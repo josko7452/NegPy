@@ -4,6 +4,8 @@ use eframe::egui::Ui;
 
 use negpy_backend::domain::models::exposure::BwFilter;
 use negpy_backend::domain::models::process::ProcessMode;
+use negpy_backend::features::exposure::papers::profiles_for_mode;
+use negpy_backend::features::pickbetter::{kelvin_to_wb, wb_to_kelvin};
 
 use crate::edit::FrameEdit;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
@@ -123,11 +125,7 @@ pub struct PaperState {
 impl Default for PaperState {
     fn default() -> Self {
         Self {
-            paper: StepCombo::new(vec![
-                Choice::new("Digital (Adobe RGB)"),
-                Choice::new("Kodak Portra"),
-                Choice::new("Ilford Multigrade"),
-            ]),
+            paper: StepCombo::new(vec![Choice::new("Digital (Adobe RGB)")]),
             paper_black: false,
             paper_white: false,
             dye_separation: CompactSlider::new(
@@ -193,6 +191,7 @@ pub struct ExposureState {
     pub tone: ToneState,
     pub paper: PaperState,
     pub local: LocalState,
+    pub temperature_dirty: bool,
 }
 
 impl Default for ExposureState {
@@ -202,6 +201,7 @@ impl Default for ExposureState {
             tone: ToneState::default(),
             paper: PaperState::default(),
             local: LocalState::default(),
+            temperature_dirty: false,
         }
     }
 }
@@ -212,9 +212,12 @@ impl ExposureState {
         let exposure = &edit.config.exposure;
         let process = &edit.config.process;
         self.filtration.filter.current = bw_filter_index(exposure.bw_filter);
-        self.filtration
-            .temperature
-            .set_value(exposure.wb_cyan * 8000.0 + 4000.0);
+        if !self.temperature_dirty {
+            self.filtration
+                .temperature
+                .set_value(wb_to_kelvin(exposure.wb_magenta, exposure.wb_yellow));
+        }
+        self.temperature_dirty = false;
         self.filtration.cyan.set_value(exposure.wb_cyan);
         self.filtration.magenta.set_value(exposure.wb_magenta);
         self.filtration.yellow.set_value(exposure.wb_yellow);
@@ -236,6 +239,12 @@ impl ExposureState {
         self.tone
             .contrast_mask
             .set_value(exposure.contrast_mask_strength);
+        let papers = profiles_for_mode(edit.config.process.process_mode)
+            .into_iter()
+            .map(|(key, profile)| Choice::with_id(profile.label, key))
+            .collect();
+        self.paper.paper = StepCombo::new(papers);
+        self.paper.paper.pick(&exposure.paper_profile);
         self.paper.paper_black = exposure.paper_black;
         self.paper.paper_white = exposure.paper_dmin;
         self.paper.dye_separation.set_value(exposure.dye_separation);
@@ -266,8 +275,19 @@ impl ExposureState {
         let exposure = &mut edit.config.exposure;
         let filter = BW_FILTERS[self.filtration.filter.current.min(BW_FILTERS.len() - 1)];
         let cyan = self.filtration.cyan.value;
-        let magenta = self.filtration.magenta.value;
-        let yellow = self.filtration.yellow.value;
+        let temperature = self.filtration.temperature.value;
+        let (magenta, yellow) = if !near(
+            wb_to_kelvin(self.filtration.magenta.value, self.filtration.yellow.value),
+            temperature,
+        ) {
+            kelvin_to_wb(
+                temperature,
+                self.filtration.magenta.value,
+                self.filtration.yellow.value,
+            )
+        } else {
+            (self.filtration.magenta.value, self.filtration.yellow.value)
+        };
         let cast = self.filtration.cast_removal.value;
         let density = self.tone.print_density.value;
         let grade = self.tone.grade.value;
@@ -278,6 +298,7 @@ impl ExposureState {
         let preflash = self.tone.preflash.value;
         let diffusion = self.tone.diffusion.value;
         let contrast = self.tone.contrast_mask.value;
+        let paper_profile = self.paper.paper.current_value().to_string();
         let paper_black = self.paper.paper_black;
         let paper_white = self.paper.paper_white;
         let dye = self.paper.dye_separation.value;
@@ -300,6 +321,7 @@ impl ExposureState {
             || !near(exposure.preflash, preflash)
             || !near(exposure.diffusion, diffusion)
             || !near(exposure.contrast_mask_strength, contrast)
+            || exposure.paper_profile != paper_profile
             || exposure.paper_black != paper_black
             || exposure.paper_dmin != paper_white
             || !near(exposure.dye_separation, dye)
@@ -322,6 +344,7 @@ impl ExposureState {
         exposure.preflash = preflash;
         exposure.diffusion = diffusion;
         exposure.contrast_mask_strength = contrast;
+        exposure.paper_profile = paper_profile;
         exposure.paper_black = paper_black;
         exposure.paper_dmin = paper_white;
         exposure.dye_separation = dye;
@@ -373,7 +396,10 @@ impl ExposureState {
         ui.add_space(f32::from(theme.space_sm));
         changed |= self.filtration.region.show(ui).is_some();
         ui.add_space(f32::from(theme.space_sm));
-        changed |= self.filtration.temperature.show(ui, "Temperature").1;
+        if self.filtration.temperature.show(ui, "Temperature").1 {
+            self.temperature_dirty = true;
+            changed = true;
+        }
         changed |= self.filtration.cyan.show(ui, "Cyan").1;
         changed |= self.filtration.magenta.show(ui, "Magenta").1;
         changed |= self.filtration.yellow.show(ui, "Yellow").1;
@@ -501,6 +527,36 @@ mod tests {
     }
 
     #[test]
+    fn the_paper_selector_writes_the_profile_key() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.paper.paper.pick("pakon");
+        state.store(&mut edit);
+        assert_eq!(edit.config.exposure.paper_profile, "pakon");
+    }
+
+    #[test]
+    fn a_temperature_change_moves_the_magenta_yellow_pair() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        edit.config.exposure.wb_magenta = 0.0;
+        edit.config.exposure.wb_yellow = 0.0;
+        state.load(&edit);
+        state.filtration.temperature.set_value(7000.0);
+        state.store(&mut edit);
+        assert!(edit.config.exposure.wb_magenta != 0.0 || edit.config.exposure.wb_yellow != 0.0);
+        assert!(
+            (wb_to_kelvin(
+                edit.config.exposure.wb_magenta,
+                edit.config.exposure.wb_yellow
+            ) - 7000.0)
+                .abs()
+                < 50.0
+        );
+    }
+
+    #[test]
     fn the_exposure_page_paints_on_a_context() {
         let ctx = egui::Context::default();
         let mut state = ExposureState::default();
@@ -527,6 +583,7 @@ mod tests {
         assert_eq!(state.filtration.filter.current_label(), "Orange #21");
         assert!(state.paper.paper_white);
         assert!((state.paper.toe.value - 0.4).abs() < 1e-9);
+        assert_eq!(state.paper.paper.current_value(), "neutral");
         assert!(!state.store(&mut edit));
     }
 }
