@@ -123,6 +123,9 @@ pub struct PaperState {
     pub paper_black: bool,
     pub paper_white: bool,
     pub dye_separation: CompactSlider,
+    pub dye_separation_trim_red: CompactSlider,
+    pub dye_separation_trim_green: CompactSlider,
+    pub dye_separation_trim_blue: CompactSlider,
     pub separation_damping: CompactSlider,
     pub snap: CompactSlider,
     pub toe: CompactSlider,
@@ -140,6 +143,15 @@ impl Default for PaperState {
             paper_white: false,
             dye_separation: CompactSlider::new(
                 SliderSpec::new(0.5, 1.5, 0.01, 2).with_default(1.0),
+            ),
+            dye_separation_trim_red: CompactSlider::new(
+                SliderSpec::new(-0.4, 0.4, 0.01, 2).with_default(0.0),
+            ),
+            dye_separation_trim_green: CompactSlider::new(
+                SliderSpec::new(-0.4, 0.4, 0.01, 2).with_default(0.0),
+            ),
+            dye_separation_trim_blue: CompactSlider::new(
+                SliderSpec::new(-0.4, 0.4, 0.01, 2).with_default(0.0),
             ),
             separation_damping: CompactSlider::new(
                 SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.0),
@@ -202,6 +214,7 @@ pub struct ExposureState {
     pub paper: PaperState,
     pub local: LocalState,
     pub temperature_dirty: bool,
+    pub is_bw: bool,
 }
 
 impl Default for ExposureState {
@@ -212,6 +225,7 @@ impl Default for ExposureState {
             paper: PaperState::default(),
             local: LocalState::default(),
             temperature_dirty: false,
+            is_bw: false,
         }
     }
 }
@@ -313,6 +327,15 @@ impl ExposureState {
         self.paper.paper_white = exposure.paper_dmin;
         self.paper.dye_separation.set_value(exposure.dye_separation);
         self.paper
+            .dye_separation_trim_red
+            .set_value(exposure.dye_separation_trim_red);
+        self.paper
+            .dye_separation_trim_green
+            .set_value(exposure.dye_separation_trim_green);
+        self.paper
+            .dye_separation_trim_blue
+            .set_value(exposure.dye_separation_trim_blue);
+        self.paper
             .separation_damping
             .set_value(exposure.separation_damping);
         self.paper.toe.set_value(exposure.toe);
@@ -332,6 +355,7 @@ impl ExposureState {
             .tone_softness
             .set_value(process.analysis_buffer + 1.0);
         self.tone.open = self.tone.open || edit.config.process.process_mode == ProcessMode::BW;
+        self.is_bw = edit.config.process.process_mode == ProcessMode::BW;
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -376,6 +400,9 @@ impl ExposureState {
         let paper_black = self.paper.paper_black;
         let paper_white = self.paper.paper_white;
         let dye = self.paper.dye_separation.value;
+        let dye_red = self.paper.dye_separation_trim_red.value;
+        let dye_green = self.paper.dye_separation_trim_green.value;
+        let dye_blue = self.paper.dye_separation_trim_blue.value;
         let damping = self.paper.separation_damping.value;
         let toe = self.paper.toe.value;
         let toe_width = self.paper.toe_width.value;
@@ -420,6 +447,9 @@ impl ExposureState {
             || exposure.paper_black != paper_black
             || exposure.paper_dmin != paper_white
             || !near(exposure.dye_separation, dye)
+            || !near(exposure.dye_separation_trim_red, dye_red)
+            || !near(exposure.dye_separation_trim_green, dye_green)
+            || !near(exposure.dye_separation_trim_blue, dye_blue)
             || !near(exposure.separation_damping, damping)
             || !near(exposure.toe, toe)
             || !near(exposure.toe_width, toe_width)
@@ -472,6 +502,9 @@ impl ExposureState {
         exposure.paper_black = paper_black;
         exposure.paper_dmin = paper_white;
         exposure.dye_separation = dye;
+        exposure.dye_separation_trim_red = dye_red;
+        exposure.dye_separation_trim_green = dye_green;
+        exposure.dye_separation_trim_blue = dye_blue;
         exposure.separation_damping = damping;
         exposure.toe = toe;
         exposure.toe_width = toe_width;
@@ -598,12 +631,27 @@ impl ExposureState {
             changed |= labeled_toggle(ui, "Paper Black", &mut self.paper.paper_black).clicked();
             changed |= labeled_toggle(ui, "Paper White", &mut self.paper.paper_white).clicked();
         });
-        changed |= self.paper.dye_separation.show(ui, "Dye Separation").1;
-        changed |= self
-            .paper
-            .separation_damping
-            .show(ui, "Separation Damping")
-            .1;
+        let arming_trims = self.paper.dye_separation_trim_red.value != 0.0
+            || self.paper.dye_separation_trim_green.value != 0.0
+            || self.paper.dye_separation_trim_blue.value != 0.0;
+        if !self.is_bw {
+            changed |= self.paper.dye_separation.show(ui, "Dye Separation").1;
+            let armed = arming_trims || (self.paper.dye_separation.value - 1.0).abs() > 1e-9;
+            if armed {
+                changed |= self.paper.dye_separation_trim_red.show(ui, "Red Trim").1;
+                changed |= self
+                    .paper
+                    .dye_separation_trim_green
+                    .show(ui, "Green Trim")
+                    .1;
+                changed |= self.paper.dye_separation_trim_blue.show(ui, "Blue Trim").1;
+            }
+            changed |= self
+                .paper
+                .separation_damping
+                .show(ui, "Separation Damping")
+                .1;
+        }
         changed |= self.paper.snap.show(ui, "Snap").1;
         changed |= self.paper.toe.show(ui, "Toe").1;
         changed |= self.paper.toe_width.show(ui, "Toe Width").1;
@@ -757,6 +805,17 @@ mod tests {
             ],
             [4.0, 5.0, 6.0]
         );
+    }
+
+    #[test]
+    fn the_damping_rail_is_armed_by_a_dye_separation_trim() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        assert!((state.paper.dye_separation.value - 1.0).abs() < 1e-9);
+        state.paper.dye_separation_trim_red.set_value(0.1);
+        state.store(&mut edit);
+        assert!((edit.config.exposure.dye_separation_trim_red - 0.1).abs() < 1e-9);
     }
 
     #[test]

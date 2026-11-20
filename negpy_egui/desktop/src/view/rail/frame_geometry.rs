@@ -3,6 +3,7 @@
 use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
 use negpy_backend::domain::models::geometry::{AspectRatio, AutocropMode, with_auto_crop};
+use negpy_backend::features::geometry::logic::{rotate_geometry_and_analysis, toggle_flip};
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
@@ -114,6 +115,7 @@ pub struct GeometryState {
     pub straighten: StraightenState,
     pub crop_open: bool,
     pub straighten_open: bool,
+    pub transform: Option<i8>,
 }
 
 impl Default for GeometryState {
@@ -123,6 +125,7 @@ impl Default for GeometryState {
             straighten: StraightenState::default(),
             crop_open: true,
             straighten_open: true,
+            transform: None,
         }
     }
 }
@@ -170,7 +173,7 @@ impl GeometryState {
         let ratio = AspectRatio::coerce(self.crop.ratio.current_value());
         let converge_v = self.straighten.tilt.value;
         let converge_h = self.straighten.swing.value;
-        let changed = geometry.crop_from_auto != auto_crop
+        let mut changed = geometry.crop_from_auto != auto_crop
             || (geometry.crop_rect.is_some() != draw)
             || geometry.autocrop_mode != mode
             || geometry.autocrop_ratio != ratio
@@ -200,6 +203,23 @@ impl GeometryState {
         geometry.autocrop_rebate_trim = rebate;
         geometry.fine_rotation = self.straighten.fine_rotation.value;
         geometry.crop_to_valid = crop_to_valid;
+        if let Some(action) = self.transform.take() {
+            match action {
+                -2 => {
+                    let (rotated, _) = rotate_geometry_and_analysis(&edit.config.geometry, None, 1);
+                    edit.config.geometry = rotated;
+                }
+                -1 => {
+                    let (rotated, _) =
+                        rotate_geometry_and_analysis(&edit.config.geometry, None, -1);
+                    edit.config.geometry = rotated;
+                }
+                1 => edit.config.geometry = toggle_flip(&edit.config.geometry, true),
+                2 => edit.config.geometry = toggle_flip(&edit.config.geometry, false),
+                _ => {}
+            }
+            changed = true;
+        }
         changed
     }
 
@@ -337,10 +357,19 @@ impl GeometryState {
                     .iter()
                     .enumerate()
                     {
-                        let (rect, _) = ui.allocate_exact_size(
+                        let (rect, response) = ui.allocate_exact_size(
                             Vec2::splat(DEFAULT_BUTTON_HEIGHT),
-                            Sense::hover(),
+                            Sense::click(),
                         );
+                        if response.clicked() {
+                            self.transform = Some(match index {
+                                0 => -1,
+                                1 => -2,
+                                2 => 1,
+                                _ => 2,
+                            });
+                            changed = true;
+                        }
                         ui.painter().rect_filled(rect, 4.0, theme.bg_input);
                         ui.painter().rect_stroke(
                             rect,
@@ -427,6 +456,22 @@ mod tests {
         assert_eq!(edit.config.geometry.autocrop_ratio.as_str(), "4:5");
         assert_eq!(edit.config.geometry.converge_v, 4.0);
         assert_eq!(edit.config.geometry.converge_h, -3.0);
+    }
+
+    #[test]
+    fn the_transform_action_rotates_and_flips_the_geometry() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.transform = Some(-2);
+        state.store(&mut edit);
+        assert_eq!(edit.config.geometry.rotation, 1);
+        state.transform = Some(2);
+        state.store(&mut edit);
+        assert!(edit.config.geometry.flip_vertical);
+        state.transform = Some(1);
+        state.store(&mut edit);
+        assert!(edit.config.geometry.flip_horizontal);
     }
 
     #[test]
