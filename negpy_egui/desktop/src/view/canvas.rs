@@ -10,6 +10,30 @@ use crate::styles::theme::Theme;
 /// The smallest crop a drag can make, as a fraction of the photo.
 pub const MIN_CROP: f64 = 0.02;
 
+/// A crop drag in progress, in photo coordinates.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct CropDrag {
+    pub start: egui::Pos2,
+    pub pending: [f64; 4],
+}
+
+impl CropDrag {
+    /// Start a drag at `start`, clamped inside `photo`.
+    #[must_use]
+    pub fn new(photo: Rect, start: egui::Pos2) -> Self {
+        let start = clamp_point(photo, start);
+        Self {
+            start,
+            pending: drag_rect(photo, start, start),
+        }
+    }
+
+    /// Move the drag to `current` and keep the ordered normalized rect.
+    pub fn update(&mut self, photo: Rect, current: egui::Pos2) {
+        self.pending = drag_rect(photo, self.start, current);
+    }
+}
+
 /// The fitted photo rect inside the canvas area.
 #[must_use]
 pub fn photo_rect(area: Rect, width: u32, height: u32) -> Rect {
@@ -24,14 +48,8 @@ pub fn photo_rect(area: Rect, width: u32, height: u32) -> Rect {
 /// A normalized crop rect that follows `from` to `to` inside `photo`.
 #[must_use]
 pub fn drag_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
-    let clamp = |point: egui::Pos2| {
-        egui::pos2(
-            point.x.clamp(photo.left(), photo.right()),
-            point.y.clamp(photo.top(), photo.bottom()),
-        )
-    };
-    let from = clamp(from);
-    let to = clamp(to);
+    let from = clamp_point(photo, from);
+    let to = clamp_point(photo, to);
     let x1 = f64::from((from.x.min(to.x) - photo.left()) / photo.width().max(1.0));
     let y1 = f64::from((from.y.min(to.y) - photo.top()) / photo.height().max(1.0));
     let x2 = f64::from((from.x.max(to.x) - photo.left()) / photo.width().max(1.0));
@@ -41,6 +59,13 @@ pub fn drag_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
     } else {
         [x1, y1, x2, y2]
     }
+}
+
+fn clamp_point(photo: Rect, point: egui::Pos2) -> egui::Pos2 {
+    egui::pos2(
+        point.x.clamp(photo.left(), photo.right()),
+        point.y.clamp(photo.top(), photo.bottom()),
+    )
 }
 
 /// A stored normalized crop rect as a screen rect inside `photo`.
@@ -60,14 +85,14 @@ pub fn stored_rect(photo: Rect, rect: &[f64]) -> Option<Rect> {
 
 /// Paint the crop box and let a drag on the photo replace it.
 ///
-/// Returns the new normalized rect when a drag ends. `drag_start` keeps the press
+/// Returns the new normalized rect when a drag ends. `drag` keeps the press
 /// position, because egui drops the pointer when the drag stops.
 pub fn crop_tool(
     ui: &mut egui::Ui,
     photo: Rect,
     rect: Option<&[f64]>,
     draw: bool,
-    drag_start: &mut Option<egui::Pos2>,
+    drag: &mut Option<CropDrag>,
 ) -> Option<[f64; 4]> {
     let theme = Theme::default();
     let response = ui.interact(photo, ui.id().with("crop-photo"), Sense::drag());
@@ -75,14 +100,23 @@ pub fn crop_tool(
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
     }
     if draw {
-        if response.drag_started() {
-            *drag_start = response.interact_pointer_pos();
+        if response.drag_started()
+            && let Some(start) = response.interact_pointer_pos()
+        {
+            *drag = Some(CropDrag::new(photo, start));
+        }
+        if let (Some(active), Some(current)) = (*drag, response.interact_pointer_pos()) {
+            if response.dragged() {
+                let mut moved = active;
+                moved.update(photo, current);
+                *drag = Some(moved);
+            }
         }
         if response.drag_stopped()
-            && let (Some(from), Some(to)) = (*drag_start, response.interact_pointer_pos())
+            && let (Some(active), Some(current)) = (*drag, response.interact_pointer_pos())
         {
-            *drag_start = None;
-            return Some(drag_rect(photo, from, to));
+            *drag = None;
+            return Some(drag_rect(photo, active.start, current));
         }
     }
     if let Some(bounds) = draw
@@ -306,6 +340,29 @@ mod tests {
     fn a_drag_outside_the_photo_is_clamped() {
         let rect = drag_rect(photo(), egui::pos2(-20.0, -20.0), egui::pos2(900.0, 900.0));
         assert_eq!(rect, [0.0, 0.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn a_drag_from_each_corner_orders_the_same_rect() {
+        let photo = photo();
+        let top_left = egui::pos2(200.0, 100.0);
+        let bottom_right = egui::pos2(400.0, 200.0);
+        let forward = drag_rect(photo, top_left, bottom_right);
+        let backward = drag_rect(photo, bottom_right, top_left);
+        assert_eq!(forward, backward);
+        assert!(forward[0] < forward[2]);
+        assert!(forward[1] < forward[3]);
+    }
+
+    #[test]
+    fn a_crop_drag_clamps_a_press_outside_the_photo() {
+        let mut drag = CropDrag::new(photo(), egui::pos2(-20.0, 90.0));
+        assert_eq!(drag.start, egui::pos2(100.0, 90.0));
+        drag.update(photo(), egui::pos2(900.0, 220.0));
+        assert!((drag.pending[0]).abs() < 1e-9);
+        assert!((drag.pending[1] - 0.2).abs() < 1e-9);
+        assert!((drag.pending[2] - 1.0).abs() < 1e-9);
+        assert!((drag.pending[3] - 0.85).abs() < 1e-9);
     }
 
     #[test]

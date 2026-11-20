@@ -181,8 +181,8 @@ pub struct NegFeApp {
     generation: u64,
     texture: Option<TextureHandle>,
     strip_textures: Vec<TextureHandle>,
-    /// The press position of a crop drag on the canvas.
-    crop_drag: Option<egui::Pos2>,
+    /// The crop drag on the canvas.
+    crop_drag: Option<crate::view::canvas::CropDrag>,
     /// The local mask lasso, between clicks.
     mask_drag: crate::view::canvas::MaskDrag,
 }
@@ -1167,7 +1167,7 @@ fn paint_shell(
         &negpy_backend::domain::models::GeometryConfig,
         Option<(usize, usize)>,
     ),
-    crop_drag: &mut Option<egui::Pos2>,
+    crop_drag: &mut Option<crate::view::canvas::CropDrag>,
     local: (
         &[negpy_backend::domain::models::LocalMask],
         bool,
