@@ -781,6 +781,7 @@ impl NegFeApp {
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
                     self.rail.apply_optics_action(&mut self.edit);
                     self.rail.apply_history_action(&mut self.edit);
+                    self.apply_roll_analysis(ctx);
                     self.open_requested_roll();
                     self.view.tab = self.rail.tab;
                     if let Some(tab) = switched {
@@ -851,6 +852,7 @@ impl NegFeApp {
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
             self.rail.apply_optics_action(&mut self.edit);
             self.rail.apply_history_action(&mut self.edit);
+            self.apply_roll_analysis(ctx);
             if self.rail.export.take_contact_sheet_request() {
                 self.view.contact_sheet = true;
                 self.view.view = "contact_sheet_dialog".to_string();
@@ -874,6 +876,34 @@ impl NegFeApp {
             return;
         };
         let _ = self.proof.save(repo);
+    }
+
+    fn apply_roll_analysis(&mut self, ctx: &egui::Context) {
+        if self.rail.roll_analysis.take_use_frame() {
+            if let Some(frame) = self.strip.get(self.selected)
+                && let Some(path) = &frame.path
+            {
+                let frame_name = frame.name.clone();
+                self.edit.config.process.roll_name = Some(frame.name.clone());
+                self.edit.config.process.baseline_source = format!(
+                    "frame:{}",
+                    negpy_backend::infrastructure::storage::local_asset_store::file_hash(path)
+                        .unwrap_or_default()
+                );
+                self.rail.roll_analysis.baseline = format!("Frame “{frame_name}”");
+                self.rail.roll_analysis.stale = false;
+                self.edit.mark_dirty();
+                self.requested = None;
+                self.rendered = None;
+                ctx.request_repaint();
+            }
+        }
+        if self.rail.roll_analysis.take_reanalyze() {
+            self.rail.roll_analysis.stale = false;
+            self.requested = None;
+            self.rendered = None;
+            ctx.request_repaint();
+        }
     }
 
     fn open_requested_roll(&mut self) {

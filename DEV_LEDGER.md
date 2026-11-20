@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 14:10 | **Last Commit:** `ea2dde7a` export: render and save a contact sheet
+**Last Updated:** 2026-11-20 19:00 | **Last Commit:** `309c0ea2` frame: keep the region channel and retouch tool
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
@@ -15,15 +15,19 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Wire the remaining P3 card actions.
-2. [ ] Map the local masks and finish the card dialogs.
+1. [ ] Compute and save roll baseline bounds from the analysis metrics.
+2. [ ] Add canvas tools for the local masks and retouch strokes.
 
 ## Completed (Recent)
+- `309c0ea2` frame: keep the region channel and retouch tool.
+- `799aaf76` metadata: clear cards and infer the folder date.
+- `ce98e88a` export: save the current form as a preset.
+- `2aceb225` metering: reset trims and measure a frame alone.
+- `32b82476` history: restore steps and save work prints.
 - `ea2dde7a` export: render and save a contact sheet.
 - `bb49cda0` scan: run the selected device from the tab.
 - `05eb456e` optics: load and edit flat-field profiles.
 - `460c4f0e` library: report an import without a profile.
-- `HEAD` desktop: store typed metadata fields.
 - `cea3ec8e` desktop: map paper and transform controls.
 - `041f7b0d` desktop: map filtration and tone channels.
 - `9e0eac36` desktop: map export ICC fields to the edit.

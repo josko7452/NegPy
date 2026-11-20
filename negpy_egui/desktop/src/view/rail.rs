@@ -673,21 +673,29 @@ impl RailState {
             ui.horizontal(|ui| {
                 let _ = section_subheader(ui, "ROLLS");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let _ = action_with_icon(
+                    if action_with_icon(
                         ui,
                         Icon::PickFrames,
                         "Use Frame",
                         ActionRank::Normal,
                         "Use this frame as the roll's analysis reference",
-                    );
+                    )
+                    .clicked()
+                    {
+                        self.roll_analysis.use_frame_requested = true;
+                    }
                     ui.add_space(f32::from(theme.space_sm));
-                    let _ = action_with_icon(
+                    if action_with_icon(
                         ui,
                         Icon::Circle,
                         "Reanalyze",
                         ActionRank::Normal,
                         "Measure the roll again from its frames",
-                    );
+                    )
+                    .clicked()
+                    {
+                        self.roll_analysis.reanalyze_requested = true;
+                    }
                 });
             });
             ui.add_space(f32::from(theme.space_sm));

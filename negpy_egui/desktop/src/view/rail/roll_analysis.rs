@@ -14,6 +14,8 @@ pub struct RollAnalysisState {
     pub baseline: String,
     pub stale: bool,
     pub open: bool,
+    pub use_frame_requested: bool,
+    pub reanalyze_requested: bool,
 }
 
 impl RollAnalysisState {
@@ -58,6 +60,8 @@ impl RollAnalysisState {
             baseline: rolls::baseline_label(repo, process),
             stale: rolls::frame_baseline_stale(repo, process),
             open: true,
+            use_frame_requested: false,
+            reanalyze_requested: false,
         };
         if state.roll_name.is_none() {
             state.roll_name = rolls::saved_rolls(repo)
@@ -82,6 +86,8 @@ impl RollAnalysisState {
             baseline: rolls::baseline_label_without_repo(process),
             stale: false,
             open: true,
+            use_frame_requested: false,
+            reanalyze_requested: false,
         }
     }
 
@@ -101,6 +107,16 @@ impl RollAnalysisState {
         }
         let name = self.roll_name.as_deref().unwrap_or("this roll");
         Some(format!("⚠ Baseline: Roll “{name}”, from an older analysis"))
+    }
+
+    /// Take the one Use Frame request.
+    pub fn take_use_frame(&mut self) -> bool {
+        std::mem::take(&mut self.use_frame_requested)
+    }
+
+    /// Take the one Reanalyze request.
+    pub fn take_reanalyze(&mut self) -> bool {
+        std::mem::take(&mut self.reanalyze_requested)
     }
 }
 
@@ -141,5 +157,16 @@ mod tests {
         };
         let state = RollAnalysisState::from_config(&config);
         assert!(state.roll_line() == "No roll");
+    }
+
+    #[test]
+    fn the_card_actions_leave_one_request() {
+        let mut state = RollAnalysisState::default();
+        state.use_frame_requested = true;
+        state.reanalyze_requested = true;
+        assert!(state.take_use_frame());
+        assert!(state.take_reanalyze());
+        assert!(!state.take_use_frame());
+        assert!(!state.take_reanalyze());
     }
 }
