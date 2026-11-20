@@ -9,6 +9,8 @@ use crate::styles::theme::Theme;
 
 /// The smallest crop a drag can make, as a fraction of the photo.
 pub const MIN_CROP: f64 = 0.02;
+/// The crop hint, shown while Draw is on.
+pub const CROP_HINT: &str = "Drag a crop. Right-click or Enter keeps it.";
 
 /// A crop drag in progress, in photo coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -24,13 +26,13 @@ impl CropDrag {
         let start = clamp_point(photo, start);
         Self {
             start,
-            pending: drag_rect(photo, start, start),
+            pending: region_rect(photo, start, start),
         }
     }
 
     /// Move the drag to `current` and keep the ordered normalized rect.
     pub fn update(&mut self, photo: Rect, current: egui::Pos2) {
-        self.pending = drag_rect(photo, self.start, current);
+        self.pending = region_rect(photo, self.start, current);
     }
 }
 
@@ -47,13 +49,20 @@ pub fn photo_rect(area: Rect, width: u32, height: u32) -> Rect {
 
 /// A normalized crop rect that follows `from` to `to` inside `photo`.
 #[must_use]
-pub fn drag_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
+pub fn region_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
     let from = clamp_point(photo, from);
     let to = clamp_point(photo, to);
     let x1 = f64::from((from.x.min(to.x) - photo.left()) / photo.width().max(1.0));
     let y1 = f64::from((from.y.min(to.y) - photo.top()) / photo.height().max(1.0));
     let x2 = f64::from((from.x.max(to.x) - photo.left()) / photo.width().max(1.0));
     let y2 = f64::from((from.y.max(to.y) - photo.top()) / photo.height().max(1.0));
+    [x1, y1, x2, y2]
+}
+
+/// A normalized crop rect a drag can commit, or the full frame when it is too small.
+#[must_use]
+pub fn drag_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
+    let [x1, y1, x2, y2] = region_rect(photo, from, to);
     if x2 - x1 < MIN_CROP || y2 - y1 < MIN_CROP {
         [0.0, 0.0, 1.0, 1.0]
     } else {
@@ -119,57 +128,78 @@ pub fn crop_tool(
             return Some(drag_rect(photo, active.start, current));
         }
     }
-    if let Some(bounds) = draw
-        .then(|| rect.and_then(|rect| stored_rect(photo, rect)))
-        .flatten()
-    {
-        let shade = with_alpha(theme.mark_shadow, 110);
-        ui.painter().rect_filled(
-            Rect::from_min_max(photo.min, egui::pos2(photo.right(), bounds.top())),
-            0.0,
-            shade,
-        );
-        ui.painter().rect_filled(
-            Rect::from_min_max(egui::pos2(photo.left(), bounds.bottom()), photo.max),
-            0.0,
-            shade,
-        );
-        ui.painter().rect_filled(
-            Rect::from_min_max(
-                egui::pos2(photo.left(), bounds.top()),
-                egui::pos2(bounds.left(), bounds.bottom()),
-            ),
-            0.0,
-            shade,
-        );
-        ui.painter().rect_filled(
-            Rect::from_min_max(
-                egui::pos2(bounds.right(), bounds.top()),
-                egui::pos2(photo.right(), bounds.bottom()),
-            ),
-            0.0,
-            shade,
-        );
-        ui.painter().rect_stroke(
-            bounds,
-            0.0,
-            Stroke::new(2.0_f32, theme.mark_photo),
-            egui::StrokeKind::Inside,
-        );
-        for corner in [
-            bounds.left_top(),
-            bounds.right_top(),
-            bounds.left_bottom(),
-            bounds.right_bottom(),
-        ] {
-            ui.painter().rect_filled(
-                Rect::from_center_size(corner, Vec2::splat(6.0)),
-                1.0,
-                theme.mark_photo,
-            );
+    if draw {
+        let bounds = drag
+            .and_then(|active| stored_rect(photo, &active.pending))
+            .or_else(|| rect.and_then(|rect| stored_rect(photo, rect)));
+        if let Some(bounds) = bounds {
+            paint_crop_box(ui, photo, bounds, drag.is_some(), &theme);
         }
+        paint_crop_hint(ui, photo, &theme);
     }
     None
+}
+
+fn paint_crop_box(ui: &egui::Ui, photo: Rect, bounds: Rect, dragging: bool, theme: &Theme) {
+    let shade = with_alpha(theme.mark_shadow, 110);
+    for outside in [
+        Rect::from_min_max(photo.min, egui::pos2(photo.right(), bounds.top())),
+        Rect::from_min_max(egui::pos2(photo.left(), bounds.bottom()), photo.max),
+        Rect::from_min_max(
+            egui::pos2(photo.left(), bounds.top()),
+            egui::pos2(bounds.left(), bounds.bottom()),
+        ),
+        Rect::from_min_max(
+            egui::pos2(bounds.right(), bounds.top()),
+            egui::pos2(photo.right(), bounds.bottom()),
+        ),
+    ] {
+        ui.painter().rect_filled(outside, 0.0, shade);
+    }
+    ui.painter().rect_stroke(
+        bounds,
+        0.0,
+        Stroke::new(3.0_f32, theme.mark_shadow),
+        egui::StrokeKind::Outside,
+    );
+    ui.painter().rect_stroke(
+        bounds,
+        0.0,
+        Stroke::new(1.0_f32, theme.mark_photo),
+        egui::StrokeKind::Inside,
+    );
+    let handle = if dragging { 10.0 } else { 8.0 };
+    for corner in [
+        bounds.left_top(),
+        bounds.right_top(),
+        bounds.left_bottom(),
+        bounds.right_bottom(),
+    ] {
+        let square = Rect::from_center_size(corner, Vec2::splat(handle));
+        ui.painter().rect_filled(square, 1.0, theme.mark_photo);
+        ui.painter().rect_stroke(
+            square,
+            1.0,
+            Stroke::new(1.0_f32, theme.mark_shadow),
+            egui::StrokeKind::Outside,
+        );
+    }
+}
+
+fn paint_crop_hint(ui: &egui::Ui, photo: Rect, theme: &Theme) {
+    let font = egui::FontId::proportional(f32::from(theme.font_size_small));
+    let galley = ui
+        .painter()
+        .layout_no_wrap(CROP_HINT.to_string(), font, theme.text_primary);
+    let padding = Vec2::splat(6.0);
+    let plate = Rect::from_min_size(
+        egui::pos2(photo.left() + 10.0, photo.bottom() - galley.size().y - 10.0),
+        galley.size() + padding * 2.0,
+    );
+    ui.painter()
+        .rect_filled(plate, 3.0, with_alpha(theme.mark_shadow, 180));
+    ui.painter()
+        .galley(plate.min + padding, galley, theme.text_primary);
 }
 
 /// A mask the canvas lasso drew, in normalized photo coordinates.
@@ -359,10 +389,19 @@ mod tests {
         let mut drag = CropDrag::new(photo(), egui::pos2(-20.0, 90.0));
         assert_eq!(drag.start, egui::pos2(100.0, 90.0));
         drag.update(photo(), egui::pos2(900.0, 220.0));
-        assert!((drag.pending[0]).abs() < 1e-9);
-        assert!((drag.pending[1] - 0.2).abs() < 1e-9);
-        assert!((drag.pending[2] - 1.0).abs() < 1e-9);
-        assert!((drag.pending[3] - 0.85).abs() < 1e-9);
+        assert!(drag.pending[0].abs() < 1e-6);
+        assert!((drag.pending[1] - 0.2).abs() < 1e-6);
+        assert!((drag.pending[2] - 1.0).abs() < 1e-6);
+        assert!((drag.pending[3] - 0.85).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_pending_crop_keeps_a_rectangle_below_the_commit_size() {
+        let mut drag = CropDrag::new(photo(), egui::pos2(200.0, 100.0));
+        drag.update(photo(), egui::pos2(202.0, 101.0));
+        let bounds = stored_rect(photo(), &drag.pending).expect("a pending box paints");
+        assert!(bounds.width() > 0.0);
+        assert!(bounds.height() > 0.0);
     }
 
     #[test]
