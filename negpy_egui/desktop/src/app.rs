@@ -85,12 +85,13 @@ impl Tab {
 }
 
 /// The controls a painted shell reported clicked this frame.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ShellHits {
     pub import: bool,
     pub previous: bool,
     pub next: bool,
     pub tile: Option<usize>,
+    pub crop: Option<[f64; 4]>,
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -179,6 +180,8 @@ pub struct NegFeApp {
     generation: u64,
     texture: Option<TextureHandle>,
     strip_textures: Vec<TextureHandle>,
+    /// The press position of a crop drag on the canvas.
+    crop_drag: Option<egui::Pos2>,
 }
 
 impl NegFeApp {
@@ -208,6 +211,7 @@ impl NegFeApp {
             generation: 0,
             texture: None,
             strip_textures: Vec::new(),
+            crop_drag: None,
         }
     }
 
@@ -237,6 +241,7 @@ impl NegFeApp {
             generation: 0,
             texture: None,
             strip_textures: Vec::new(),
+            crop_drag: None,
         }
     }
 
@@ -829,6 +834,11 @@ impl NegFeApp {
                 self.has_frame(),
                 &label,
                 self.selected,
+                (
+                    &self.edit.config.geometry,
+                    self.frame.as_ref().map(|frame| (frame.width, frame.height)),
+                ),
+                &mut self.crop_drag,
             );
             if hits.import {
                 self.rail.library.import_with_picker(false);
@@ -841,6 +851,14 @@ impl NegFeApp {
             }
             if hits.next {
                 self.next_frame();
+            }
+            if let Some(rect) = hits.crop {
+                self.edit.config.geometry.crop_rect = Some(rect.to_vec());
+                self.edit.config.geometry.crop_from_auto = false;
+                self.edit.config.geometry.crop_detect_key.clear();
+                self.edit.config.geometry.autocrop_squared = false;
+                self.edit.mark_dirty();
+                ctx.request_repaint();
             }
             self.request_render(ctx, false);
             self.request_export(ctx);
@@ -999,6 +1017,11 @@ fn paint_shell(
     has_frame: bool,
     label: &str,
     selected: usize,
+    geometry: (
+        &negpy_backend::domain::models::GeometryConfig,
+        Option<(usize, usize)>,
+    ),
+    crop_drag: &mut Option<egui::Pos2>,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1046,7 +1069,12 @@ fn paint_shell(
     painter.rect_filled(canvas_rect, 0.0, canvas());
 
     let photo = if has_frame {
-        fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0))
+        geometry.1.map_or_else(
+            || fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0)),
+            |(width, height)| {
+                crate::view::canvas::photo_rect(canvas_rect, width as u32, height as u32)
+            },
+        )
     } else {
         canvas_rect
     };
@@ -1058,6 +1086,15 @@ fn paint_shell(
             Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
             Color32::WHITE,
         );
+        let draw = geometry.0.crop_rect.is_some() && !geometry.0.crop_from_auto;
+        let crop = crate::view::canvas::crop_tool(
+            ui,
+            photo,
+            geometry.0.crop_rect.as_deref(),
+            draw,
+            crop_drag,
+        );
+        hits.crop = crop;
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }

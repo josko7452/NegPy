@@ -186,7 +186,9 @@ impl GeometryState {
             || geometry.crop_to_valid != crop_to_valid;
         if auto_crop != geometry.crop_from_auto {
             edit.config = with_auto_crop(edit.config.clone(), auto_crop);
-        } else if !auto_crop && draw != geometry.crop_rect.is_some() {
+        }
+        let geometry = &mut edit.config.geometry;
+        if !auto_crop && draw != geometry.crop_rect.is_some() {
             geometry.crop_rect = if draw {
                 Some(vec![0.0, 0.0, 1.0, 1.0])
             } else {
@@ -472,6 +474,22 @@ mod tests {
         state.transform = Some(1);
         state.store(&mut edit);
         assert!(edit.config.geometry.flip_horizontal);
+    }
+
+    #[test]
+    fn turning_draw_on_after_auto_crop_keeps_a_manual_rect() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        edit.config = with_auto_crop(edit.config.clone(), true);
+        state.load(&edit);
+        state.crop.auto_crop = false;
+        state.crop.draw = true;
+        state.store(&mut edit);
+        assert!(!edit.config.geometry.crop_from_auto);
+        assert_eq!(
+            edit.config.geometry.crop_rect.as_deref(),
+            Some(&[0.0, 0.0, 1.0, 1.0][..])
+        );
     }
 
     #[test]
