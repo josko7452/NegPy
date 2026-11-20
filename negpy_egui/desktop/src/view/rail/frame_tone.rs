@@ -689,9 +689,21 @@ impl ExposureState {
     fn show_local(&mut self, ui: &mut Ui) -> bool {
         let mut changed = false;
         ui.horizontal(|ui| {
-            changed |= labeled_toggle(ui, "Draw", &mut self.local.draw).clicked();
-            changed |= labeled_toggle(ui, "Oval", &mut self.local.oval).clicked();
-            changed |= labeled_toggle(ui, "Card", &mut self.local.card).clicked();
+            if labeled_toggle(ui, "Draw", &mut self.local.draw).clicked() {
+                self.local.oval = false;
+                self.local.card = false;
+                changed = true;
+            }
+            if labeled_toggle(ui, "Oval", &mut self.local.oval).clicked() {
+                self.local.draw = false;
+                self.local.card = false;
+                changed = true;
+            }
+            if labeled_toggle(ui, "Card", &mut self.local.card).clicked() {
+                self.local.draw = false;
+                self.local.oval = false;
+                changed = true;
+            }
         });
         let _ = section_subheader(ui, &format!("MASKS · {}", self.mask_count));
         changed |= self.local.burn.show(ui, "Burn").1;
@@ -765,6 +777,22 @@ mod tests {
             .push(negpy_backend::domain::models::LocalMask::default());
         state.load(&edit);
         assert_eq!(state.mask_count, 1);
+    }
+
+    #[test]
+    fn the_local_tool_choices_are_exclusive() {
+        let ctx = egui::Context::default();
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.local.open = true;
+        state.local.draw = true;
+        state.store(&mut edit);
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show_local(ui);
+            });
+        });
+        assert!(state.local.draw);
     }
 
     #[test]

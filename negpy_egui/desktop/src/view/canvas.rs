@@ -145,6 +145,7 @@ pub type DrawnMask = (MaskShape, Vec<[f64; 2]>);
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct MaskDrag {
     pub points: Vec<egui::Pos2>,
+    pub start: Option<egui::Pos2>,
 }
 
 /// Paint every stored mask and let the lasso collect points inside the photo.
@@ -154,6 +155,7 @@ pub fn local_tool(
     masks: &[LocalMask],
     drawing: bool,
     drag: &mut MaskDrag,
+    oval: bool,
 ) -> Option<DrawnMask> {
     let theme = Theme::default();
     for mask in masks {
@@ -174,7 +176,50 @@ pub fn local_tool(
             ));
         }
     }
-    let response = ui.interact(photo, ui.id().with("local-photo"), Sense::click());
+    let response = ui.interact(
+        photo,
+        ui.id().with("local-photo"),
+        if oval { Sense::drag() } else { Sense::click() },
+    );
+    if oval {
+        response.clone().on_hover_cursor(CursorIcon::Crosshair);
+        if response.drag_started() {
+            drag.start = response.interact_pointer_pos();
+        }
+        if response.drag_stopped()
+            && let (Some(start), Some(end)) = (drag.start, response.interact_pointer_pos())
+        {
+            drag.start = None;
+            if (end - start).length() >= 8.0 {
+                let center = egui::pos2((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
+                let points = [
+                    center,
+                    egui::pos2(end.x, center.y),
+                    egui::pos2(center.x, end.y),
+                ];
+                let vertices = points
+                    .iter()
+                    .map(|point| {
+                        [
+                            f64::from((point.x - photo.left()) / photo.width().max(1.0)),
+                            f64::from((point.y - photo.top()) / photo.height().max(1.0)),
+                        ]
+                    })
+                    .collect();
+                return Some((MaskShape::Oval, vertices));
+            }
+        }
+        if let (Some(start), Some(current)) = (drag.start, response.interact_pointer_pos()) {
+            let box_rect = Rect::from_two_pos(start, current);
+            ui.painter().rect_stroke(
+                box_rect,
+                0.0,
+                Stroke::new(1.5_f32, theme.warn_amber),
+                egui::StrokeKind::Inside,
+            );
+        }
+        return None;
+    }
     if drawing {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
         if response.clicked() {
@@ -259,5 +304,14 @@ mod tests {
         ];
         assert!((normalized[0] - 0.25).abs() < 1e-9);
         assert!((normalized[1] - 0.25).abs() < 1e-9);
+    }
+
+    #[test]
+    fn an_oval_drag_makes_center_and_axis_points() {
+        let start = egui::pos2(100.0, 100.0);
+        let end = egui::pos2(300.0, 200.0);
+        let center = egui::pos2((start.x + end.x) / 2.0, (start.y + end.y) / 2.0);
+        assert!((center.x - 200.0).abs() < 1e-9);
+        assert!((center.y - 150.0).abs() < 1e-9);
     }
 }

@@ -896,7 +896,11 @@ impl NegFeApp {
                     self.frame.as_ref().map(|frame| (frame.width, frame.height)),
                 ),
                 &mut self.crop_drag,
-                (&self.edit.config.local.masks, self.rail.exposure.local.draw),
+                (
+                    &self.edit.config.local.masks,
+                    self.rail.exposure.local.draw,
+                    self.rail.exposure.local.oval,
+                ),
                 &mut self.mask_drag,
             );
             if hits.import {
@@ -930,6 +934,8 @@ impl NegFeApp {
                         ..Default::default()
                     });
                 self.rail.exposure.local.draw = false;
+                self.rail.exposure.local.oval = false;
+                self.rail.exposure.local.card = false;
                 self.edit.mark_dirty();
                 ctx.request_repaint();
             }
@@ -1161,7 +1167,7 @@ fn paint_shell(
         Option<(usize, usize)>,
     ),
     crop_drag: &mut Option<egui::Pos2>,
-    local: (&[negpy_backend::domain::models::LocalMask], bool),
+    local: (&[negpy_backend::domain::models::LocalMask], bool, bool),
     mask_drag: &mut crate::view::canvas::MaskDrag,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
@@ -1236,7 +1242,8 @@ fn paint_shell(
             crop_drag,
         );
         hits.crop = crop;
-        hits.mask = crate::view::canvas::local_tool(ui, photo, local.0, local.1, mask_drag);
+        hits.mask =
+            crate::view::canvas::local_tool(ui, photo, local.0, local.1, mask_drag, local.2);
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }
