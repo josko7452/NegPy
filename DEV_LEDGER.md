@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 19:45 | **Last Commit:** `6d785001` roll: use the open frame as the baseline
+**Last Updated:** 2026-11-20 21:10 | **Last Commit:** `3becfc36` local: drag a card gradient mask
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
@@ -15,23 +15,24 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
 
 ## Next Steps (Ordered)
-1. [ ] Manual Crop: show a crop cursor and drag the crop rectangle on the canvas.
-2. [ ] Auto Crop: measure the frame and apply the detected crop rectangle.
-3. [ ] Compute and save roll baseline bounds from the analysis metrics.
-4. [ ] Add canvas tools for the local masks and retouch strokes.
+1. [ ] Add canvas strokes for Heal, Scratch, Line and Clone.
+2. [ ] Add local mask selection and vertex editing on the canvas.
 
 ## Completed (Recent)
+- `3becfc36` local: drag a card gradient mask.
+- `fdbb647e` local: drag an oval mask on the canvas.
+- `fa10239c` local: draw a mask on the canvas.
+- `161bea50` roll: apply the saved defaults when a roll opens.
+- `e3e81fe4` roll: save the open frame as the baseline.
+- `3b621f2e` metering: store the measured bounds on the frame.
+- `74c7fd08` frame: reshape a drawn crop to the chosen ratio.
+- `2e096eb0` frame: apply the Auto Crop detection.
+- `ab7e9d68` frame: paint the crop box and cursor.
 - `309c0ea2` frame: keep the region channel and retouch tool.
 - `799aaf76` metadata: clear cards and infer the folder date.
 - `ce98e88a` export: save the current form as a preset.
 - `2aceb225` metering: reset trims and measure a frame alone.
 - `32b82476` history: restore steps and save work prints.
-- `ea2dde7a` export: render and save a contact sheet.
-- `bb49cda0` scan: run the selected device from the tab.
-- `05eb456e` optics: load and edit flat-field profiles.
-- `460c4f0e` library: report an import without a profile.
-- `1f931b2e` desktop: map geometry fields to their config.
-- `7f91674a` desktop: map exposure fields to their config.
 - `00401b1c` desktop: apply soft proof to the preview.
 - `cb46520f` desktop: export the roll on a worker.
 - `e9f27f85` desktop: keep card folds in page state.
