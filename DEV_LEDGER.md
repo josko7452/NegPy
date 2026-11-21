@@ -1,46 +1,37 @@
 # Development Ledger
-**Last Updated:** 2026-11-20 21:10 | **Last Commit:** `3becfc36` local: drag a card gradient mask
+**Last Updated:** 2026-11-21 10:14 | **Last Commit:** `98d7b11e` frame: keep crop drawing active until confirm
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. Close the shell-session gaps before
-adding panels or dialogs; the next ten commits are authorized.
-
-## UX Target (supersedes pixel parity)
-The goal is the same workflow, controls, order, grouping and density as NegPy.
-Layout score is a diagnostic. Stop when the control is usable and in place.
-
-## Deferred (not planned)
-- Film Strip cells, canvas bar segments and Contact Sheet tile metrics.
-- Exact font widths, letter spacing and icon rasterization.
-- Spacing under 4px, a 1-2px header difference, and the Scan footer clip.
+Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
+its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
+redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Add canvas strokes for Heal, Scratch, Line and Clone.
-2. [ ] Add local mask selection and vertex editing on the canvas.
+1. [ ] Auto Crop preview: freeze the resolved geometry before the texture is
+   shown, then show that texture once (`MIGRATION_PLAN.md` §10.6 commit 5).
+3. [ ] Add canvas strokes for Heal, Scratch, Line and Clone
+   (`MIGRATION_PLAN.md` §9.4 P3-11).
+4. [ ] Add local mask selection and vertex editing on the canvas.
+5. [ ] Keep the Metadata, Crop, Straighten and Export card states across a
+   repaint (`MIGRATION_PLAN.md` §9.2 P1-4, P1-6, P1-8).
 
 ## Completed (Recent)
+- `98d7b11e` frame: keep crop drawing active until confirm.
+- The render worker returns the request hash and the painted config hash; the
+  shell accepts a render only when both generation and request hash match.
+- `53efd5c5` scan: keep the Camera card state across modes.
+- `0f62b2e9` library: keep the card open state after a reload.
+- `09153197` rail: keep the Analysis card collapsed.
+- `35d7c9ae` frame: confirm the crop with Enter or right-click.
+- `383a26de` frame: draw the crop box while dragging.
+- `6ab4469a` frame: keep a typed crop drag.
 - `3becfc36` local: drag a card gradient mask.
 - `fdbb647e` local: drag an oval mask on the canvas.
 - `fa10239c` local: draw a mask on the canvas.
-- `161bea50` roll: apply the saved defaults when a roll opens.
-- `e3e81fe4` roll: save the open frame as the baseline.
-- `3b621f2e` metering: store the measured bounds on the frame.
-- `74c7fd08` frame: reshape a drawn crop to the chosen ratio.
-- `2e096eb0` frame: apply the Auto Crop detection.
-- `ab7e9d68` frame: paint the crop box and cursor.
-- `309c0ea2` frame: keep the region channel and retouch tool.
-- `799aaf76` metadata: clear cards and infer the folder date.
-- `ce98e88a` export: save the current form as a preset.
-- `2aceb225` metering: reset trims and measure a frame alone.
-- `32b82476` history: restore steps and save work prints.
-- `00401b1c` desktop: apply soft proof to the preview.
-- `cb46520f` desktop: export the roll on a worker.
-- `e9f27f85` desktop: keep card folds in page state.
-- `c64741b4` desktop: feed render metrics into Analysis.
 
 ## Verification
-- `cargo test --workspace`, `cargo check --workspace` and
-  `cargo fmt --all --check` pass.
+- The last full run before `98d7b11e`: `cargo test --workspace`,
+  `cargo check --workspace` and `cargo fmt --all --check` passed.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
@@ -52,7 +43,23 @@ Layout score is a diagnostic. Stop when the control is usable and in place.
 - Manual profile `/home/bruno/Dokumenty/NegPy`; roll `vv9`.
 - Without `--profile`, Import cannot write and edits save nowhere.
 - A section rebuilt in `show` loses its open state on the next frame.
+- UX target: the same workflow, controls, order and density as NegPy; layout
+  score is a diagnostic.
+- Deferred: Film Strip cells, canvas bar segments, Contact Sheet tile metrics,
+  exact font widths and sub-4px spacing.
 - `MIGRATION_PLAN.md` section 9 is the gap register and evidence index.
+- `MIGRATION_PLAN.md` section 10 is the crop-interaction plan.
+- `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
+  must come from `Draw`, never from a stored rect, or Enter cannot confirm.
+- The local mask tool returns before it claims a drag when its mode is `Off`.
+- A dirty edit and a render request do not prove a redraw. `receive_render`
+  accepts output by generation, not by the config hash that painted it.
+- The render worker resolves Auto Crop in its own config, then returns a hash
+  for that resolved config. The shell freezes the rect after it shows the frame.
 - The Light Table capture names one frame; the golden shows the whole roll.
 - Generated captures stay untracked under `tests/gui/actual/`.
 - `negfe` is the manual target; `negfe-capture` is the fixed matrix.
+- Session batches are 10 commits; the ledger limit is 120 lines
+  (`MIGRATION_PLAN.md` §8.2–§8.4).
+- `negpy_egui/AGENTS.md` still says 5 commits and 60 ledger lines. A human must
+  reconcile it; the plan and this ledger carry the 10/120 override.

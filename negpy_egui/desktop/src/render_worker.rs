@@ -129,6 +129,9 @@ impl RenderRequest {
 #[derive(Clone, Debug)]
 pub struct RenderOutput {
     pub generation: u64,
+    /// The hash of the request that started this render.
+    pub request_hash: String,
+    /// The hash of the config that painted this frame, after Auto Crop resolved it.
     pub config_hash: String,
     pub frame: DisplayFrame,
     pub metrics: BTreeMap<String, Value>,
@@ -177,6 +180,7 @@ impl RenderWorker {
                     negpy_backend::kernel::system::config::app_config().preview_render_size as f64;
                 let (config, autocrop) =
                     resolve_armed_autocrop(&request.source.image, &request.config, preview_size);
+                let request_hash = request.config_hash();
                 let config_hash = if autocrop.is_some() {
                     RenderRequest {
                         config: config.clone(),
@@ -184,7 +188,7 @@ impl RenderWorker {
                     }
                     .config_hash()
                 } else {
-                    request.config_hash()
+                    request_hash.clone()
                 };
                 let mut context = PipelineContext::new();
                 let output = engine.process(
@@ -220,6 +224,7 @@ impl RenderWorker {
                 if tx
                     .send(RenderOutput {
                         generation: request.generation,
+                        request_hash,
                         config_hash,
                         frame,
                         metrics,
@@ -436,5 +441,6 @@ mod tests {
             .get("autocrop_resolved")
             .and_then(|value| serde_json::from_value(value.clone()).ok());
         assert!(resolved.is_some());
+        assert_ne!(output.request_hash, output.config_hash);
     }
 }

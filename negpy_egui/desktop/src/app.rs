@@ -175,7 +175,7 @@ pub struct NegFeApp {
     sheets: crate::contact_sheet_worker::SheetWorker,
     sheet: crate::view::contact_sheet_dialog::ContactSheetDialog,
     sheet_request: u64,
-    /// The config hash of the request in flight, and of the frame on the canvas.
+    /// The request hash in flight, and the config hash that painted the canvas.
     requested: Option<String>,
     rendered: Option<String>,
     generation: u64,
@@ -545,10 +545,16 @@ impl NegFeApp {
         }
     }
 
+    /// Whether a finished render is the one the canvas waits for.
+    fn accepts_render(&self, output: &crate::render_worker::RenderOutput) -> bool {
+        output.generation == self.generation
+            && self.requested.as_deref() == Some(output.request_hash.as_str())
+    }
+
     fn receive_render(&mut self, ctx: &egui::Context) -> bool {
         let mut shown = false;
         for output in self.renderer.drain() {
-            if output.generation != self.generation {
+            if !self.accepts_render(&output) {
                 continue;
             }
             self.rendered = Some(output.config_hash);
@@ -1900,6 +1906,29 @@ mod tests {
             squared: false,
         };
         assert!(freeze_autocrop_geometry(&geometry, &resolved).is_none());
+    }
+
+    #[test]
+    fn a_render_is_accepted_only_for_the_request_in_flight() {
+        use crate::render_worker::RenderOutput;
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.generation = 4;
+        app.requested = Some("confirmed".to_string());
+        let output = |generation: u64, request_hash: &str| RenderOutput {
+            generation,
+            request_hash: request_hash.to_string(),
+            config_hash: "painted".to_string(),
+            frame: negpy_backend::services::rendering::display_frame::DisplayFrame::from_rgb(
+                1,
+                1,
+                vec![0; 3],
+            ),
+            metrics: std::collections::BTreeMap::new(),
+        };
+        assert!(app.accepts_render(&output(4, "confirmed")));
+        assert!(!app.accepts_render(&output(3, "confirmed")));
+        assert!(!app.accepts_render(&output(4, "stale")));
     }
 
     #[test]
