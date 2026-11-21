@@ -59,6 +59,29 @@ pub struct GpuEngine {
     gpu: Arc<GpuDevice>,
     loaders: ShaderLoader,
     textures: TexturePool,
+    prefix: Option<CachedPrefix>,
+    source_key: String,
+}
+
+/// The last geometry and normalization output, keyed by every input they read.
+struct CachedPrefix {
+    key: String,
+    width: usize,
+    height: usize,
+    normalized: GpuTexture,
+}
+
+/// The key of the prefix passes: geometry and the normalization stage.
+fn prefix_key(config: &WorkspaceConfig, run: &BaseRun, source_key: &str) -> String {
+    crate::kernel::caching::logic::calculate_value_hash(&serde_json::json!({
+        "source": source_key,
+        "geometry": config.geometry,
+        "process": config.process,
+        "stage": format!("{:?}", run.stage),
+        "bounds": [run.bounds.floors, run.bounds.ceils],
+        "crossover": run.crossover,
+        "transfer": run.transfer,
+    }))
 }
 
 impl GpuEngine {
@@ -74,6 +97,8 @@ impl GpuEngine {
             gpu,
             loaders: ShaderLoader::default(),
             textures: TexturePool::default(),
+            prefix: None,
+            source_key: String::new(),
         })
     }
 
@@ -81,6 +106,24 @@ impl GpuEngine {
     #[must_use]
     pub fn device(&self) -> &GpuDevice {
         &self.gpu
+    }
+
+    /// The cached prefix's key, or an empty string when there is none.
+    #[must_use]
+    pub fn cached_prefix_key(&self) -> String {
+        self.prefix
+            .as_ref()
+            .map(|prefix| prefix.key.clone())
+            .unwrap_or_default()
+    }
+
+    /// Identify the source whose pixels the prefix cache belongs to.
+    pub fn set_source(&mut self, key: &str) {
+        if self.source_key != key {
+            self.source_key.clear();
+            self.source_key.push_str(key);
+            self.prefix = None;
+        }
     }
 
     /// Geometry, normalization and the display encode. The result is the
@@ -219,32 +262,48 @@ impl GpuEngine {
         encode: bool,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = self.textures.take(
-            &self.gpu.device,
-            image.width as u32,
-            image.height as u32,
-            "source",
-        );
-        source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = self
-            .textures
-            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
-        let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
-        run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
-
-        let normalized =
-            self.textures
-                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
-        let value = NormalizationUniforms::pack(
-            NormalizationSetup {
-                stage: &run.stage,
-                bounds: run.bounds,
-                mono: is_mono(&config.process),
-                transfer: run.transfer,
-            },
-            &run.crossover,
-        );
-        run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &value);
+        let key = prefix_key(config, run, &self.source_key);
+        let reuse = self.prefix.as_ref().is_some_and(|prefix| {
+            prefix.key == key && prefix.width == out_w && prefix.height == out_h
+        });
+        if !reuse {
+            self.prefix = None;
+            let source = self.textures.take(
+                &self.gpu.device,
+                image.width as u32,
+                image.height as u32,
+                "source",
+            );
+            source.upload(&self.gpu.queue, &image.pixels, false);
+            let geometry =
+                self.textures
+                    .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+            let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
+            run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
+            let normalized =
+                self.textures
+                    .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            let value = NormalizationUniforms::pack(
+                NormalizationSetup {
+                    stage: &run.stage,
+                    bounds: run.bounds,
+                    mono: is_mono(&config.process),
+                    transfer: run.transfer,
+                },
+                &run.crossover,
+            );
+            run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &value);
+            self.textures.put(source);
+            self.textures.put(geometry);
+            self.prefix = Some(CachedPrefix {
+                key,
+                width: out_w,
+                height: out_h,
+                normalized,
+            });
+        }
+        let prefix = self.prefix.as_ref().expect("the prefix was just filled");
+        let normalized = &prefix.normalized;
 
         let printed = self
             .textures
@@ -252,7 +311,7 @@ impl GpuEngine {
         run_exposure(
             &self.gpu,
             &self.loaders,
-            &normalized,
+            normalized,
             &printed,
             &ExposureUniforms::pack(print),
         );
@@ -282,9 +341,6 @@ impl GpuEngine {
         let (width, height) = (cropped.width as usize, cropped.height as usize);
         self.textures.put(cropped);
         self.textures.put(printed);
-        self.textures.put(normalized);
-        self.textures.put(geometry);
-        self.textures.put(source);
         ImageBuffer::from_rgb(width, height, pixels)
     }
 

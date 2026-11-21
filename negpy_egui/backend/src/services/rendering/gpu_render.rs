@@ -96,10 +96,12 @@ pub fn render(
     engine: &mut crate::render_engine::DarkroomEngine,
     image: &ImageBuffer,
     config: &WorkspaceConfig,
+    source_key: &str,
     base: &GpuBase,
     context: &mut PipelineContext,
 ) -> ImageBuffer {
     base.metrics(context);
+    gpu.set_source(source_key);
     let geometry = geometry_process(
         image,
         &config.geometry,

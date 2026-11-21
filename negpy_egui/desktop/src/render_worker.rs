@@ -300,6 +300,7 @@ impl RenderWorker {
                         &mut engine,
                         &baked,
                         &config,
+                        &source_hash,
                         &base,
                         &mut context,
                     )

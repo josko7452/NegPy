@@ -348,3 +348,25 @@ fn a_print_chain_matches_the_cpu_print() {
     let fraction = failures as f64 / want.len() as f64;
     assert!(fraction < 0.01, "{failures} samples differ");
 }
+
+#[test]
+fn a_new_source_drops_the_cached_prefix() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(32, 24);
+    let bounds = negpy_backend::features::exposure::normalization::LogNegativeBounds::new(
+        [-1.0; 3], [0.0; 3],
+    );
+    let print = negpy_backend::features::exposure::exposure_shader::ExposureRun::plain(
+        &settings.exposure,
+        &settings.process,
+        settings.process.process_mode,
+    );
+    engine.set_source("one");
+    let _ = engine.run_print(&image, &settings, &BaseRun::plain(bounds), &print, None);
+    assert!(!engine.cached_prefix_key().is_empty());
+    engine.set_source("two");
+    assert!(engine.cached_prefix_key().is_empty());
+}

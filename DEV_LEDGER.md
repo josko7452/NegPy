@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 21:10 | **Last Commit:** `pending texture pool`
+**Last Updated:** 2026-11-21 21:30 | **Last Commit:** `pending prefix cache`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -29,6 +29,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 9. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: the GPU engine keeps the geometry and normalization textures until
+  the source or prefix key changes.
 - `backend`: the GPU engine has a size-keyed texture pool and returns the print
   chain's textures after each frame.
 - `backend`: GPU eligibility is pinned to the frames the current chain covers,
