@@ -93,6 +93,7 @@ pub struct ShellHits {
     pub tile: Option<usize>,
     pub crop: crate::view::canvas::CropAction,
     pub mask: Option<crate::view::canvas::DrawnMask>,
+    pub retouch: crate::view::canvas::RetouchAction,
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -185,6 +186,8 @@ pub struct NegFeApp {
     crop_drag: Option<crate::view::canvas::CropDrag>,
     /// The local mask lasso, between clicks.
     mask_drag: crate::view::canvas::MaskDrag,
+    /// The retouch stroke in progress.
+    retouch_drag: crate::view::canvas::RetouchDrag,
 }
 
 impl NegFeApp {
@@ -216,6 +219,7 @@ impl NegFeApp {
             strip_textures: Vec::new(),
             crop_drag: None,
             mask_drag: crate::view::canvas::MaskDrag::default(),
+            retouch_drag: crate::view::canvas::RetouchDrag::default(),
         }
     }
 
@@ -247,6 +251,7 @@ impl NegFeApp {
             strip_textures: Vec::new(),
             crop_drag: None,
             mask_drag: crate::view::canvas::MaskDrag::default(),
+            retouch_drag: crate::view::canvas::RetouchDrag::default(),
         }
     }
 
@@ -643,6 +648,64 @@ impl NegFeApp {
         self.edit.mark_dirty();
     }
 
+    /// The retouch tool the canvas accepts.
+    fn retouch_tool(&self) -> crate::view::canvas::RetouchTool {
+        match self.rail.finish.tool {
+            crate::view::rail::frame_finish::RetouchTool::Heal => {
+                crate::view::canvas::RetouchTool::Heal
+            }
+            crate::view::rail::frame_finish::RetouchTool::Scratch => {
+                crate::view::canvas::RetouchTool::Scratch
+            }
+            crate::view::rail::frame_finish::RetouchTool::Line => {
+                crate::view::canvas::RetouchTool::Line
+            }
+            crate::view::rail::frame_finish::RetouchTool::Clone => {
+                crate::view::canvas::RetouchTool::Clone
+            }
+            crate::view::rail::frame_finish::RetouchTool::Off => {
+                crate::view::canvas::RetouchTool::Off
+            }
+        }
+    }
+
+    /// Store one finished retouch gesture.
+    fn apply_retouch(&mut self, action: crate::view::canvas::RetouchAction) {
+        let retouch = &mut self.edit.config.retouch;
+        let size = retouch.manual_dust_size as f64;
+        match action {
+            crate::view::canvas::RetouchAction::None => return,
+            crate::view::canvas::RetouchAction::Heal(points) => {
+                retouch
+                    .manual_heal_strokes
+                    .push(serde_json::json!([points, size, 0.0, 0.0]));
+            }
+            crate::view::canvas::RetouchAction::Line(line) => {
+                retouch.scratch_lines.push(serde_json::json!([
+                    line[0], line[1], line[2], line[3], line[4]
+                ]));
+            }
+            crate::view::canvas::RetouchAction::Clone(points) => {
+                let Some(source) = self.retouch_drag.clone_source_normalized else {
+                    return;
+                };
+                let origin = points.first().copied().unwrap_or([0.0, 0.0]);
+                let dx = source[0] - origin[0];
+                let dy = source[1] - origin[1];
+                retouch.clone_strokes.push(serde_json::json!([
+                    points,
+                    size,
+                    dx,
+                    dy,
+                    retouch.clone_strength,
+                    retouch.clone_feather,
+                    retouch.clone_match_tone
+                ]));
+            }
+        }
+        self.edit.mark_dirty();
+    }
+
     fn proof_request(&self) -> ProofRequest {
         ProofRequest {
             enabled: self.proof.enabled,
@@ -906,6 +969,7 @@ impl NegFeApp {
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
             let label = self.frame_label();
+            let retouch_tool = self.retouch_tool();
             let (rail_rect, hits) = paint_shell(
                 ui,
                 screen,
@@ -928,6 +992,8 @@ impl NegFeApp {
                     self.rail.exposure.local.card,
                 ),
                 &mut self.mask_drag,
+                retouch_tool,
+                &mut self.retouch_drag,
             );
             if hits.import {
                 self.rail.library.import_with_picker(false);
@@ -949,6 +1015,7 @@ impl NegFeApp {
                 }
                 crate::view::canvas::CropAction::None => {}
             }
+            self.apply_retouch(hits.retouch);
             if let Some((shape, vertices)) = hits.mask {
                 self.edit
                     .config
@@ -1201,6 +1268,8 @@ fn paint_shell(
         bool,
     ),
     mask_drag: &mut crate::view::canvas::MaskDrag,
+    retouch_tool: crate::view::canvas::RetouchTool,
+    retouch_drag: &mut crate::view::canvas::RetouchDrag,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1284,6 +1353,7 @@ fn paint_shell(
             crate::view::canvas::MaskTool::Off
         };
         hits.mask = crate::view::canvas::local_tool(ui, photo, local.0, tool, mask_drag);
+        hits.retouch = crate::view::canvas::retouch_tool(ui, photo, retouch_tool, retouch_drag);
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }
@@ -1973,6 +2043,36 @@ mod tests {
         assert!(app.accepts_render(&output(4, "confirmed")));
         assert!(!app.accepts_render(&output(3, "confirmed")));
         assert!(!app.accepts_render(&output(4, "stale")));
+    }
+
+    #[test]
+    fn a_heal_gesture_stores_one_stroke() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.retouch.manual_dust_size = 9;
+        app.apply_retouch(crate::view::canvas::RetouchAction::Heal(vec![
+            [0.4, 0.4],
+            [0.5, 0.5],
+        ]));
+        let stroke = &app.edit.config.retouch.manual_heal_strokes[0];
+        assert_eq!(stroke[0], serde_json::json!([[0.4, 0.4], [0.5, 0.5]]));
+        assert_eq!(stroke[1], serde_json::json!(9.0));
+        assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_clone_gesture_uses_the_picked_source() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.retouch_drag.clone_source_normalized = Some([0.7, 0.6]);
+        app.apply_retouch(crate::view::canvas::RetouchAction::Clone(vec![
+            [0.4, 0.4],
+            [0.5, 0.5],
+        ]));
+        let stroke = &app.edit.config.retouch.clone_strokes[0];
+        assert!((stroke[2].as_f64().unwrap() - 0.3).abs() < 1e-9);
+        assert!((stroke[3].as_f64().unwrap() - 0.2).abs() < 1e-9);
+        assert!(app.edit.is_dirty());
     }
 
     #[test]

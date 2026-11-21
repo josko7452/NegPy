@@ -263,6 +263,159 @@ fn paint_crop_hint(ui: &egui::Ui, photo: Rect, theme: &Theme) {
 /// A mask the canvas lasso drew, in normalized photo coordinates.
 pub type DrawnMask = (MaskShape, Vec<[f64; 2]>);
 
+/// The retouch tool the canvas accepts.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetouchTool {
+    #[default]
+    Off,
+    Heal,
+    Scratch,
+    Line,
+    Clone,
+}
+
+/// What a retouch gesture asked the edit to store.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum RetouchAction {
+    #[default]
+    None,
+    Heal(Vec<[f64; 2]>),
+    Line([f64; 5]),
+    Clone(Vec<[f64; 2]>),
+}
+
+/// The in-progress retouch stroke.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RetouchDrag {
+    pub points: Vec<egui::Pos2>,
+    pub start: Option<egui::Pos2>,
+    pub clone_source: Option<egui::Pos2>,
+    /// The clone source in photo-normalized coordinates.
+    pub clone_source_normalized: Option<[f64; 2]>,
+}
+
+/// Paint the stored strokes and collect one retouch gesture.
+pub fn retouch_tool(
+    ui: &mut egui::Ui,
+    photo: Rect,
+    tool: RetouchTool,
+    drag: &mut RetouchDrag,
+) -> RetouchAction {
+    let theme = Theme::default();
+    if tool == RetouchTool::Off {
+        return RetouchAction::None;
+    }
+    let response = ui.interact(
+        photo,
+        ui.id().with("retouch-photo"),
+        Sense::click_and_drag(),
+    );
+    response.clone().on_hover_cursor(CursorIcon::Crosshair);
+    match tool {
+        RetouchTool::Line => {
+            if response.clicked()
+                && let Some(point) = response.interact_pointer_pos()
+            {
+                let normalized = normalize_point(photo, point);
+                let mut line = [
+                    normalized[0],
+                    normalized[1],
+                    normalized[0],
+                    normalized[1],
+                    12.0,
+                ];
+                if let Some(source) = drag.clone_source {
+                    let other = normalize_point(photo, source);
+                    if (other[0] - normalized[0]).abs() + (other[1] - normalized[1]).abs() > 1e-6 {
+                        line = [normalized[0], normalized[1], other[0], other[1], 12.0];
+                    }
+                }
+                return RetouchAction::Line(line);
+            }
+        }
+        RetouchTool::Clone if ui.input(|input| input.modifiers.alt) => {
+            if response.clicked()
+                && let Some(point) = response.interact_pointer_pos()
+            {
+                drag.clone_source = Some(point);
+                drag.clone_source_normalized = Some(normalize_point(photo, point));
+                ui.painter()
+                    .circle_stroke(point, 8.0, Stroke::new(1.5_f32, theme.warn_amber));
+            }
+        }
+        _ => {
+            if response.drag_started()
+                && let Some(start) = response.interact_pointer_pos()
+            {
+                drag.points = vec![start];
+            }
+            if response.dragged()
+                && let Some(point) = response.interact_pointer_pos()
+            {
+                let far = drag
+                    .points
+                    .last()
+                    .is_none_or(|last| (*last - point).length() >= 4.0);
+                if far {
+                    drag.points.push(point);
+                }
+            }
+            if response.drag_stopped() {
+                let points: Vec<egui::Pos2> = drag.points.drain(..).collect();
+                return gesture_action(tool, photo, &points, drag.clone_source);
+            }
+        }
+    }
+    if drag.points.len() >= 2 {
+        let points: Vec<egui::Pos2> = drag.points.clone();
+        ui.painter().add(egui::Shape::line(
+            points,
+            Stroke::new(2.0_f32, theme.mark_photo),
+        ));
+    }
+    if let Some(source) = drag.clone_source {
+        ui.painter()
+            .circle_stroke(source, 8.0, Stroke::new(1.5_f32, theme.warn_amber));
+    }
+    RetouchAction::None
+}
+
+fn gesture_action(
+    tool: RetouchTool,
+    photo: Rect,
+    points: &[egui::Pos2],
+    source: Option<egui::Pos2>,
+) -> RetouchAction {
+    if points.is_empty() {
+        return RetouchAction::None;
+    }
+    let normalized: Vec<[f64; 2]> = points
+        .iter()
+        .map(|point| normalize_point(photo, *point))
+        .collect();
+    match tool {
+        RetouchTool::Heal | RetouchTool::Scratch => RetouchAction::Heal(normalized),
+        RetouchTool::Clone if source.is_some() => RetouchAction::Clone(normalized),
+        RetouchTool::Line => {
+            let start = normalized[0];
+            let mut line = [start[0], start[1], start[0], start[1], 12.0];
+            if let Some(source) = source {
+                let other = normalize_point(photo, source);
+                line = [start[0], start[1], other[0], other[1], 12.0];
+            }
+            RetouchAction::Line(line)
+        }
+        _ => RetouchAction::None,
+    }
+}
+
+fn normalize_point(photo: Rect, point: egui::Pos2) -> [f64; 2] {
+    [
+        f64::from((point.x - photo.left()) / photo.width().max(1.0)),
+        f64::from((point.y - photo.top()) / photo.height().max(1.0)),
+    ]
+}
+
 /// The local gesture the canvas accepts.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum MaskTool {
@@ -488,6 +641,56 @@ mod tests {
             ),
             Some(stored)
         );
+    }
+
+    #[test]
+    fn a_retouch_gesture_normalizes_its_points() {
+        let photo = photo();
+        let action = gesture_action(
+            RetouchTool::Heal,
+            photo,
+            &[egui::pos2(200.0, 100.0), egui::pos2(300.0, 150.0)],
+            None,
+        );
+        match action {
+            RetouchAction::Heal(points) => {
+                assert_eq!(points.len(), 2);
+                assert!((points[0][0] - 0.25).abs() < 1e-9);
+                assert!((points[1][1] - 0.5).abs() < 1e-9);
+            }
+            other => panic!("unexpected action {other:?}"),
+        }
+    }
+
+    #[test]
+    fn a_line_gesture_uses_the_click_and_the_previous_point() {
+        let photo = photo();
+        let action = gesture_action(
+            RetouchTool::Line,
+            photo,
+            &[egui::pos2(200.0, 100.0)],
+            Some(egui::pos2(400.0, 200.0)),
+        );
+        match action {
+            RetouchAction::Line(line) => {
+                assert!((line[0] - 0.25).abs() < 1e-9);
+                assert!((line[2] - 0.75).abs() < 1e-9);
+            }
+            other => panic!("unexpected action {other:?}"),
+        }
+    }
+
+    #[test]
+    fn the_off_retouch_tool_claims_no_gesture() {
+        let ctx = egui::Context::default();
+        let mut drag = RetouchDrag::default();
+        let mut action = RetouchAction::Heal(Vec::new());
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                action = retouch_tool(ui, photo(), RetouchTool::Off, &mut drag);
+            });
+        });
+        assert_eq!(action, RetouchAction::None);
     }
 
     #[test]

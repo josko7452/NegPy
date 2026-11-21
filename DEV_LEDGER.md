@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 12:10 | **Last Commit:** `bece5c3c` desktop: keep every card state under the tab collapse
+**Last Updated:** 2026-11-21 12:36 | **Last Commit:** `0ce8d52b` backend: bake retouch before both render paths
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -7,12 +7,10 @@ its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
 redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Add canvas strokes for Heal, Scratch, Line and Clone
-   (`MIGRATION_PLAN.md` §9.4 P3-11).
-2. [ ] Add local mask selection and vertex editing on the canvas.
-3. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
+1. [ ] Add local mask selection and vertex editing on the canvas.
+2. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
    the buffer, the chart itself still reads only the curve.
-4. [ ] Wire the remaining Export controls: input ICC and sidecar scope
+3. [ ] Wire the remaining Export controls: input ICC and sidecar scope
    (`MIGRATION_PLAN.md` §9.5 P3b-14, P3b-15).
 
 ## Completed (Recent)
@@ -27,6 +25,8 @@ redrew. Make that render path observable before the remaining tool work.
   card open states across the folded view.
 - Preview and export both run the retouch source bakes. The source hash carries
   the IR, heal, dust, hair and clone tokens.
+- The canvas emits typed Heal, Line and Clone gestures. Heal and Scratch share
+  the heal-stroke path; Clone takes an Alt-click source.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
