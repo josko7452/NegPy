@@ -275,6 +275,24 @@ impl RenderWorker {
                         &config, &context,
                     );
                 let output = if use_gpu {
+                    // The CPU engine meters the crop window; the GPU chain must
+                    // read the same bounds or the print drifts on a cropped frame.
+                    let roi = negpy_backend::features::geometry::processor::process(
+                        &baked,
+                        &config.geometry,
+                        negpy_backend::features::geometry::processor::GeometryContext {
+                            scale_factor: baked.height.max(baked.width) as f64 / 4000.0,
+                        },
+                    )
+                    .active_roi
+                    .map(|(y1, y2, x1, x2)| {
+                        (
+                            y1.max(0) as usize,
+                            y2.max(0) as usize,
+                            x1.max(0) as usize,
+                            x2.max(0) as usize,
+                        )
+                    });
                     let measured = negpy_backend::features::exposure::processor::measure_negative(
                         &baked.pixels,
                         baked.width,
@@ -282,7 +300,7 @@ impl RenderWorker {
                         negpy_backend::features::exposure::processor::NormalizationSettings {
                             config: &config.process,
                             mode: config.process.process_mode,
-                            active_roi: None,
+                            active_roi: roi,
                             base_log: None,
                         },
                     );
@@ -293,7 +311,7 @@ impl RenderWorker {
                         shadow_point: measured.shadow_point,
                         highlight_point: measured.highlight_point,
                         anchor: Some(measured.metered_anchor),
-                        active_roi: None,
+                        active_roi: roi,
                     };
                     negpy_backend::services::rendering::gpu_render::render(
                         gpu.as_mut().expect("the GPU is open"),

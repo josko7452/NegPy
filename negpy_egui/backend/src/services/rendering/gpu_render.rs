@@ -14,7 +14,6 @@ use crate::features::finish::processor::{FinishContext, process as finish_proces
 use crate::features::geometry::processor::{
     GeometryContext, crop_image, process as geometry_process,
 };
-use crate::features::lab::logic::apply_clahe;
 use crate::features::lab::processor::{LabContext, process as lab_process};
 use crate::features::process::hue::apply_hue_trim;
 use crate::features::process::path::{RenderPath, is_mono, render_path};
@@ -139,7 +138,7 @@ pub fn render(
             config.process.process_mode,
         )
     };
-    let exposed = gpu.run_print_with(image, config, &run, &print, roi, false);
+    let exposed = gpu.run_print_tail_input(image, config, &run, &print);
     let exposed = apply_hue_trim(&exposed, config.process.hue_trim);
     tail(engine, image, config, exposed, roi, base, context)
 }
@@ -153,7 +152,8 @@ fn tail(
     base: &GpuBase,
     context: &mut PipelineContext,
 ) -> ImageBuffer {
-    let mut image = apply_clahe(&exposed, config.lab.clahe_strength);
+    // CLAHE runs in the GPU chain, on the same full frame the 8x8 grid spans.
+    let mut image = exposed;
     let lab = lab_process(
         &image,
         &config.lab,

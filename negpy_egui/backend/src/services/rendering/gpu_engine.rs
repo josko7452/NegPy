@@ -20,6 +20,7 @@ use crate::features::exposure::shader::{
 };
 use crate::features::geometry::crop_shader;
 use crate::features::geometry::shader::{GeometryUniforms, rotated_dims, run as run_geometry};
+use crate::features::lab::clahe_shader;
 use crate::features::process::path::is_mono;
 use crate::features::transparency::logic::DensityStage;
 use crate::infrastructure::gpu::device::GpuDevice;
@@ -342,6 +343,103 @@ impl GpuEngine {
         self.textures.put(cropped);
         self.textures.put(printed);
         ImageBuffer::from_rgb(width, height, pixels)
+    }
+
+    /// The print chain through CLAHE, as linear pixels for the CPU tail.
+    ///
+    /// The full frame is kept: CLAHE's 8x8 grid and the Lab stage both span
+    /// the rotated frame, and the crop follows toning. The chain decodes the
+    /// encoded print so the tail reads the same linear domain as the CPU
+    /// engine, which runs CLAHE on linear pixels.
+    #[must_use]
+    pub fn run_print_tail_input(
+        &mut self,
+        image: &ImageBuffer,
+        config: &WorkspaceConfig,
+        run: &BaseRun,
+        print: &ExposureRun<'_>,
+    ) -> ImageBuffer {
+        let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
+        let key = prefix_key(config, run, &self.source_key);
+        let reuse = self.prefix.as_ref().is_some_and(|prefix| {
+            prefix.key == key && prefix.width == out_w && prefix.height == out_h
+        });
+        if !reuse {
+            self.prefix = None;
+            let source = self.textures.take(
+                &self.gpu.device,
+                image.width as u32,
+                image.height as u32,
+                "source",
+            );
+            source.upload(&self.gpu.queue, &image.pixels, false);
+            let geometry =
+                self.textures
+                    .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+            let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
+            run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
+            let normalized =
+                self.textures
+                    .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            let value = NormalizationUniforms::pack(
+                NormalizationSetup {
+                    stage: &run.stage,
+                    bounds: run.bounds,
+                    mono: is_mono(&config.process),
+                    transfer: run.transfer,
+                },
+                &run.crossover,
+            );
+            run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &value);
+            self.textures.put(source);
+            self.textures.put(geometry);
+            self.prefix = Some(CachedPrefix {
+                key,
+                width: out_w,
+                height: out_h,
+                normalized,
+            });
+        }
+        let prefix = self.prefix.as_ref().expect("the prefix was just filled");
+        let normalized = &prefix.normalized;
+
+        let printed = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "printed");
+        run_exposure(
+            &self.gpu,
+            &self.loaders,
+            normalized,
+            &printed,
+            &ExposureUniforms::pack(print),
+        );
+
+        let strength = config.lab.clahe_strength as f32;
+        let source = if strength > 0.0 {
+            let remapped =
+                self.textures
+                    .take(&self.gpu.device, out_w as u32, out_h as u32, "clahe");
+            clahe_shader::run(
+                &self.gpu,
+                &self.loaders,
+                &printed,
+                &remapped,
+                &clahe_shader::ClaheUniforms::for_frame(strength, out_w, out_h),
+            );
+            self.textures.put(printed);
+            remapped
+        } else {
+            printed
+        };
+
+        let rgba = source.readback(&self.gpu);
+        let mut pixels = Vec::with_capacity(out_w * out_h * 3);
+        for texel in rgba.chunks_exact(4) {
+            pixels.extend_from_slice(&texel[..3]);
+        }
+        self.textures.put(source);
+        let linear = crate::features::exposure::analysis::working_oetf_decode(&pixels);
+        ImageBuffer::from_rgb(out_w, out_h, linear)
     }
 
     fn encode_cropped(
