@@ -9,7 +9,7 @@ use negpy_backend::services::assets::crosstalk::{self, CrosstalkDirs};
 
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
-use crate::styles::templates::{ActionRank, labeled_action, section_subheader};
+use crate::styles::templates::section_subheader;
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -142,20 +142,6 @@ impl CalibrationState {
                     ui,
                     "Separates colors that the film dyes, the light and the sensor mix together.",
                 );
-                let bundled = self
-                    .dirs
-                    .as_ref()
-                    .map(|dirs| {
-                        crosstalk::is_bundled(&CrosstalkDirs::new(dirs.clone()), self.selected())
-                    })
-                    .unwrap_or(true);
-                if bundled {
-                    let _ = labeled_action(ui, "Profile Gallery", ActionRank::Normal);
-                    ui.add_space(f32::from(theme.space_sm));
-                } else {
-                    let _ = labeled_action(ui, "Edit Profile...", ActionRank::Normal);
-                    ui.add_space(f32::from(theme.space_sm));
-                }
                 changed
             })
         });
