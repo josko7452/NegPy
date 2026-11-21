@@ -19,13 +19,14 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
    `LightSource` traits, with no gphoto2, Scanlight or simulated desktop
    adapter and no capture worker. A human must choose the hardware target.
 3. [ ] Export presets: delete, rename, enable and apply a saved preset.
-4. [ ] Metadata presets: save, apply and delete from the Presets page.
-5. [ ] Light Table culling: Keep and Reject write `file_marks`; Export skips rejected frames.
-6. [ ] Pick Dmin and Dmax by hand on the canvas.
+4. [ ] Light Table culling: Keep and Reject write `file_marks`; Export skips rejected frames.
+5. [ ] Pick Dmin and Dmax by hand on the canvas.
 
 ## Completed (Recent)
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
+- `metadata`: the Presets page lists the store's presets and saves, applies and
+  deletes them through the settings catalog.
 - `2ff82255` desktop: Crop All keeps a frame edited during the run.
 - `1d7fe335` desktop: Find keeps its list and opens the active row.
 - `34fec0dc` desktop: the recipe follows the frame's paper, density and grade.

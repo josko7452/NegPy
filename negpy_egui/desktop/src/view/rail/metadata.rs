@@ -13,6 +13,7 @@ use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, secti
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::field_row::{RowColumns, field_row};
+use crate::view::widgets::flat_rows::FlatRow;
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
@@ -54,6 +55,16 @@ pub struct MetadataState {
     pub capture_frame: String,
     pub presets: Vec<String>,
     pub preset_names: Vec<String>,
+    /// The preset row the user selected.
+    pub selected_preset: Option<String>,
+    /// The name a new preset is saved under.
+    pub preset_name: String,
+    /// The name the user asked to save.
+    pub save_preset: Option<String>,
+    /// The preset the user asked to apply.
+    pub apply_preset: Option<String>,
+    /// The preset the user asked to delete.
+    pub delete_preset: Option<String>,
     pub cards_open: std::collections::BTreeMap<String, bool>,
     gear: GearLibrary,
     pub clear_gear: bool,
@@ -121,6 +132,11 @@ impl Default for MetadataState {
             capture_frame: String::new(),
             presets: Vec::new(),
             preset_names: Vec::new(),
+            selected_preset: None,
+            preset_name: String::new(),
+            save_preset: None,
+            apply_preset: None,
+            delete_preset: None,
             cards_open: std::collections::BTreeMap::new(),
             gear: GearLibrary::default(),
             clear_gear: false,
@@ -144,6 +160,21 @@ impl MetadataState {
     /// Show the metadata presets the profile holds.
     pub fn set_presets(&mut self, names: Vec<String>) {
         self.preset_names = names;
+    }
+
+    /// Take the one Apply Preset request.
+    pub fn take_apply_request(&mut self) -> Option<String> {
+        self.apply_preset.take()
+    }
+
+    /// Take the one Delete Preset request.
+    pub fn take_delete_request(&mut self) -> Option<String> {
+        self.delete_preset.take()
+    }
+
+    /// Take the one Save Preset request.
+    pub fn take_save_request(&mut self) -> Option<String> {
+        self.save_preset.take()
     }
 
     /// Use the gear library the profile holds for the choice lists.
@@ -565,14 +596,74 @@ impl MetadataState {
             self.cards_collapsed = !self.cards_collapsed;
         }
         let (open, changed) = metadata_card(ui, "Presets", self.card_open("Presets"), |ui| {
+            let mut changed = false;
             if self.preset_names.is_empty() {
                 let _ = hint(ui, "No presets yet.");
             } else {
                 for preset in &self.preset_names {
-                    let _ = hint(ui, preset);
+                    let row = FlatRow::new(preset.clone(), "").with_icon(Icon::Stack);
+                    let response = row.show(ui, 30.0);
+                    if response.response.clicked() {
+                        self.selected_preset = Some(preset.clone());
+                        changed = true;
+                    }
                 }
             }
-            false
+            ui.add_space(f32::from(Theme::default().space_sm));
+            ui.horizontal(|ui| {
+                changed |= ui
+                    .add(
+                        egui::TextEdit::singleline(&mut self.preset_name)
+                            .hint_text("Preset name..."),
+                    )
+                    .changed();
+                let name = self.preset_name.trim().to_string();
+                if ui
+                    .add_enabled(
+                        negpy_backend::services::assets::presets::is_valid_preset_name(&name),
+                        egui::Button::new("Save Preset...")
+                            .fill(Theme::default().bg_input)
+                            .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                    )
+                    .clicked()
+                {
+                    self.save_preset = Some(name);
+                    changed = true;
+                }
+            });
+            let selected = self.selected_preset.clone();
+            if selected.is_some() {
+                ui.add_space(f32::from(Theme::default().space_sm));
+                let mut apply = false;
+                let mut delete = false;
+                ui.horizontal(|ui| {
+                    apply = ui
+                        .add_enabled(
+                            selected.is_some(),
+                            egui::Button::new("Apply")
+                                .fill(Theme::default().bg_input)
+                                .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                        )
+                        .clicked();
+                    delete = ui
+                        .add_enabled(
+                            selected.is_some(),
+                            egui::Button::new("Delete...")
+                                .fill(Theme::default().bg_input)
+                                .stroke(Stroke::new(1.0_f32, Theme::default().border_primary)),
+                        )
+                        .clicked();
+                });
+                if apply {
+                    self.apply_preset = selected.clone();
+                    changed = true;
+                }
+                if delete {
+                    self.delete_preset = selected;
+                    changed = true;
+                }
+            }
+            changed
         });
         self.record_open("Presets", open);
         changed
@@ -782,6 +873,23 @@ mod tests {
         let mut state = MetadataState::default();
         state.set_presets(vec!["Golden Hour".to_string()]);
         assert_eq!(state.preset_names, ["Golden Hour"]);
+    }
+
+    #[test]
+    fn a_selected_preset_leaves_one_apply_request() {
+        let mut state = MetadataState::default();
+        state.selected_preset = Some("Golden Hour".to_string());
+        state.apply_preset = state.selected_preset.clone();
+        assert_eq!(state.take_apply_request().as_deref(), Some("Golden Hour"));
+        assert!(state.take_apply_request().is_none());
+    }
+
+    #[test]
+    fn a_selected_preset_leaves_one_delete_request() {
+        let mut state = MetadataState::default();
+        state.delete_preset = Some("Golden Hour".to_string());
+        assert_eq!(state.take_delete_request().as_deref(), Some("Golden Hour"));
+        assert!(state.take_delete_request().is_none());
     }
 
     #[test]

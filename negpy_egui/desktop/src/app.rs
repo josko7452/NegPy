@@ -22,6 +22,13 @@ use crate::export_worker::{ExportRequest, ExportWorker};
 use crate::render_worker::ProofRequest;
 use std::path::Path;
 
+/// The metadata presets under the profile's preset directory.
+fn metadata_presets(
+    app: &negpy_backend::domain::types::AppConfig,
+) -> negpy_backend::services::assets::presets::PresetStore {
+    negpy_backend::services::assets::presets::PresetStore::new(app.presets_dir.clone(), "metadata")
+}
+
 /// The visible tab of the right rail.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub enum Tab {
@@ -328,10 +335,7 @@ impl NegFeApp {
             std::path::Path::new(&app.user_icc_dir),
         );
         self.rail.export.set_icc_profiles(&profiles);
-        let store = negpy_backend::services::assets::presets::PresetStore::new(
-            app.presets_dir.clone(),
-            "metadata",
-        );
+        let store = metadata_presets(&app);
         self.rail.metadata.set_presets(store.list());
     }
 
@@ -676,6 +680,61 @@ impl NegFeApp {
                 self.rail.export.set_status(format!("Saved {name}."));
             }
             Err(error) => self.rail.export.set_status(error.to_string()),
+        }
+    }
+
+    /// Replace the Presets page with the store's current names.
+    pub fn reload_metadata_presets(&mut self) {
+        let Some(profile) = self.profile.clone() else {
+            return;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        self.rail
+            .metadata
+            .set_presets(metadata_presets(&app).list());
+    }
+
+    /// Apply or delete the metadata preset the Presets page asked for.
+    fn apply_metadata_preset(&mut self) {
+        let Some(profile) = self.profile.clone() else {
+            return;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let store = metadata_presets(&app);
+        if let Some(name) = self.rail.metadata.take_save_request() {
+            let rows = negpy_backend::session::settings_catalog::rows_for_keys(
+                &self.edit.config.to_dict(),
+                "metadata",
+            );
+            let fields = negpy_backend::session::settings_catalog::selected_flat_dict(
+                &self.edit.config,
+                &rows,
+            );
+            match store.save(&name, &fields) {
+                Ok(()) => {
+                    self.rail.metadata.preset_name.clear();
+                    self.rail.metadata.set_presets(store.list());
+                }
+                Err(error) => eprintln!("Could not save the metadata preset: {error}"),
+            }
+        }
+        if let Some(name) = self.rail.metadata.take_apply_request() {
+            if let Some(data) = store.load(&name) {
+                let rows =
+                    negpy_backend::session::settings_catalog::rows_for_keys(&data, "metadata");
+                let source = negpy_backend::session::settings_catalog::preset_config(&data);
+                self.edit.config = negpy_backend::session::settings_catalog::apply_selected_fields(
+                    &source,
+                    &self.edit.config,
+                    &rows,
+                );
+                self.edit.mark_dirty();
+            }
+        }
+        if let Some(name) = self.rail.metadata.take_delete_request() {
+            let _ = store.delete(&name);
+            self.rail.metadata.selected_preset = None;
+            self.rail.metadata.set_presets(store.list());
         }
     }
 
@@ -1075,6 +1134,7 @@ impl NegFeApp {
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
                     self.rail.apply_optics_action(&mut self.edit);
                     self.rail.apply_history_action(&mut self.edit);
+                    self.apply_metadata_preset();
                     self.apply_square_request(ctx);
                     self.request_crop_all(ctx);
                     self.apply_roll_analysis(ctx);
@@ -1315,6 +1375,7 @@ impl NegFeApp {
             }
             self.rail.apply_optics_action(&mut self.edit);
             self.rail.apply_history_action(&mut self.edit);
+            self.apply_metadata_preset();
             self.apply_square_request(ctx);
             self.request_crop_all(ctx);
             self.apply_roll_analysis(ctx);
