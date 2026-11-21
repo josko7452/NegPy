@@ -1,42 +1,39 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 19:40 | **Last Commit:** `<pending>` rail: mark clipping on the curve chart
+**Last Updated:** 2026-11-21 20:00 | **Last Commit:** `0b08c9a1` rail: mark clipping on the curve chart
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
 reach the CPU render. Next add the missing GPU engine and finish the dead
-toolbar and card actions in `MIGRATION_PLAN.md` §9.9.
+toolbar and card actions in `MIGRATION_PLAN.md` §9.10.
 
 ## Batch Protocol
 After commit #10, run the source audit in `MIGRATION_PLAN.md` §8.7. Write its
-findings into §9.9 and this ledger, then run `cargo check --workspace` and
+findings into §9.10 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
-   `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
-   This is a multi-batch epic, not one commit.
-2. [ ] Wire the remaining dead toolbar and card actions in §9.9: zoom, Tools,
-   Print, Roll Average and Crop All Frames. `Drop Empty Corners` was retired:
-   it had no service, and "Crop Empty Corners" on Geometry is its control.
-   Photo/Roll, rotate/flip, Square to Film and Undo/Redo are wired.
+   `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
+   §9.10 B1-9). This is a multi-batch epic, not one commit.
+2. [ ] Wire Crop All Frames (§9.10 B1-4): a strip worker over `batch_autocrop`,
+   then persist each frame's resolved crop.
+3. [ ] Wire zoom, Tools, Print and Roll Average (§9.10 B1-1..B1-3).
+4. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
 
 ## Completed (Recent)
-- `<pending>` finish: the dead `Drop Empty Corners` button is retired; Crop
+- `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
+  white edge bin.
+- `ef09fe41` finish: the dead `Drop Empty Corners` button is retired; Crop
   Empty Corners on Geometry is its control.
 - `a384cfb7` toolbar: the rotate and flip buttons turn the open frame, and a
   flipped frame turns the pipeline the opposite way, as Python does.
-- `<pending>` rail: the curve chart marks a channel that clips at the black or
-  white edge bin.
 - `a09e3fa1` toolbar: Undo and Redo step a per-frame config stack; Square to Film
   calls `squared_geometry` on the open proxy and redraws.
 - `24c00efa` toolbar: Photo and Roll select the Frame and Roll tabs.
-  and redraws.
-- `<pending>` toolbar: Undo and Redo step a per-frame config stack.
+- `a36ecb9f` ledger: records the local and analysis commits.
 - `4f2a8bdf` rail: the worker bins the waveform, parade and vectorscope; the
   Analysis card switches between curve, waveform, parade and vectorscope, and
   the curve also paints the normalized density histogram.
-- `<pending>` rail: the curve chart marks a channel that clips at the black or
-  white edge bin.
 - `a9836f82` local: an oval and a card mask are hit-tested by their outline and
   axis, not by their control points.
 - `62a3c939` local: the tone-limited mask key, zone and softness reach the print
@@ -58,7 +55,6 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 - The local stage now reaches the print for stops, grade and flash. A canvas
   mask selects and moves its vertices; the Dodge & Burn card edits the selected
   mask.
-- The Analysis chart paints the render histogram and the Log toggle is live.
 - Export writes a `.negpy` sidecar when its toggle is on. Input and Output ICC
   profiles load from the profile's ICC folder.
 - Folder as Roll imports the Scan card's output folder. Prescan and Scan as Roll
@@ -74,8 +70,8 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 - `fa10239c` local: draw a mask on the canvas.
 
 ## Verification
-- The last full run before `98d7b11e`: `cargo test --workspace`,
-  `cargo check --workspace` and `cargo fmt --all --check` passed.
+- This batch: `cargo test --workspace`, `cargo check --workspace` and
+  `cargo fmt --all --check` passed after the ten commits.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
@@ -106,7 +102,9 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
   textures through egui only.
 - The Scan card's Prescan and Scan as Roll are disabled: their workers are not
   ported.
-- Square to Film and the toolbar Undo/Redo reach the edit.
+- Photo/Roll, rotate/flip, Undo/Redo and Square to Film reach the edit. Zoom,
+  Tools, Print, Roll Average and Crop All Frames are still painted (§9.10).
+- The post-batch source audit is §9.10 in `MIGRATION_PLAN.md`.
 - The mask picker edits the selected mask; ovals select inside their outline and
   cards near their axis.
 - `receive_render` accepts output by generation and request hash, not by the
