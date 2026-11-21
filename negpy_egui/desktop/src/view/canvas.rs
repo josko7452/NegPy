@@ -11,6 +11,8 @@ use crate::styles::theme::Theme;
 pub const MIN_CROP: f64 = 0.02;
 /// The crop hint, shown while Draw is on.
 pub const CROP_HINT: &str = "Drag a crop. Right-click or Enter keeps it.";
+/// The bounds-pick hint, shown while Dmin or Dmax is armed.
+pub const PICK_HINT: &str = "Click the spot to set it.";
 /// The zoom range a fit-relative canvas scale uses.
 pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 8.0;
@@ -223,6 +225,37 @@ pub fn zoom_for_wheel(zoom: f32, scroll: f32) -> f32 {
 /// One wheel notch, as Python's canvas widget reads it.
 pub const WHEEL_ZOOM_STEP: f32 = 1.15;
 
+/// What the manual Dmin and Dmax pick asked for.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub enum PickAction {
+    #[default]
+    None,
+    /// A click inside the photo, normalized to its content.
+    At([f64; 2]),
+}
+
+/// Read one click on the photo while a bounds pick is armed. The click lands in
+/// content-normalized coordinates, the same space a crop rect uses.
+pub fn pick_tool(ui: &mut egui::Ui, photo: Rect, active: bool) -> PickAction {
+    if !active {
+        return PickAction::None;
+    }
+    let response = ui.interact(photo, ui.id().with("bounds-pick"), Sense::click());
+    response.clone().on_hover_cursor(CursorIcon::Crosshair);
+    if response.clicked()
+        && let Some(point) = response.interact_pointer_pos()
+    {
+        let point = clamp_point(photo, point);
+        return PickAction::At([
+            f64::from((point.x - photo.left()) / photo.width().max(1.0)),
+            f64::from((point.y - photo.top()) / photo.height().max(1.0)),
+        ]);
+    }
+    let theme = Theme::default();
+    paint_hint(ui, photo, PICK_HINT, &theme);
+    PickAction::None
+}
+
 /// A normalized crop rect that follows `from` to `to` inside `photo`.
 #[must_use]
 pub fn region_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
@@ -433,10 +466,14 @@ fn paint_crop_box(ui: &egui::Ui, photo: Rect, bounds: Rect, dragging: bool, them
 }
 
 fn paint_crop_hint(ui: &egui::Ui, photo: Rect, theme: &Theme) {
+    paint_hint(ui, photo, CROP_HINT, theme);
+}
+
+fn paint_hint(ui: &egui::Ui, photo: Rect, text: &str, theme: &Theme) {
     let font = egui::FontId::proportional(f32::from(theme.font_size_small));
     let galley = ui
         .painter()
-        .layout_no_wrap(CROP_HINT.to_string(), font, theme.text_primary);
+        .layout_no_wrap(text.to_string(), font, theme.text_primary);
     let padding = Vec2::splat(6.0);
     let plate = Rect::from_min_size(
         egui::pos2(photo.left() + 10.0, photo.bottom() - galley.size().y - 10.0),
@@ -1175,6 +1212,65 @@ mod tests {
         );
         assert_eq!(action, CropAction::None);
         assert!(drag.is_none());
+    }
+
+    #[test]
+    fn a_pick_click_reads_content_normalized_coordinates() {
+        let photo = photo();
+        let mut action = PickAction::None;
+        let mut ctx = egui::Context::default();
+        let point = egui::pos2(250.0, 150.0);
+        let frames = [
+            vec![egui::Event::PointerMoved(point)],
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+            vec![
+                egui::Event::PointerMoved(point),
+                egui::Event::PointerButton {
+                    pos: point,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+            ],
+        ];
+        for events in frames {
+            let input = egui::RawInput {
+                events,
+                ..egui::RawInput::default()
+            };
+            let _ = ctx.run(input, |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    action = pick_tool(ui, photo, true);
+                });
+            });
+        }
+        match action {
+            PickAction::At([x, y]) => {
+                assert!((x - 0.375).abs() < 1e-6);
+                assert!((y - 0.5).abs() < 1e-6);
+            }
+            PickAction::None => panic!("the click made no pick"),
+        }
+    }
+
+    #[test]
+    fn a_disarmed_pick_takes_no_click() {
+        let mut action = PickAction::At([0.5, 0.5]);
+        let mut ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                action = pick_tool(ui, photo(), false);
+            });
+        });
+        assert_eq!(action, PickAction::None);
     }
 
     #[test]

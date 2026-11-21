@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 04:20 | **Last Commit:** `pending backend: sample the log at a canvas point`
+**Last Updated:** 2026-11-22 04:40 | **Last Commit:** `pending desktop: pick Dmin and Dmax on the canvas`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -18,7 +18,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 2. [ ] Camera capture is blocked: the Rust backend has only the `Camera` and
    `LightSource` traits, with no gphoto2, Scanlight or simulated desktop
    adapter and no capture worker. A human must choose the hardware target.
-3. [ ] Pick Dmin and Dmax by hand on the canvas (backend sample landed).
+3. [ ] Pick Dmin and Dmax by hand on the canvas (canvas pick landed; store a cleared pick with its × still missing).
 4. [ ] Metadata Presets: apply the stored fields to the selected frames or roll.
 5. [ ] Export presets: run a preset on the selected frames or the roll.
 6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back.
@@ -26,6 +26,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 8. [ ] Frame Favorites: the stored slider list and its editor.
 
 ## Completed (Recent)
+- `desktop`: Dmin and Dmax pick on the canvas samples the unmixed log patch,
+  stores the manual bound and its point, clears the stored bounds and disarms.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and

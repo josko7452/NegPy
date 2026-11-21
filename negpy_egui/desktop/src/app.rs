@@ -122,6 +122,8 @@ pub struct ShellHits {
     pub mask: Option<crate::view::canvas::DrawnMask>,
     pub retouch: crate::view::canvas::RetouchAction,
     pub mask_action: crate::view::canvas::MaskAction,
+    /// A manual Dmin or Dmax pick on the photo.
+    pub pick: crate::view::canvas::PickAction,
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -887,6 +889,66 @@ impl NegFeApp {
         self.rail.roll_analysis.stale = true;
     }
 
+    /// Store a hand-picked Dmin or Dmax from the sample at `point`, then disarm the tool.
+    fn store_bounds_pick(&mut self, point: [f64; 2]) {
+        let pick = self.rail.metering.pick;
+        if pick == crate::view::rail::metering::MeteringPick::Off {
+            return;
+        }
+        let Some(source) = self.source.clone() else {
+            self.rail
+                .metering
+                .set_pick_status("Pick by Hand: click once the frame has rendered");
+            return;
+        };
+        let processed = negpy_backend::features::geometry::processor::process(
+            &source.image,
+            &self.edit.config.geometry,
+            negpy_backend::features::geometry::processor::GeometryContext {
+                scale_factor: source.image.height.max(source.image.width) as f64 / 4000.0,
+            },
+        );
+        let Some(sample) = negpy_backend::features::exposure::metering::sample_log_patch(
+            &processed.image.pixels,
+            processed.image.width,
+            processed.image.height,
+            &self.edit.config.process,
+            self.edit.config.process.process_mode,
+            (point[0], point[1]),
+            4,
+        ) else {
+            self.rail
+                .metering
+                .set_pick_status("Pick by Hand: click once the frame has rendered");
+            return;
+        };
+        let before = self.edit.config.clone();
+        let process = &mut self.edit.config.process;
+        match pick {
+            crate::view::rail::metering::MeteringPick::Dmin => {
+                process.manual_dmin = Some(sample.to_vec());
+                process.manual_dmin_at = Some(point.to_vec());
+            }
+            crate::view::rail::metering::MeteringPick::Dmax => {
+                process.manual_dmax = Some(sample.to_vec());
+                process.manual_dmax_at = Some(point.to_vec());
+            }
+            crate::view::rail::metering::MeteringPick::Off => return,
+        }
+        process.local_floors = [0.0; 3];
+        process.local_ceils = [0.0; 3];
+        self.edit.checkpoint_before(before);
+        self.edit.mark_dirty();
+        self.rail.metering.pick = crate::view::rail::metering::MeteringPick::Off;
+        self.rail.metering.set_pick_status(
+            if pick == crate::view::rail::metering::MeteringPick::Dmin {
+                "Dmin set for this frame"
+            } else {
+                "Dmax set for this frame"
+            },
+        );
+    }
+
     /// Keep a confirmed crop once, and leave the Draw tool.
     fn confirm_crop(&mut self, rect: [f64; 4]) {
         self.store_crop(rect);
@@ -1325,6 +1387,7 @@ impl NegFeApp {
                 ),
                 self.photo_mode,
                 &mut self.mask_drag,
+                self.rail.metering.pick != crate::view::rail::metering::MeteringPick::Off,
                 retouch_tool,
                 &mut self.retouch_drag,
                 self.zoom,
@@ -1449,6 +1512,10 @@ impl NegFeApp {
                 crate::view::canvas::CropAction::None => {}
             }
             self.apply_retouch(hits.retouch);
+            if let crate::view::canvas::PickAction::At(point) = hits.pick {
+                self.store_bounds_pick(point);
+                self.request_render(ctx, false);
+            }
             match hits.mask_action {
                 crate::view::canvas::MaskAction::None => {}
                 crate::view::canvas::MaskAction::Select(index) => {
@@ -1969,6 +2036,7 @@ fn paint_shell(
     ),
     photo_mode: bool,
     mask_drag: &mut crate::view::canvas::MaskDrag,
+    pick_active: bool,
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
     zoom: f32,
@@ -2070,6 +2138,7 @@ fn paint_shell(
             crate::view::canvas::local_tool(ui, photo, local.0, local.4, tool, mask_drag);
         hits.mask = mask;
         hits.mask_action = action;
+        hits.pick = crate::view::canvas::pick_tool(ui, photo, pick_active);
         hits.retouch = crate::view::canvas::retouch_tool(ui, photo, retouch_tool, retouch_drag);
     } else {
         hits.import = paint_empty_canvas(ui, photo);
@@ -2803,6 +2872,49 @@ mod tests {
                 .current_key(),
             "tone"
         );
+    }
+
+    #[test]
+    fn a_bounds_pick_stores_the_sample_and_disarms_the_tool() {
+        let mut app = NegFeApp::for_capture("roll", "", "metering", "canvas", 0.0);
+        app.set_source(Some(crate::render_worker::SourceFrame {
+            name: "picked".to_string(),
+            hash: "picked".to_string(),
+            image: negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer::from_rgb(
+                8,
+                8,
+                vec![0.5; 8 * 8 * 3],
+            ),
+            ir: None,
+            ir_width: 0,
+            ir_height: 0,
+        }));
+        app.rail.metering.pick = crate::view::rail::metering::MeteringPick::Dmin;
+        app.store_bounds_pick([0.5, 0.5]);
+        assert_eq!(
+            app.rail.metering.pick,
+            crate::view::rail::metering::MeteringPick::Off
+        );
+        let picked = app.edit.config.process.manual_dmin.clone().unwrap();
+        let expected = f64::from(0.5f32).log10();
+        for channel in picked {
+            assert!((channel - expected).abs() < 1e-6, "{channel} != {expected}");
+        }
+        assert_eq!(app.edit.config.process.manual_dmin_at, Some(vec![0.5, 0.5]));
+        assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_bounds_pick_without_a_render_stores_nothing() {
+        let mut app = NegFeApp::for_capture("roll", "", "metering", "canvas", 0.0);
+        app.rail.metering.pick = crate::view::rail::metering::MeteringPick::Dmax;
+        app.store_bounds_pick([0.5, 0.5]);
+        assert!(app.edit.config.process.manual_dmax.is_none());
+        assert_eq!(
+            app.rail.metering.pick,
+            crate::view::rail::metering::MeteringPick::Dmax
+        );
+        assert!(!app.rail.metering.status.is_empty());
     }
 
     #[test]

@@ -28,6 +28,8 @@ pub struct MeteringState {
     pub open: bool,
     pub measure_alone: bool,
     pub pick: MeteringPick,
+    /// The result line the card shows after a pick.
+    pub status: String,
     pub reset_requested: bool,
 }
 
@@ -64,12 +66,18 @@ impl Default for MeteringState {
             open: false,
             measure_alone: false,
             pick: MeteringPick::Off,
+            status: String::new(),
             reset_requested: false,
         }
     }
 }
 
 impl MeteringState {
+    /// Show the result of the last manual pick.
+    pub fn set_pick_status(&mut self, line: impl Into<String>) {
+        self.status = line.into();
+    }
+
     /// Turn all three averages on or off for this frame.
     pub fn set_all_averages(&mut self, on: bool, edit: &mut FrameEdit) {
         let process = &mut edit.config.process;
@@ -136,6 +144,8 @@ impl MeteringState {
         process.manual_dmax_at = None;
         process.use_luma_average = true;
         process.use_color_average = true;
+        self.pick = MeteringPick::Off;
+        self.status.clear();
         self.load(edit);
         edit.mark_dirty();
     }
@@ -214,6 +224,9 @@ impl MeteringState {
                 ui,
                 "Click the film base or the deepest shadow, then the brightest highlight.",
             );
+            if !self.status.is_empty() {
+                let _ = hint(ui, &self.status);
+            }
         }
         let _ = self.points.group_header(ui, "White / Black Point");
         if self.points.open {
@@ -243,6 +256,16 @@ mod tests {
         assert_eq!(state.analysis_buffer.value, 0.05);
         assert_eq!(state.luma_clip.value, 0.0);
         assert_eq!(state.color_clip.value, 0.0);
+    }
+
+    #[test]
+    fn a_pick_status_shows_and_clears_with_reset() {
+        let mut state = MeteringState::default();
+        state.set_pick_status("Dmin set for this frame");
+        assert_eq!(state.status, "Dmin set for this frame");
+        let mut edit = FrameEdit::default();
+        state.reset(&mut edit);
+        assert!(state.status.is_empty());
     }
 
     #[test]
