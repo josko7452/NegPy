@@ -130,3 +130,83 @@ fn a_cropped_print_matches_the_cpu_engine() {
     let fraction = failures as f64 / cpu_image.pixels.len() as f64;
     assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
 }
+
+#[test]
+fn a_bw_print_matches_the_cpu_engine() {
+    let Some(mut gpu) = GpuEngine::new() else {
+        return;
+    };
+    let mut config = config();
+    config.process.process_mode = ProcessMode::BW;
+    config.toning.sepia_strength = 0.4;
+    let image = frame(80, 64);
+    let roi = negpy_backend::features::geometry::processor::process(
+        &image,
+        &config.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    )
+    .active_roi;
+    let measured = measure_negative(
+        &image.pixels,
+        image.width,
+        image.height,
+        NormalizationSettings {
+            config: &config.process,
+            mode: config.process.process_mode,
+            active_roi: roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: None,
+        },
+    );
+    let base = GpuBase {
+        bounds: measured.final_bounds,
+        norm_density_range: measured.norm_density_range,
+        textural_range: measured.textural_range,
+        shadow_point: measured.shadow_point,
+        highlight_point: measured.highlight_point,
+        anchor: Some(measured.metered_anchor),
+        active_roi: roi.map(|(y1, y2, x1, x2)| {
+            (
+                y1.max(0) as usize,
+                y2.max(0) as usize,
+                x1.max(0) as usize,
+                x2.max(0) as usize,
+            )
+        }),
+    };
+    let gpu_image = render(
+        &mut gpu,
+        &image,
+        &config,
+        "bw",
+        &base,
+        &mut PipelineContext::new(),
+    );
+    let cpu_image = negpy_backend::render_engine::DarkroomEngine::new().process(
+        &image,
+        &config,
+        "bw",
+        &mut PipelineContext::new(),
+    );
+    assert_eq!(
+        (gpu_image.width, gpu_image.height),
+        (cpu_image.width, cpu_image.height)
+    );
+    let mut failures = 0usize;
+    let mut worst = 0.0f32;
+    for (index, expected) in cpu_image.pixels.iter().enumerate() {
+        let got = gpu_image.pixels[index];
+        worst = worst.max((got - expected).abs());
+        if (got - expected).abs() > 4e-2 {
+            failures += 1;
+        }
+    }
+    let fraction = failures as f64 / cpu_image.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
+}
