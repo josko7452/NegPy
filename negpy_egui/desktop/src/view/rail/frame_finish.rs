@@ -3,7 +3,7 @@
 use eframe::egui::Ui;
 
 use crate::edit::FrameEdit;
-use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
+use crate::styles::templates::{labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -375,7 +375,6 @@ impl FinishState {
             ui.label("Color");
             changed |= self.finishing.border_color.show(ui);
         });
-        let _ = labeled_action(ui, "Drop Empty Corners", ActionRank::Normal);
         ui.add_space(f32::from(theme.space_xs));
         changed
     }

@@ -16,8 +16,9 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
    This is a multi-batch epic, not one commit.
 2. [ ] Wire the remaining dead toolbar and card actions in §9.9: zoom, Tools,
-   Print, Roll Average, Crop All Frames and Drop Empty Corners. Photo/Roll,
-   rotate/flip, Square to Film and Undo/Redo are wired.
+   Print, Roll Average and Crop All Frames. `Drop Empty Corners` was retired:
+   it had no service, and "Crop Empty Corners" on Geometry is its control.
+   Photo/Roll, rotate/flip, Square to Film and Undo/Redo are wired.
 
 ## Completed (Recent)
 - `a09e3fa1` toolbar: Undo and Redo step a per-frame config stack; Square to Film
