@@ -38,8 +38,19 @@ pub struct ExportState {
     pub format: StepCombo,
     pub jpeg_quality: CompactSlider,
     pub progressive: bool,
+    pub bit_depth: StepCombo,
+    pub tiff_compression: StepCombo,
+    pub png_level: CompactSlider,
+    pub jxl_lossless: bool,
+    pub jxl_distance: CompactSlider,
+    pub jxl_effort: CompactSlider,
+    pub webp_quality: CompactSlider,
+    pub webp_lossless: bool,
+    pub webp_method: CompactSlider,
     pub resolution: SegmentedChoice<'static>,
     pub long_edge: CompactSlider,
+    pub print_size: CompactSlider,
+    pub print_dpi: CompactSlider,
     pub paper_ratio: StepCombo,
     pub input_icc: StepCombo,
     pub output_icc: StepCombo,
@@ -89,11 +100,50 @@ impl Default for ExportState {
                     .with_unit(""),
             ),
             progressive: true,
+            bit_depth: choice_combo(&[("8 bit", "8"), ("16 bit", "16")]),
+            tiff_compression: choice_combo(&[("None", "none"), ("LZW", "lzw"), ("ZIP", "zlib")]),
+            png_level: CompactSlider::new(
+                SliderSpec::new(0.0, 9.0, 1.0, 0)
+                    .with_default(6.0)
+                    .with_unit(""),
+            ),
+            jxl_lossless: true,
+            jxl_distance: CompactSlider::new(
+                SliderSpec::new(0.0, 15.0, 0.1, 1)
+                    .with_default(1.0)
+                    .with_unit(""),
+            ),
+            jxl_effort: CompactSlider::new(
+                SliderSpec::new(1.0, 9.0, 1.0, 0)
+                    .with_default(7.0)
+                    .with_unit(""),
+            ),
+            webp_quality: CompactSlider::new(
+                SliderSpec::new(0.0, 100.0, 1.0, 0)
+                    .with_default(90.0)
+                    .with_unit(""),
+            ),
+            webp_lossless: false,
+            webp_method: CompactSlider::new(
+                SliderSpec::new(0.0, 6.0, 1.0, 0)
+                    .with_default(4.0)
+                    .with_unit(""),
+            ),
             resolution: SegmentedChoice::new(&["Original", "Print", "Pixels"]),
             long_edge: CompactSlider::new(
                 SliderSpec::new(1000.0, 12000.0, 10.0, 0)
                     .with_default(2000.0)
                     .with_unit(" px"),
+            ),
+            print_size: CompactSlider::new(
+                SliderSpec::new(1.0, 500.0, 1.0, 1)
+                    .with_default(30.0)
+                    .with_unit(" cm"),
+            ),
+            print_dpi: CompactSlider::new(
+                SliderSpec::new(72.0, 4800.0, 1.0, 0)
+                    .with_default(300.0)
+                    .with_unit(" dpi"),
             ),
             paper_ratio: choice_combo(&[
                 ("Original", "Original"),
@@ -154,6 +204,15 @@ impl ExportState {
     /// The export fields the selected preset names, written over the controls.
     pub fn apply_preset(&mut self, preset: &negpy_backend::domain::models::ExportPreset) {
         self.format.pick(preset.export_fmt.as_str());
+        self.bit_depth.pick(&preset.export_bit_depth.to_string());
+        self.tiff_compression.pick(preset.tiff_compression.as_str());
+        self.png_level.set_value(preset.png_compress_level as f64);
+        self.jxl_lossless = preset.jxl_lossless;
+        self.jxl_distance.set_value(preset.jxl_distance);
+        self.jxl_effort.set_value(preset.jxl_effort as f64);
+        self.webp_quality.set_value(preset.webp_quality as f64);
+        self.webp_lossless = preset.webp_lossless;
+        self.webp_method.set_value(preset.webp_method as f64);
         self.jpeg_quality.set_value(preset.jpeg_quality as f64);
         self.progressive = preset.jpeg_progressive;
         self.resolution.current = match preset.export_resolution_mode {
@@ -163,6 +222,8 @@ impl ExportState {
         };
         self.long_edge
             .set_value(preset.export_target_long_edge_px as f64);
+        self.print_size.set_value(preset.export_print_size);
+        self.print_dpi.set_value(preset.export_dpi as f64);
         self.paper_ratio.pick(&preset.paper_aspect_ratio);
         self.export_profile.pick(&preset.export_color_space);
         self.input_icc
@@ -183,6 +244,15 @@ impl ExportState {
             edit.config.exposure.render_intent == negpy_backend::domain::models::RenderIntent::Flat,
         );
         self.format.pick(export.export_fmt.as_str());
+        self.bit_depth.pick(&export.export_bit_depth.to_string());
+        self.tiff_compression.pick(export.tiff_compression.as_str());
+        self.png_level.set_value(export.png_compress_level as f64);
+        self.jxl_lossless = export.jxl_lossless;
+        self.jxl_distance.set_value(export.jxl_distance);
+        self.jxl_effort.set_value(export.jxl_effort as f64);
+        self.webp_quality.set_value(export.webp_quality as f64);
+        self.webp_lossless = export.webp_lossless;
+        self.webp_method.set_value(export.webp_method as f64);
         self.jpeg_quality.set_value(export.jpeg_quality as f64);
         self.progressive = export.jpeg_progressive;
         self.resolution.current = match export.export_resolution_mode {
@@ -192,6 +262,8 @@ impl ExportState {
         };
         self.long_edge
             .set_value(export.export_target_long_edge_px as f64);
+        self.print_size.set_value(export.export_print_size);
+        self.print_dpi.set_value(export.export_dpi as f64);
         self.paper_ratio.pick(&export.paper_aspect_ratio);
         self.export_profile.pick(&export.export_color_space);
         self.input_icc
@@ -249,14 +321,27 @@ impl ExportState {
         negpy_backend::domain::models::ExportPreset {
             name: name.to_string(),
             export_fmt: ExportFormat::coerce(self.format.current_value()),
+            export_bit_depth: self.bit_depth.current_value().parse().unwrap_or(16),
             jpeg_quality: self.jpeg_quality.value.round() as i64,
             jpeg_progressive: self.progressive,
+            tiff_compression: negpy_backend::domain::models::TiffCompression::coerce(
+                self.tiff_compression.current_value(),
+            ),
+            png_compress_level: self.png_level.value.round() as i64,
+            jxl_lossless: self.jxl_lossless,
+            jxl_distance: self.jxl_distance.value,
+            jxl_effort: self.jxl_effort.value.round() as i64,
+            webp_quality: self.webp_quality.value.round() as i64,
+            webp_lossless: self.webp_lossless,
+            webp_method: self.webp_method.value.round() as i64,
             export_resolution_mode: match self.resolution.current {
                 1 => ExportResolutionMode::Print,
                 2 => ExportResolutionMode::TargetPx,
                 _ => ExportResolutionMode::Original,
             },
             export_target_long_edge_px: self.long_edge.value.round() as i64,
+            export_print_size: self.print_size.value,
+            export_dpi: self.print_dpi.value.round() as i64,
             paper_aspect_ratio: self.paper_ratio.current_value().to_string(),
             output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
             output_subfolder: self.subfolder.clone(),
@@ -280,14 +365,27 @@ impl ExportState {
         let export = &mut edit.config.export;
         let next = ExportConfig {
             export_fmt: ExportFormat::coerce(self.format.current_value()),
+            export_bit_depth: self.bit_depth.current_value().parse().unwrap_or(16),
             jpeg_quality: self.jpeg_quality.value.round() as i64,
             jpeg_progressive: self.progressive,
+            tiff_compression: negpy_backend::domain::models::TiffCompression::coerce(
+                self.tiff_compression.current_value(),
+            ),
+            png_compress_level: self.png_level.value.round() as i64,
+            jxl_lossless: self.jxl_lossless,
+            jxl_distance: self.jxl_distance.value,
+            jxl_effort: self.jxl_effort.value.round() as i64,
+            webp_quality: self.webp_quality.value.round() as i64,
+            webp_lossless: self.webp_lossless,
+            webp_method: self.webp_method.value.round() as i64,
             export_resolution_mode: match self.resolution.current {
                 1 => ExportResolutionMode::Print,
                 2 => ExportResolutionMode::TargetPx,
                 _ => ExportResolutionMode::Original,
             },
             export_target_long_edge_px: self.long_edge.value.round() as i64,
+            export_print_size: self.print_size.value,
+            export_dpi: self.print_dpi.value.round() as i64,
             paper_aspect_ratio: self.paper_ratio.current_value().to_string(),
             export_color_space: self.export_profile.current_value().to_string(),
             output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
@@ -373,8 +471,28 @@ impl ExportState {
             let _ = section_subheader(ui, "Format");
             field_combo(ui, columns, "Format", &mut self.format, &mut changed);
             ui.add_space(f32::from(theme.space_md));
+            field_combo(ui, columns, "Bit depth", &mut self.bit_depth, &mut changed);
+            ui.add_space(f32::from(theme.space_md));
             changed |= self.jpeg_quality.show(ui, "JPEG Quality").1;
             changed |= labeled_toggle(ui, "Progressive", &mut self.progressive).clicked();
+            ui.add_space(f32::from(theme.space_sm));
+            field_combo(
+                ui,
+                columns,
+                "Compression",
+                &mut self.tiff_compression,
+                &mut changed,
+            );
+            ui.add_space(f32::from(theme.space_sm));
+            changed |= self.png_level.show(ui, "PNG Level").1;
+            ui.add_space(f32::from(theme.space_sm));
+            changed |= labeled_toggle(ui, "Lossless", &mut self.jxl_lossless).clicked();
+            changed |= self.jxl_distance.show(ui, "JXL Distance").1;
+            changed |= self.jxl_effort.show(ui, "JXL Effort").1;
+            ui.add_space(f32::from(theme.space_sm));
+            changed |= self.webp_quality.show(ui, "WebP Quality").1;
+            changed |= labeled_toggle(ui, "Lossless", &mut self.webp_lossless).clicked();
+            changed |= self.webp_method.show(ui, "WebP Method").1;
             ui.add_space(f32::from(theme.space_lg));
             let _ = section_subheader(ui, "Size");
             ui.add_space(f32::from(theme.space_md));
@@ -383,6 +501,11 @@ impl ExportState {
             });
             ui.add_space(f32::from(theme.space_md));
             changed |= self.long_edge.show(ui, "Long edge").1;
+            if self.resolution.current == 1 {
+                ui.add_space(f32::from(theme.space_md));
+                changed |= self.print_size.show(ui, "Print size").1;
+                changed |= self.print_dpi.show(ui, "DPI").1;
+            }
             ui.add_space(f32::from(theme.space_md));
             field_combo(
                 ui,
@@ -710,6 +833,35 @@ mod tests {
         assert_eq!(state.format.current_value(), "TIFF");
         assert_eq!(state.jpeg_quality.value, 70.0);
         assert_eq!(state.long_edge.value, 4000.0);
+    }
+
+    #[test]
+    fn the_encoder_fields_round_trip() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.bit_depth.pick("8");
+        state.tiff_compression.pick("lzw");
+        state.png_level.set_value(3.0);
+        state.jxl_lossless = false;
+        state.jxl_distance.set_value(2.5);
+        state.jxl_effort.set_value(5.0);
+        state.webp_quality.set_value(80.0);
+        state.webp_method.set_value(2.0);
+        state.print_size.set_value(40.0);
+        state.print_dpi.set_value(600.0);
+        assert!(state.store(&mut edit));
+        let export = &edit.config.export;
+        assert_eq!(export.export_bit_depth, 8);
+        assert_eq!(export.tiff_compression.as_str(), "lzw");
+        assert_eq!(export.png_compress_level, 3);
+        assert!(!export.jxl_lossless);
+        assert_eq!(export.jxl_distance, 2.5);
+        assert_eq!(export.jxl_effort, 5);
+        assert_eq!(export.webp_quality, 80);
+        assert_eq!(export.webp_method, 2);
+        assert_eq!(export.export_print_size, 40.0);
+        assert_eq!(export.export_dpi, 600);
     }
 
     #[test]

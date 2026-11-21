@@ -26,6 +26,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - `metadata`: the Presets page lists the store's presets and saves, applies and
   deletes them through the settings catalog.
 - `export`: the Presets page selects, renames, enables and deletes a preset.
+- `export`: the File page shows and stores the bit depth, TIFF, PNG, JXL and
+  WebP encoder fields and the Print size and DPI.
 - `light-table`: Keep and Reject write the frame marks the Library search reads,
   the grid paints them, and Export skips a rejected frame.
 - `crop`: the guide choice persists, the crop box paints its composition guide,

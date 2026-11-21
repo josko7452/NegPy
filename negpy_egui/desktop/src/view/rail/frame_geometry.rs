@@ -628,7 +628,7 @@ mod tests {
     #[test]
     fn the_ratio_button_raises_one_detect_request() {
         let mut state = GeometryState::default();
-        let mut edit = FrameEdit::default();
+        let edit = FrameEdit::default();
         let ratio = edit.config.geometry.autocrop_ratio;
         state.detect_ratio_request = true;
         assert!(state.detect_ratio_request);
