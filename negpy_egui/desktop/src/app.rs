@@ -639,6 +639,10 @@ impl NegFeApp {
             let Some(path) = &frame.path else {
                 continue;
             };
+            if crate::frame_source::stored_mark(Some(&profile), path).as_deref() == Some("excluded")
+            {
+                continue;
+            }
             paths.push(path.clone());
             configs.push(crate::frame_source::stored_config(Some(&profile), path));
         }
@@ -958,6 +962,23 @@ impl NegFeApp {
             .map_or_else(|| "frame".to_string(), |source| source.name.clone())
     }
 
+    /// Write the triage mark a Light Table button asked for on every frame in the strip.
+    fn apply_light_table_action(&mut self, action: crate::view::light_table::LightTableAction) {
+        let Some(profile) = self.profile.clone() else {
+            return;
+        };
+        let mark = match action {
+            crate::view::light_table::LightTableAction::Keep => "keeper",
+            crate::view::light_table::LightTableAction::Reject => "excluded",
+        };
+        for frame in &self.strip {
+            if let Some(path) = &frame.path {
+                let _ = crate::frame_source::write_mark(Some(&profile), path, Some(mark));
+            }
+        }
+        self.strip_textures.clear();
+    }
+
     /// Move to the tab and page a capture entry asks for, without rebuilding the rail.
     pub fn select_view(&mut self, group: &str, tab: &str, subtab: &str, view: &str, scroll: f64) {
         let texture_size = self.view.texture_size;
@@ -1163,10 +1184,29 @@ impl NegFeApp {
             egui::CentralPanel::default()
                 .frame(Frame::NONE.fill(theme.bg_panel))
                 .show(ctx, |ui| {
-                    if let Some(index) =
-                        crate::view::light_table::paint(ui, screen, &strip_textures, self.selected)
-                    {
+                    let marks: Vec<Option<String>> = self
+                        .strip
+                        .iter()
+                        .map(|frame| {
+                            frame.path.as_deref().and_then(|path| {
+                                crate::frame_source::stored_mark(self.profile.as_deref(), path)
+                            })
+                        })
+                        .collect();
+                    let mark_refs: Vec<Option<&str>> =
+                        marks.iter().map(|mark| mark.as_deref()).collect();
+                    let hit = crate::view::light_table::paint(
+                        ui,
+                        screen,
+                        &strip_textures,
+                        self.selected,
+                        &mark_refs,
+                    );
+                    if let Some(index) = hit.cell {
                         self.select_frame(index);
+                    }
+                    if let Some(action) = hit.action {
+                        self.apply_light_table_action(action);
                     }
                     let rail_rect = rail_rect(screen);
                     self.request_export(ctx);

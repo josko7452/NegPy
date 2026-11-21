@@ -14,6 +14,20 @@ pub const CELL_GAP: f32 = 8.0;
 /// A cell's target width, one frame pitch on the Light Table.
 pub const CELL_TARGET: f32 = 220.0;
 
+/// A triage action the Light Table bar asked for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LightTableAction {
+    Keep,
+    Reject,
+}
+
+/// What a Light Table paint reported.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LightTableHit {
+    pub cell: Option<usize>,
+    pub action: Option<LightTableAction>,
+}
+
 /// The grid geometry for `count` frames at `width`.
 #[must_use]
 pub fn grid(count: usize, area: Rect, aspects: &[f32]) -> Vec<Rect> {
@@ -48,7 +62,8 @@ pub fn paint(
     screen: Rect,
     strip: &[(egui::TextureId, Vec2)],
     selected: usize,
-) -> Option<usize> {
+    marks: &[Option<&str>],
+) -> LightTableHit {
     let theme = Theme::default();
     crate::app::paint_top_bar(ui.painter(), screen);
     let top = crate::app::top_bar_rect(screen);
@@ -70,7 +85,7 @@ pub fn paint(
         .map(|(_, size)| (size.x / size.y.max(1.0)).max(0.05))
         .collect();
     let cells = grid(strip.len(), grid_area, &aspects);
-    let mut clicked = None;
+    let mut hit = LightTableHit::default();
     for (index, cell) in cells.iter().enumerate() {
         if !grid_area.intersects(*cell) {
             continue;
@@ -82,7 +97,7 @@ pub fn paint(
         );
         let hovered = response.hovered();
         if response.clicked() {
-            clicked = Some(index);
+            hit.cell = Some(index);
         }
         ui.painter()
             .rect_filled(cell.shrink(1.0), 0.0, Color32::BLACK);
@@ -112,12 +127,14 @@ pub fn paint(
         ui.painter().circle_filled(dot, 5.0, theme.bg_dark);
         ui.painter()
             .circle_stroke(dot, 5.0, Stroke::new(1.0_f32, theme.border_color));
-        if index == 0 {
-            marks::draw_mark_badge(ui.painter(), *cell, true);
+        match marks.get(index).copied().flatten() {
+            Some("keeper") => marks::draw_mark_badge(ui.painter(), *cell, true),
+            Some("excluded") => marks::draw_mark_badge(ui.painter(), *cell, false),
+            _ => {}
         }
     }
-    paint_bar(ui, bar, strip.len());
-    clicked
+    hit.action = paint_bar(ui, bar, strip.len());
+    hit
 }
 
 fn cover_rect(outer: Rect, content: Vec2) -> Rect {
@@ -128,7 +145,7 @@ fn cover_rect(outer: Rect, content: Vec2) -> Rect {
     Rect::from_center_size(outer.center(), content * scale)
 }
 
-fn paint_bar(ui: &mut egui::Ui, bar: Rect, frames: usize) {
+fn paint_bar(ui: &mut egui::Ui, bar: Rect, frames: usize) -> Option<LightTableAction> {
     let theme = Theme::default();
     ui.painter().rect_filled(bar, 0.0, theme.bg_panel);
     ui.painter().line_segment(
@@ -166,21 +183,30 @@ fn paint_bar(ui: &mut egui::Ui, bar: Rect, frames: usize) {
     );
     actions.set_width(row.width());
     actions.add_space(left - row.left());
-    let _ = crate::styles::templates::action_with_icon(
+    let mut action = None;
+    if crate::styles::templates::action_with_icon(
         &mut actions,
         Icon::Check,
         "Keep",
         crate::styles::templates::ActionRank::Normal,
         "Keep the selected frames",
-    );
+    )
+    .clicked()
+    {
+        action = Some(LightTableAction::Keep);
+    }
     actions.add_space(f32::from(theme.space_md));
-    let _ = crate::styles::templates::action_with_icon(
+    if crate::styles::templates::action_with_icon(
         &mut actions,
         Icon::Close,
         "Reject",
         crate::styles::templates::ActionRank::Normal,
         "Reject the selected frames: batch export skips them",
-    );
+    )
+    .clicked()
+    {
+        action = Some(LightTableAction::Reject);
+    }
     actions.add_space(f32::from(theme.space_md));
     let _ = crate::styles::templates::action_with_icon(
         &mut actions,
@@ -195,6 +221,7 @@ fn paint_bar(ui: &mut egui::Ui, bar: Rect, frames: usize) {
         "Export",
         crate::styles::templates::ActionRank::Normal,
     );
+    action
 }
 
 #[cfg(test)]
@@ -242,5 +269,17 @@ mod tests {
         let content = cover_rect(cell, Vec2::new(100.0, 100.0));
         assert!(content.width() >= cell.width());
         assert!(content.height() >= cell.height());
+    }
+
+    #[test]
+    fn the_light_table_paints_a_mark_badge_for_the_stored_mark() {
+        let ctx = egui::Context::default();
+        let strip = [(egui::TextureId::Managed(0), Vec2::new(200.0, 100.0))];
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let hit = paint(ui, ui.max_rect(), &strip, 0, &[Some("keeper")]);
+                assert!(hit.cell.is_none());
+            });
+        });
     }
 }

@@ -123,6 +123,31 @@ pub fn stored_history(
     (rows, prints)
 }
 
+/// The triage mark stored for `path`, if one is.
+#[must_use]
+pub fn stored_mark(profile: Option<&Path>, path: &Path) -> Option<String> {
+    let profile = profile?;
+    let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+    let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+    repo.file_marks_by_path()
+        .ok()?
+        .get(&path.display().to_string())
+        .cloned()
+}
+
+/// Write or clear the triage mark for `path`. A `None` mark clears it.
+pub fn write_mark(profile: Option<&Path>, path: &Path, mark: Option<&str>) -> Result<(), String> {
+    let Some(profile) = profile else {
+        return Err("Open a profile first.".to_string());
+    };
+    let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+    let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+    repo.initialize().map_err(|error| error.to_string())?;
+    let hash = file_hash(path).map_err(|error| error.to_string())?;
+    repo.save_file_mark(&hash, mark, &path.display().to_string())
+        .map_err(|error| error.to_string())
+}
+
 /// Decode `path` at a bounded proxy size and render its display frame.
 pub fn load_display_frame(
     path: &Path,
@@ -315,6 +340,20 @@ mod tests {
     fn a_missing_folder_has_no_frame() {
         assert!(frame_path(None, "P5080635.ORF").is_none());
         assert!(frame_path(Some(PathBuf::from("/missing/roll")), "a.orf").is_none());
+    }
+
+    #[test]
+    fn a_mark_round_trips_through_the_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        let photo = dir.path().join("frame.orf");
+        std::fs::write(&photo, b"frame").unwrap();
+        write_mark(Some(dir.path()), &photo, Some("excluded")).unwrap();
+        assert_eq!(
+            stored_mark(Some(dir.path()), &photo).as_deref(),
+            Some("excluded")
+        );
+        write_mark(Some(dir.path()), &photo, None).unwrap();
+        assert_eq!(stored_mark(Some(dir.path()), &photo), None);
     }
 
     #[test]
