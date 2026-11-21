@@ -14,6 +14,7 @@ use crate::styles::icons::Icon;
 use crate::styles::layout::TOP_ROW_HEIGHT;
 use crate::styles::theme::Theme;
 use crate::view::contact_sheet;
+use crate::view::find::FindState;
 use crate::view::rail::{RAIL_WIDTH, RailState};
 use negpy_backend::session::proof::ProofSettings;
 
@@ -97,6 +98,8 @@ pub struct ShellHits {
     pub transform: Option<usize>,
     /// The Tools button opened its menu.
     pub tools: bool,
+    /// A Find result the user opened.
+    pub find: Option<crate::view::find::FindTarget>,
     /// The zoom percent a toolbar preset selected.
     pub zoom: Option<u32>,
     /// The Roll Average toggle, taken as its new state.
@@ -211,6 +214,8 @@ pub struct NegFeApp {
     retouch_drag: crate::view::canvas::RetouchDrag,
     /// The fit-relative canvas zoom.
     pub zoom: f32,
+    /// The Find field state the shell passes to the painter.
+    pub find: FindState,
 }
 
 impl NegFeApp {
@@ -246,6 +251,7 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            find: FindState::default(),
         }
     }
 
@@ -281,6 +287,7 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            find: FindState::default(),
         }
     }
 
@@ -998,6 +1005,10 @@ impl NegFeApp {
 
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
+        if ctx.input(|input| input.key_pressed(egui::Key::K) && input.modifiers.command) {
+            self.find.focus = true;
+            ctx.request_repaint();
+        }
         self.receive_exports(ctx);
         self.receive_render(ctx);
         self.receive_scans(ctx);
@@ -1115,7 +1126,22 @@ impl NegFeApp {
                 self.edit.config.process.use_luma_average
                     || self.edit.config.process.use_color_average
                     || self.edit.config.process.use_cast_average,
+                &mut self.find,
             );
+            let find_results = self.find.results.clone();
+            let search = Rect::from_min_max(
+                egui::pos2(
+                    screen.right() - RAIL_WIDTH.min((screen.width() * 0.27).max(420.0)) - 8.0,
+                    screen.top() + 8.0,
+                ),
+                egui::pos2(
+                    screen.right() - 8.0,
+                    screen.top() + 8.0 + crate::view::rail::SEARCH_HEIGHT,
+                ),
+            );
+            if let Some(target) = crate::view::find::results(ui, search, &find_results) {
+                self.open_find(target, ctx);
+            }
             if hits.import {
                 self.rail.library.import_with_picker(false);
             }
@@ -1462,6 +1488,50 @@ impl NegFeApp {
         }
     }
 
+    /// Open one Find result and close the list.
+    fn open_find(&mut self, target: crate::view::find::FindTarget, ctx: &egui::Context) {
+        use crate::view::find::FindTarget;
+        self.find.query.clear();
+        self.find.results.clear();
+        self.find.focus = false;
+        match target {
+            FindTarget::Tab(tab) => {
+                self.rail.tab = tab;
+                self.view.tab = tab;
+                self.rail.select_view(&self.view);
+            }
+            FindTarget::Tool => self.rail.tab = Tab::Roll,
+            FindTarget::Zoom => {
+                self.rail.tab = Tab::Frame;
+            }
+            FindTarget::Export => {
+                self.rail.tab = Tab::Export;
+                self.rail.export.show_subtab("file");
+                self.view.tab = Tab::Export;
+                self.photo_mode = false;
+            }
+            FindTarget::CropAll => {
+                self.rail.tab = Tab::Frame;
+                self.rail.frame_subtab = crate::view::widgets::sub_tabs::SubTabState::new(
+                    &crate::view::rail::frame_subtabs(),
+                    Some("geometry"),
+                );
+                self.view.tab = Tab::Frame;
+                self.view.subtab = "geometry".to_string();
+            }
+            FindTarget::RollAverage => {
+                let process = &self.edit.config.process;
+                let on = !(process.use_luma_average
+                    || process.use_color_average
+                    || process.use_cast_average);
+                self.rail.metering.set_all_averages(on, &mut self.edit);
+                self.rail.select_view(&self.view);
+                self.request_render(ctx, false);
+            }
+        }
+        ctx.request_repaint();
+    }
+
     /// Whether a decoded frame is on the canvas.
     #[must_use]
     pub fn has_frame(&self) -> bool {
@@ -1599,6 +1669,7 @@ fn paint_shell(
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
     zoom: f32,
     averages_on: bool,
+    find: &mut FindState,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1626,7 +1697,9 @@ fn paint_shell(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     search_ui.set_width(search.width());
-    crate::view::rail::paint_search(&mut search_ui, &Theme::default());
+    let (_, results) =
+        crate::view::find::paint(&mut search_ui, search, &mut find.query, &mut find.focus);
+    find.results = results;
     let rail = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
@@ -2602,6 +2675,40 @@ mod tests {
         assert_eq!(app.rail.tab, Tab::Export);
         assert_eq!(app.rail.export.page, 0);
         assert!(!app.photo_mode);
+    }
+
+    #[test]
+    fn a_find_result_opens_its_tab() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.find.query = "metadata".to_string();
+        app.find.results = crate::view::find::rank("metadata");
+        app.open_find(crate::view::find::FindTarget::Tab(Tab::Metadata), &ctx);
+        assert_eq!(app.rail.tab, Tab::Metadata);
+        assert!(app.find.query.is_empty());
+    }
+
+    #[test]
+    fn a_find_result_can_toggle_the_roll_average() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.edit.config.process.use_luma_average = false;
+        app.edit.config.process.use_color_average = false;
+        app.edit.config.process.use_cast_average = false;
+        app.open_find(crate::view::find::FindTarget::RollAverage, &ctx);
+        assert!(app.edit.config.process.use_luma_average);
+    }
+
+    #[test]
+    fn a_find_result_opens_crop_all_on_geometry() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.open_find(crate::view::find::FindTarget::CropAll, &ctx);
+        assert_eq!(app.rail.tab, Tab::Frame);
+        assert_eq!(app.rail.frame_subtab.current_key(), "geometry");
     }
 
     #[test]

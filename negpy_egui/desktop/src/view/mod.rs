@@ -3,6 +3,7 @@
 pub mod canvas;
 pub mod contact_sheet;
 pub mod contact_sheet_dialog;
+pub mod find;
 pub mod light_table;
 pub mod rail;
 pub mod tools_menu;
