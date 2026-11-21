@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 19:20 | **Last Commit:** `<pending>` toolbar: rotate and flip the open frame
+**Last Updated:** 2026-11-21 19:40 | **Last Commit:** `<pending>` rail: mark clipping on the curve chart
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -21,16 +21,22 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
    Photo/Roll, rotate/flip, Square to Film and Undo/Redo are wired.
 
 ## Completed (Recent)
+- `<pending>` finish: the dead `Drop Empty Corners` button is retired; Crop
+  Empty Corners on Geometry is its control.
+- `a384cfb7` toolbar: the rotate and flip buttons turn the open frame, and a
+  flipped frame turns the pipeline the opposite way, as Python does.
+- `<pending>` rail: the curve chart marks a channel that clips at the black or
+  white edge bin.
 - `a09e3fa1` toolbar: Undo and Redo step a per-frame config stack; Square to Film
   calls `squared_geometry` on the open proxy and redraws.
 - `24c00efa` toolbar: Photo and Roll select the Frame and Roll tabs.
-- `<pending>` toolbar: the rotate and flip buttons turn the open frame, and a
-  flipped frame turns the pipeline the opposite way, as Python does.
   and redraws.
 - `<pending>` toolbar: Undo and Redo step a per-frame config stack.
 - `4f2a8bdf` rail: the worker bins the waveform, parade and vectorscope; the
   Analysis card switches between curve, waveform, parade and vectorscope, and
   the curve also paints the normalized density histogram.
+- `<pending>` rail: the curve chart marks a channel that clips at the black or
+  white edge bin.
 - `a9836f82` local: an oval and a card mask are hit-tested by their outline and
   axis, not by their control points.
 - `62a3c939` local: the tone-limited mask key, zone and softness reach the print

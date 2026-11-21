@@ -143,6 +143,56 @@ pub fn is_density_histogram(bins: &[f64]) -> bool {
     bins.len() == 4 * 120
 }
 
+/// The share of a channel above which its edge bin counts as clipping.
+pub const CLIP_THRESHOLD: f64 = 0.005;
+
+/// Whether each of the R, G and B rows clips at its black and white edge bins.
+#[must_use]
+pub fn clip_marks(bins: &[f64]) -> ([bool; 3], [bool; 3]) {
+    let mut low = [false; 3];
+    let mut high = [false; 3];
+    if !is_histogram(bins) {
+        return (low, high);
+    }
+    for channel in 0..3 {
+        let row = &bins[channel * 256..(channel + 1) * 256];
+        let total = row.iter().sum::<f64>().max(1.0);
+        low[channel] = row.first().copied().unwrap_or(0.0) / total > CLIP_THRESHOLD;
+        high[channel] = row.last().copied().unwrap_or(0.0) / total > CLIP_THRESHOLD;
+    }
+    (low, high)
+}
+
+/// Paint a filled triangle against `edge` for each channel that clips there.
+pub fn paint_clip_marks(ui: &egui::Ui, area: Rect, bins: &[f64]) {
+    let (low, high) = clip_marks(bins);
+    let theme = Theme::default();
+    let colors = [theme.channel_red, theme.channel_green, theme.channel_blue];
+    let size = 5.0;
+    let gap = size + 2.0;
+    for (channel, color) in colors.into_iter().enumerate() {
+        let y = area.top() + 4.0 + channel as f32 * gap;
+        if low[channel] {
+            let points = vec![
+                egui::pos2(area.left() + 3.0, y),
+                egui::pos2(area.left() + 3.0, y + size),
+                egui::pos2(area.left() + 3.0 + size, y + size / 2.0),
+            ];
+            ui.painter()
+                .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+        }
+        if high[channel] {
+            let points = vec![
+                egui::pos2(area.right() - 3.0, y),
+                egui::pos2(area.right() - 3.0, y + size),
+                egui::pos2(area.right() - 3.0 - size, y + size / 2.0),
+            ];
+            ui.painter()
+                .add(egui::Shape::convex_polygon(points, color, Stroke::NONE));
+        }
+    }
+}
+
 /// Paint the density histogram's luma row along the bottom edge of a chart.
 pub fn paint_density(ui: &egui::Ui, area: Rect, bins: &[f64], log: bool) {
     if !is_density_histogram(bins) {
@@ -188,6 +238,18 @@ mod tests {
         let values = normalized_trace(&bins(40.0), LUMA_ROW, false);
         assert_eq!(values.len(), 256);
         assert!((values[128] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_channel_clips_only_when_its_edge_bin_is_loaded() {
+        let mut values = vec![0.0; 4 * 256];
+        values[2 * 256] = 50.0;
+        values[2 * 256 + 128] = 1000.0;
+        values[0 * 256 + 255] = 40.0;
+        values[0 * 256 + 128] = 1000.0;
+        let (low, high) = clip_marks(&values);
+        assert!(!low[0] && !low[1] && low[2]);
+        assert!(high[0] && !high[1] && !high[2]);
     }
 
     #[test]

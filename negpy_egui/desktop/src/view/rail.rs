@@ -612,6 +612,7 @@ impl RailState {
                                     self.analysis_log,
                                     false,
                                 );
+                                crate::view::widgets::histogram::paint_clip_marks(ui, band, bins);
                             }
                             let points: Vec<egui::Pos2> = self
                                 .metrics
