@@ -1,19 +1,26 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 14:42 | **Last Commit:** `620593c1` export: write the sidecar the toggle promises
+**Last Updated:** 2026-11-21 15:10 | **Last Commit:** `41bfb44f` plan: correct the ledger keyed-mask status
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
 reach the CPU render. Next add the missing GPU engine and finish the dead
-toolbar and card actions from the section 9 audit.
+toolbar and card actions in `MIGRATION_PLAN.md` §9.9.
+
+## Batch Protocol
+After commit #10, run the source audit in `MIGRATION_PLAN.md` §8.7. Write its
+findings into §9.9 and this ledger, then run `cargo check --workspace` and
+`cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
 2. [ ] Add the tone-limited local masks: the print curve accepts a keyed alpha
    plane and key parameters, but the engine passes neither.
-3. [ ] Wire the dead toolbar and card actions from the section 9 audit
-   (Photo/Roll mode, zoom, rotate/flip, Tools, Undo/Redo, Print, Roll Average,
-   Prescan, Scan as Roll).
+3. [ ] Wire the dead toolbar and card actions in §9.9: Photo/Roll mode, zoom,
+   rotate/flip, Tools, Undo/Redo, Print, Roll Average, Crop All Frames, Square
+   to Film and Drop Empty Corners.
+4. [ ] Add a render output for the density histogram, waveform, parade and
+   vectorscope, then give each a view.
 
 ## Completed (Recent)
 - `98d7b11e` frame: keep crop drawing active until confirm.
@@ -72,14 +79,20 @@ toolbar and card actions from the section 9 audit.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
 - Retouch bakes are wired ahead of both engines. Unlimited local masks reach
   the print; tone-limited keyed masks do not.
-- The histogram is binned from the display-encoded frame on the card strip. The
-  Analysis card still reads only the curve and readouts.
+- The output histogram is binned from the display-encoded frame. The Analysis
+  card paints it with the curve and readouts; the density and scope views are
+  absent (§9.9 A2-3).
 - Retouch runs on the source proxy and the full-resolution export. Its IR plane
   is oriented and resized with the source.
 - No `wgpu` backend or WGSL shader exists in `negpy_egui/`. The shell draws
   textures through egui only.
 - The Scan card's Prescan and Scan as Roll are disabled: their workers are not
   ported.
+- Tone-limited local masks do not reach the print: the curve accepts keyed alpha
+  and key parameters, but the engine passes neither (§9.9 A0-2).
+- The mask picker edits unlimited masks. Card masks have no hit test, and oval
+  handles follow the raw control points rather than the outline (§9.9 A2-1,
+  A2-2).
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
 - The render worker resolves Auto Crop in its own config, then returns a hash
