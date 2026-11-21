@@ -7,6 +7,9 @@
 use std::sync::Arc;
 
 use crate::domain::models::WorkspaceConfig;
+use crate::features::exposure::exposure_shader::{
+    ExposureRun, ExposureUniforms, run as run_exposure,
+};
 use crate::features::exposure::histogram_shader::{
     DensityHistogramUniforms, run as run_density_histogram,
 };
@@ -172,6 +175,86 @@ impl GpuEngine {
         (ImageBuffer::from_rgb(out_w, out_h, pixels), histogram)
     }
 
+    /// A print frame with no local maps, run to the display-encoded crop.
+    ///
+    /// The caller passes the solved print inputs the CPU exposure stage would
+    /// read, so a frame that needs a mask or LUT stays on the CPU.
+    #[must_use]
+    pub fn run_print(
+        &mut self,
+        image: &ImageBuffer,
+        config: &WorkspaceConfig,
+        run: &BaseRun,
+        print: &ExposureRun<'_>,
+        roi: Option<crate::features::geometry::logic::Roi>,
+    ) -> ImageBuffer {
+        let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
+        let source = GpuTexture::new(
+            &self.gpu.device,
+            image.width as u32,
+            image.height as u32,
+            "source",
+        );
+        source.upload(&self.gpu.queue, &image.pixels, false);
+        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
+        run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
+
+        let normalized =
+            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+        let value = NormalizationUniforms::pack(
+            NormalizationSetup {
+                stage: &run.stage,
+                bounds: run.bounds,
+                mono: is_mono(&config.process),
+                transfer: run.transfer,
+            },
+            &run.crossover,
+        );
+        run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &value);
+
+        let printed = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "printed");
+        run_exposure(
+            &self.gpu,
+            &self.loaders,
+            &normalized,
+            &printed,
+            &ExposureUniforms::pack(print),
+        );
+
+        let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
+        let (cropped, crop_uniforms) =
+            crop_shader::target(&self.gpu, window, out_w, out_h, "cropped");
+        crop_shader::run(&self.gpu, &self.loaders, &printed, &cropped, &crop_uniforms);
+        let rgba = cropped.readback(&self.gpu);
+        let mut pixels = Vec::with_capacity(cropped.width as usize * cropped.height as usize * 3);
+        for texel in rgba.chunks_exact(4) {
+            pixels.extend_from_slice(&texel[..3]);
+        }
+        ImageBuffer::from_rgb(cropped.width as usize, cropped.height as usize, pixels)
+    }
+
+    fn encode_cropped(
+        &self,
+        source: &GpuTexture,
+        roi: Option<crate::features::geometry::logic::Roi>,
+        out_w: usize,
+        out_h: usize,
+    ) -> ImageBuffer {
+        let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
+        let (cropped, crop_uniforms) =
+            crop_shader::target(&self.gpu, window, out_w, out_h, "cropped");
+        crop_shader::run(&self.gpu, &self.loaders, source, &cropped, &crop_uniforms);
+        let encoded = GpuTexture::new(&self.gpu.device, cropped.width, cropped.height, "encoded");
+        run_encode(&self.gpu, &self.loaders, &cropped, &encoded);
+        let rgba = encoded.readback(&self.gpu);
+        let mut pixels = Vec::with_capacity(encoded.width as usize * encoded.height as usize * 3);
+        for texel in rgba.chunks_exact(4) {
+            pixels.extend_from_slice(&texel[..3]);
+        }
+        ImageBuffer::from_rgb(encoded.width as usize, encoded.height as usize, pixels)
+    }
+
     /// Geometry, normalization, crop and the display encode, held on the device.
     #[must_use]
     pub fn run_base_cropped(
@@ -206,24 +289,7 @@ impl GpuEngine {
         );
         run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &uniforms);
 
-        let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
-        let (cropped, crop_uniforms) =
-            crop_shader::target(&self.gpu, window, out_w, out_h, "cropped");
-        crop_shader::run(
-            &self.gpu,
-            &self.loaders,
-            &normalized,
-            &cropped,
-            &crop_uniforms,
-        );
-        let encoded = GpuTexture::new(&self.gpu.device, cropped.width, cropped.height, "encoded");
-        run_encode(&self.gpu, &self.loaders, &cropped, &encoded);
-        let rgba = encoded.readback(&self.gpu);
-        let mut pixels = Vec::with_capacity(encoded.width as usize * encoded.height as usize * 3);
-        for texel in rgba.chunks_exact(4) {
-            pixels.extend_from_slice(&texel[..3]);
-        }
-        ImageBuffer::from_rgb(encoded.width as usize, encoded.height as usize, pixels)
+        self.encode_cropped(&normalized, roi, out_w, out_h)
     }
 
     /// Run the geometry and normalization passes and return the normalized frame.

@@ -240,3 +240,84 @@ fn a_cropped_chain_matches_the_cpu_crop() {
     let fraction = failures as f64 / want.pixels.len() as f64;
     assert!(fraction < 0.01, "{failures} samples differ");
 }
+
+#[test]
+fn a_print_chain_matches_the_cpu_print() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(40, 28);
+    let geometry = process(
+        &image,
+        &settings.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let cpu = normalize_negative(
+        &geometry.image.pixels,
+        geometry.image.width,
+        geometry.image.height,
+        NormalizationSettings {
+            config: &settings.process,
+            mode: settings.process.process_mode,
+            active_roi: None,
+            base_log: None,
+        },
+    );
+    let print = negpy_backend::features::exposure::print::PrintRenderSettings {
+        config: &settings.exposure,
+        process: &settings.process,
+        density_range: Some(cpu.metrics.norm_density_range),
+        textural_range: Some(cpu.metrics.textural_range),
+        shadow_point: Some(cpu.metrics.shadow_point),
+        highlight_point: Some(cpu.metrics.highlight_point),
+        anchor: Some(cpu.metrics.metered_anchor),
+        bounds: Some(cpu.metrics.final_bounds),
+        neutral_axis: None,
+        mode: settings.process.process_mode,
+        base_black_hold: 0.0,
+        mask: None,
+        diffusion: None,
+        local_exposure: None,
+        local_grade: None,
+        local_flash: None,
+        key_params: None,
+        key_alpha: None,
+        grade_deltas: None,
+    };
+    let want = negpy_backend::features::exposure::analysis::working_oetf_encode(
+        &negpy_backend::features::exposure::print::render_negative(
+            &cpu.image,
+            geometry.image.width,
+            &print,
+        ),
+    );
+    let run = negpy_backend::features::exposure::exposure_shader::ExposureRun {
+        density_range: Some(cpu.metrics.norm_density_range),
+        textural_range: Some(cpu.metrics.textural_range),
+        shadow_point: Some(cpu.metrics.shadow_point),
+        highlight_point: Some(cpu.metrics.highlight_point),
+        anchor: Some(cpu.metrics.metered_anchor),
+        bounds: Some(cpu.metrics.final_bounds),
+        ..negpy_backend::features::exposure::exposure_shader::ExposureRun::plain(
+            &settings.exposure,
+            &settings.process,
+            settings.process.process_mode,
+        )
+    };
+    let gpu = engine.run_print(
+        &image,
+        &settings,
+        &BaseRun::plain(cpu.metrics.final_bounds),
+        &run,
+        None,
+    );
+    let mut failures = 0usize;
+    for (index, expected) in want.iter().enumerate() {
+        if (gpu.pixels[index] - expected).abs() > 3e-2 {
+            failures += 1;
+        }
+    }
+    let fraction = failures as f64 / want.len() as f64;
+    assert!(fraction < 0.01, "{failures} samples differ");
+}

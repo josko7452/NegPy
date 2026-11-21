@@ -638,7 +638,7 @@ pub fn render_negative(
 }
 
 /// The print settings and solved curve one render uses.
-fn print_settings(
+pub(crate) fn print_settings(
     settings: &PrintRenderSettings<'_>,
 ) -> (PrintSettings, SolvedPrint, &'static PaperProfile) {
     let exposure = settings.config;

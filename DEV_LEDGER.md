@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 19:20 | **Last Commit:** `pending GPU crop`
+**Last Updated:** 2026-11-21 19:55 | **Last Commit:** `pending GPU print`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -12,27 +12,27 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: port the exposure curve pass so the chain replaces the print
-   curve (§9.12 G-1, G-3).
-2. [ ] GPU: run the chain from the desktop render worker when the config
+1. [ ] GPU: run the chain from the desktop render worker when the config
    allows it, and fall back to the CPU engine (§9.12 G-2).
-3. [ ] GPU: add stage caching and a texture pool, then the tiled path
+2. [ ] GPU: add stage caching and a texture pool, then the tiled path
    (§9.12 G-4).
-4. [ ] GPU: pin shader output bits and add per-channel and camera cases
+3. [ ] GPU: pin shader output bits and add per-channel and camera cases
    (§9.12 G-5, G-6).
-5. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
+4. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
    (§9.11 C2-1).
-6. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
+5. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
    then analyze an accepted scene (§9.11 C2-3).
-7. [ ] Metadata Presets: honour a multi-frame selection and card locks
+6. [ ] Metadata Presets: honour a multi-frame selection and card locks
    (§9.11 C2-4).
-8. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
+7. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
    clickable (§9.11 C2-5).
-9. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
-10. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
-11. [ ] Camera capture: blocked until a human picks the hardware target.
+8. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
+9. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
+10. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: the GPU print pass runs the exposure curve and its parity test
+  matches `render_negative` for color and B&W frames.
 - `backend`: a GPU crop pass copies the resolved window and the chain exposes
   a cropped base run.
 - `backend`: the GPU device opens once, textures and shaders are cached, and
