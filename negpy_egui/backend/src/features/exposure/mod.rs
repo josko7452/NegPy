@@ -14,4 +14,5 @@ pub mod papers;
 pub mod placement;
 pub mod print;
 pub mod processor;
+pub mod shader;
 pub mod stats;
