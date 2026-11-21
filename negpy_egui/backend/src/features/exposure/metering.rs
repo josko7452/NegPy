@@ -306,3 +306,90 @@ pub fn density_above_base(
     let median = luma_median(grid);
     Some([base - thin, base - median, base - dense])
 }
+
+/// The unmixed log-density triplet at normalized `(nx, ny)` of a linear frame, averaged over a
+/// square patch. A picked bound stores this so one stray pixel does not set the end.
+#[must_use]
+pub fn sample_log_patch(
+    image: &[f32],
+    width: usize,
+    height: usize,
+    process: &ProcessConfig,
+    mode: ProcessMode,
+    point: (f64, f64),
+    radius: usize,
+) -> Option<[f64; 3]> {
+    if width == 0 || height == 0 || image.len() < width * height * 3 {
+        return None;
+    }
+    let mut log = vec![0.0; image.len()];
+    to_log_density(image, &mut log);
+    let matrix = effective_crosstalk_matrix(process, Some(mode));
+    let log = unmix_log_image(&log, matrix);
+    let x = (point.0.clamp(0.0, 1.0) * (width - 1) as f64).round() as usize;
+    let y = (point.1.clamp(0.0, 1.0) * (height - 1) as f64).round() as usize;
+    let x0 = x.saturating_sub(radius);
+    let y0 = y.saturating_sub(radius);
+    let x1 = (x + radius + 1).min(width);
+    let y1 = (y + radius + 1).min(height);
+    let count = (x1 - x0) * (y1 - y0);
+    if count == 0 {
+        return None;
+    }
+    let mut sums = [0.0f64; 3];
+    for py in y0..y1 {
+        for px in x0..x1 {
+            let at = (py * width + px) * 3;
+            for (channel, sum) in sums.iter_mut().enumerate() {
+                *sum += f64::from(log[at + channel]);
+            }
+        }
+    }
+    Some(sums.map(|sum| sum / count as f64))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn gray(value: f32, width: usize, height: usize) -> Vec<f32> {
+        vec![value; width * height * 3]
+    }
+
+    #[test]
+    fn a_patch_averages_the_unmixed_log_of_its_pixels() {
+        let (width, height) = (8, 6);
+        let image = gray(0.5, width, height);
+        let patch = sample_log_patch(
+            &image,
+            width,
+            height,
+            &ProcessConfig::default(),
+            ProcessMode::C41,
+            (0.5, 0.5),
+            1,
+        )
+        .unwrap();
+        let expected = f64::from(0.5f32).log10();
+        for value in patch {
+            assert!((value - expected).abs() < 1e-6, "{value} != {expected}");
+        }
+    }
+
+    #[test]
+    fn a_point_on_the_frame_edge_stays_inside_the_image() {
+        let (width, height) = (4, 4);
+        let image = gray(0.25, width, height);
+        let point = sample_log_patch(
+            &image,
+            width,
+            height,
+            &ProcessConfig::default(),
+            ProcessMode::C41,
+            (0.0, 0.0),
+            4,
+        )
+        .unwrap();
+        assert!((point[0] - f64::from(0.25f32).log10()).abs() < 1e-6);
+    }
+}
