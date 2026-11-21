@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 00:25 | **Last Commit:** `34fec0dc` desktop: print the frame recipe in the top bar
+**Last Updated:** 2026-11-22 00:45 | **Last Commit:** `1d7fe335` desktop: keep the Find list keyboard-navigable
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,7 +15,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Fix the Camera capture entry point (§9.10 B1-8).
+2. [ ] Add the GPU render path (`MIGRATION_PLAN.md` D10, §9.10 B1-9). This is
+   a multi-batch epic, not one commit.
 
 ## Completed (Recent)
 - Crop All Frames now runs a strip worker over `batch_autocrop`, applies each
@@ -34,6 +35,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
   the auto markers.
 - Find keeps its list open, moves with Up/Down and opens the active row on
   Enter; Escape closes it.
+- Crop All snapshots a detection fingerprint and keeps a frame edited during
+  the run.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.

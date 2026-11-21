@@ -20,6 +20,10 @@ pub struct CropFrame {
     pub path: PathBuf,
     pub hash: String,
     pub config_json: String,
+    /// Identity of every setting that changes detection pixels or crop coordinates.
+    pub fingerprint: String,
+    /// Whether the frame was armed for Auto Crop when the run started.
+    pub started_auto: bool,
 }
 
 /// One Crop All Frames run.
@@ -118,6 +122,10 @@ pub fn run(request: &CropRequest) -> CropReport {
         };
         let frame = &request.frames[evidence_index[position]];
         let config = read_config(&repo, &frame.hash, &frame.config_json);
+        if latest_changed(&repo, frame, &config) {
+            report.kept += 1;
+            continue;
+        }
         let Some(updated) = apply_resolved_crop(&config, &crop) else {
             report.kept += 1;
             continue;
@@ -129,6 +137,52 @@ pub fn run(request: &CropRequest) -> CropReport {
     }
     report.kept += request.frames.len().saturating_sub(evidence.len());
     report
+}
+
+/// The detection fingerprint Python builds before a run. A change keeps the frame.
+#[must_use]
+pub fn fingerprint(config: &negpy_backend::domain::models::WorkspaceConfig) -> String {
+    let geometry = &config.geometry;
+    let flatfield = &config.flatfield;
+    let rgbscan = &config.rgbscan;
+    format!(
+        "{}|{:.7}|{:.7}|{:.7}|{}|{}|{}|{}|{}|{}|{:.4}|{:.9}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        geometry.rotation,
+        geometry.fine_rotation,
+        geometry.converge_v,
+        geometry.converge_h,
+        geometry.autocrop_square,
+        geometry.flip_horizontal,
+        geometry.flip_vertical,
+        geometry.autocrop_mode.as_str(),
+        geometry.autocrop_ratio.as_str(),
+        geometry.autocrop_offset,
+        geometry.autocrop_rebate_trim,
+        geometry.distortion_k1,
+        geometry.lens_distortion_from_metadata,
+        geometry.lens_ca_from_metadata,
+        flatfield.apply,
+        flatfield.profile_id,
+        config.process.linear_raw,
+        rgbscan.enabled,
+        rgbscan.green_path,
+        rgbscan.blue_path,
+        rgbscan.align,
+    )
+}
+
+fn latest_changed(
+    repo: &StorageRepository,
+    frame: &CropFrame,
+    current: &negpy_backend::domain::models::WorkspaceConfig,
+) -> bool {
+    let latest = repo
+        .load_file_settings(&frame.hash)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| current.clone());
+    fingerprint(&latest) != frame.fingerprint
+        || latest.geometry.crop_from_auto != frame.started_auto
 }
 
 fn read_config(
@@ -243,6 +297,8 @@ mod tests {
                 path,
                 hash,
                 config_json: serde_json::Value::Object(config.to_dict()).to_string(),
+                fingerprint: fingerprint(&config),
+                started_auto: config.geometry.crop_from_auto,
             });
         }
         let request = CropRequest {
@@ -260,5 +316,39 @@ mod tests {
         }
         let report = run(&request);
         assert_eq!(report.saved + report.kept + report.failed, 2, "{report:?}");
+    }
+
+    #[test]
+    fn a_fingerprint_changes_with_a_detection_setting() {
+        let first = negpy_backend::domain::models::WorkspaceConfig::default();
+        let mut second = first.clone();
+        second.geometry.fine_rotation = 0.5;
+        assert_ne!(fingerprint(&first), fingerprint(&second));
+        second.geometry.fine_rotation = 0.0;
+        assert_eq!(fingerprint(&first), fingerprint(&second));
+    }
+
+    #[test]
+    fn a_frame_edited_after_the_snapshot_keeps_its_crop() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = StorageRepository::new(
+            dir.path().join("edits.db").display().to_string(),
+            dir.path().join("settings.db").display().to_string(),
+        );
+        repo.initialize().unwrap();
+        let config = negpy_backend::domain::models::WorkspaceConfig::default();
+        let frame = CropFrame {
+            path: dir.path().join("frame.jpg"),
+            hash: "frame".to_string(),
+            config_json: serde_json::Value::Object(config.to_dict()).to_string(),
+            fingerprint: fingerprint(&config),
+            started_auto: false,
+        };
+        assert!(!latest_changed(&repo, &frame, &config));
+        repo.save_file_settings("frame", &config, "").unwrap();
+        let mut edited = config.clone();
+        edited.geometry.fine_rotation = 1.0;
+        repo.save_file_settings("frame", &edited, "").unwrap();
+        assert!(latest_changed(&repo, &frame, &config));
     }
 }

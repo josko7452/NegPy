@@ -470,6 +470,7 @@ impl NegFeApp {
             return;
         };
         let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let _ = self.edit.save();
         let mut frames = Vec::new();
         for frame in &self.strip {
             let Some(path) = &frame.path else {
@@ -485,6 +486,8 @@ impl NegFeApp {
                 path: path.clone(),
                 hash,
                 config_json: serde_json::Value::Object(config.to_dict()).to_string(),
+                fingerprint: crate::crop_worker::fingerprint(&config),
+                started_auto: config.geometry.crop_from_auto,
             });
         }
         if frames.is_empty() {
