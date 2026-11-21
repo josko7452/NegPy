@@ -3,6 +3,7 @@
 use eframe::egui::Ui;
 
 use negpy_backend::domain::models::exposure::BwFilter;
+use negpy_backend::domain::models::local::MaskKey;
 use negpy_backend::domain::models::process::ProcessMode;
 use negpy_backend::features::exposure::papers::profiles_for_mode;
 use negpy_backend::features::pickbetter::{kelvin_to_wb, wb_to_kelvin};
@@ -174,6 +175,8 @@ pub struct LocalState {
     pub draw: bool,
     pub oval: bool,
     pub card: bool,
+    /// Which tones the selected mask acts on: All, Highlights or Shadows.
+    pub tone_key: SegmentedChoice<'static>,
     pub burn: CompactSlider,
     pub grade: CompactSlider,
     pub flash: CompactSlider,
@@ -189,6 +192,7 @@ impl Default for LocalState {
             draw: false,
             oval: false,
             card: false,
+            tone_key: SegmentedChoice::new(&["All", "Highlights", "Shadows"]),
             burn: CompactSlider::new(
                 SliderSpec::new(-2.0, 2.0, 0.05, 2)
                     .with_default(0.0)
@@ -363,6 +367,7 @@ impl ExposureState {
         self.mask_count = masks.len();
         self.mask_index = self.mask_index.min(masks.len().saturating_sub(1));
         if let Some(mask) = masks.get(self.mask_index) {
+            self.local.tone_key.current = mask_key_index(mask.key);
             self.local.burn.set_value(mask.stops);
             self.local.grade.set_value(mask.grade);
             self.local.flash.set_value(mask.flash);
@@ -536,18 +541,21 @@ impl ExposureState {
             let feather = self.local.feather.value;
             let zone = self.local.tone_zone.value;
             let softness = self.local.tone_softness.value;
+            let key = mask_key_at(self.local.tone_key.current);
             local_changed = !near(mask.stops, burn)
                 || !near(mask.grade, mask_grade)
                 || !near(mask.flash, flash)
                 || !near(mask.feather, feather)
                 || !near(mask.key_zone, zone)
-                || !near(mask.key_softness, softness);
+                || !near(mask.key_softness, softness)
+                || mask.key != key;
             mask.stops = burn;
             mask.grade = mask_grade;
             mask.flash = flash;
             mask.feather = feather;
             mask.key_zone = zone;
             mask.key_softness = softness;
+            mask.key = key;
         }
         changed || local_changed
     }
@@ -774,8 +782,18 @@ impl ExposureState {
         changed |= self.local.flash.show(ui, "Flash").1;
         changed |= self.local.feather.show(ui, "Feather").1;
         let _ = section_subheader(ui, "Tone Limit");
-        changed |= self.local.tone_zone.show(ui, "Tone Zone").1;
-        changed |= self.local.tone_softness.show(ui, "Tone Softness").1;
+        if self.local.tone_key.show(ui).is_some() {
+            changed = true;
+        }
+        if self.local.tone_key.current != 0 {
+            changed |= self.local.tone_zone.show(ui, "Tone Zone").1;
+            changed |= self.local.tone_softness.show(ui, "Tone Softness").1;
+        } else {
+            ui.add_enabled_ui(false, |ui| {
+                let _ = self.local.tone_zone.show(ui, "Tone Zone");
+                let _ = self.local.tone_softness.show(ui, "Tone Softness");
+            });
+        }
         if labeled_action(ui, "Clear All", ActionRank::Normal).clicked() {
             self.clear_masks = true;
         }
@@ -790,6 +808,19 @@ const BW_FILTERS: [BwFilter; 5] = [
     BwFilter::Orange21,
     BwFilter::Red25,
 ];
+
+const TONE_KEYS: [MaskKey; 3] = [MaskKey::Off, MaskKey::Highlights, MaskKey::Shadows];
+
+fn mask_key_index(key: MaskKey) -> usize {
+    TONE_KEYS
+        .iter()
+        .position(|candidate| *candidate == key)
+        .unwrap_or(0)
+}
+
+fn mask_key_at(index: usize) -> MaskKey {
+    TONE_KEYS[index.min(TONE_KEYS.len() - 1)]
+}
 
 fn bw_filter_index(filter: BwFilter) -> usize {
     BW_FILTERS
@@ -1000,6 +1031,27 @@ mod tests {
         state.load(&edit);
         assert_eq!(state.filtration.region.current, 2);
         assert_eq!(state.tone.channel.current, 3);
+    }
+
+    #[test]
+    fn the_tone_key_writes_the_selected_mask_and_reloads() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        edit.config
+            .local
+            .masks
+            .push(negpy_backend::domain::models::LocalMask {
+                vertices: vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]],
+                ..negpy_backend::domain::models::LocalMask::default()
+            });
+        state.load(&edit);
+        assert_eq!(state.local.tone_key.current, 0);
+        state.local.tone_key.current = 2;
+        assert!(state.store(&mut edit));
+        assert_eq!(edit.config.local.masks[0].key, MaskKey::Shadows);
+        state.load(&edit);
+        assert_eq!(state.local.tone_key.current, 2);
+        assert!(!state.store(&mut edit));
     }
 
     #[test]

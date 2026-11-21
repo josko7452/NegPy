@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 17:20 | **Last Commit:** `<pending>` local: send tone-limited masks to the print
+**Last Updated:** 2026-11-21 17:22 | **Last Commit:** `59e23e45` local: send tone-limited masks to the print
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -22,7 +22,7 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
    vectorscope, then give each a view.
 
 ## Completed (Recent)
-- `<pending>` local: the tone-limited mask key, zone and softness reach the print
+- `59e23e45` local: the tone-limited mask key, zone and softness reach the print
   curve; the key edges invert the achromatic curve.
 - `<pending>` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
 - `98d7b11e` frame: keep crop drawing active until confirm.
