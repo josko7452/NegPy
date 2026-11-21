@@ -797,6 +797,15 @@ impl NegFeApp {
                     &rows,
                 );
                 self.edit.mark_dirty();
+                let changed = if self.rail.metadata.apply_scope.current == 1 {
+                    self.apply_preset_to_roll(&source, &rows)
+                } else {
+                    0
+                };
+                self.rail.metadata.preset_status =
+                    negpy_backend::session::settings_catalog::preset_applied_message(
+                        &name, changed,
+                    );
             }
         }
         if let Some(name) = self.rail.metadata.take_delete_request() {
@@ -804,6 +813,52 @@ impl NegFeApp {
             self.rail.metadata.selected_preset = None;
             self.rail.metadata.set_presets(store.list());
         }
+    }
+
+    /// Write the preset's rows over every other frame of the open roll. Returns the count.
+    fn apply_preset_to_roll(
+        &mut self,
+        source: &negpy_backend::domain::models::WorkspaceConfig,
+        rows: &[negpy_backend::session::settings_catalog::SettingRow],
+    ) -> usize {
+        let (Some(profile), Some(roll_id)) = (
+            self.profile.clone(),
+            self.rail.roll_analysis.roll_id.clone(),
+        ) else {
+            return 0;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app.edits_db_path,
+            app.settings_db_path,
+        );
+        let paths = negpy_backend::services::assets::rolls::roll_frame_paths(&repo, &roll_id);
+        let open = self
+            .strip
+            .get(self.selected)
+            .and_then(|frame| frame.path.clone());
+        let mut count = 0;
+        for path in paths {
+            if open
+                .as_deref()
+                .is_some_and(|open| open == std::path::Path::new(&path))
+            {
+                continue;
+            }
+            let target = crate::frame_source::load_config_in_roll(Some(&profile), &path, &roll_id);
+            let synced = negpy_backend::session::settings_catalog::apply_selected_fields(
+                source, &target, rows,
+            );
+            let Ok(hash) = negpy_backend::infrastructure::storage::local_asset_store::file_hash(
+                std::path::Path::new(&path),
+            ) else {
+                continue;
+            };
+            if repo.save_file_settings(&hash, &synced, &path).is_ok() {
+                count += 1;
+            }
+        }
+        count
     }
 
     /// Whether a finished render is the one the canvas waits for.
@@ -2892,6 +2947,52 @@ mod tests {
                 .current_key(),
             "tone"
         );
+    }
+
+    #[test]
+    fn a_roll_scoped_metadata_preset_writes_every_other_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let photos: Vec<std::path::PathBuf> = (0..3)
+            .map(|index| {
+                let path = dir.path().join(format!("frame{index}.orf"));
+                std::fs::write(&path, format!("frame {index}")).unwrap();
+                path
+            })
+            .collect();
+        let app_config = negpy_backend::domain::types::AppConfig::for_user_dir(dir.path());
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app_config.edits_db_path.clone(),
+            app_config.settings_db_path.clone(),
+        );
+        repo.initialize().unwrap();
+        let roll_id = negpy_backend::services::assets::rolls::create_virtual_roll(
+            &mut repo,
+            "Roll",
+            &photos
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>(),
+        );
+        let mut app = NegFeApp::for_capture("metadata", "", "presets", "canvas", 0.0);
+        app.profile = Some(dir.path().to_path_buf());
+        app.settings = Some(repo);
+        app.rail.roll_analysis.roll_id = Some(roll_id);
+        app.strip = vec![
+            crate::frame_source::FrameImage::empty().with_path(&photos[0]),
+            crate::frame_source::FrameImage::empty().with_path(&photos[1]),
+            crate::frame_source::FrameImage::empty().with_path(&photos[2]),
+        ];
+        app.selected = 0;
+        let mut source = negpy_backend::domain::models::WorkspaceConfig::default();
+        source.metadata.camera_model = "Leica M3".to_string();
+        let rows =
+            negpy_backend::session::settings_catalog::rows_for_keys(&source.to_dict(), "metadata");
+        let count = app.apply_preset_to_roll(&source, &rows);
+        assert_eq!(count, 2);
+        let other = crate::frame_source::stored_config(Some(dir.path()), &photos[1]);
+        assert_eq!(other.metadata.camera_model, "Leica M3");
+        let untouched = crate::frame_source::stored_config(Some(dir.path()), &photos[0]);
+        assert!(untouched.metadata.camera_model.is_empty());
     }
 
     #[test]

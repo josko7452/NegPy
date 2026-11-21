@@ -15,6 +15,7 @@ use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::flat_rows::FlatRow;
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
+use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
 use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
@@ -65,6 +66,10 @@ pub struct MetadataState {
     pub apply_preset: Option<String>,
     /// The preset the user asked to delete.
     pub delete_preset: Option<String>,
+    /// Where an applied preset goes: the open frame, the whole roll, or both.
+    pub apply_scope: SegmentedChoice<'static>,
+    /// The result of the last preset action.
+    pub preset_status: String,
     pub cards_open: std::collections::BTreeMap<String, bool>,
     gear: GearLibrary,
     pub clear_gear: bool,
@@ -137,6 +142,8 @@ impl Default for MetadataState {
             save_preset: None,
             apply_preset: None,
             delete_preset: None,
+            apply_scope: SegmentedChoice::new(&["Frame", "Roll"]),
+            preset_status: String::new(),
             cards_open: std::collections::BTreeMap::new(),
             gear: GearLibrary::default(),
             clear_gear: false,
@@ -634,6 +641,9 @@ impl MetadataState {
             let selected = self.selected_preset.clone();
             if selected.is_some() {
                 ui.add_space(f32::from(Theme::default().space_sm));
+                let _ = field_row(ui, RowColumns::new(), "Apply to", |ui| {
+                    let _ = self.apply_scope.show(ui);
+                });
                 let mut apply = false;
                 let mut delete = false;
                 ui.horizontal(|ui| {
@@ -657,6 +667,9 @@ impl MetadataState {
                 if apply {
                     self.apply_preset = selected.clone();
                     changed = true;
+                }
+                if !self.preset_status.is_empty() {
+                    let _ = hint(ui, &self.preset_status);
                 }
                 if delete {
                     self.delete_preset = selected;

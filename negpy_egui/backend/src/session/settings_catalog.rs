@@ -1037,6 +1037,15 @@ pub fn rows_for_keys(data: &Map<String, Value>, section: &str) -> Vec<SettingRow
         .collect()
 }
 
+/// The line a preset apply leaves in its card.
+#[must_use]
+pub fn preset_applied_message(name: &str, extra: usize) -> String {
+    if extra == 0 {
+        return format!("{name} applied to this frame.");
+    }
+    format!("{name} applied to this frame and {extra} more.")
+}
+
 /// Each row a preset stores, as `(label, formatted value)`.
 #[must_use]
 pub fn preset_values(data: &Map<String, Value>, section: &str) -> Vec<(&'static str, String)> {

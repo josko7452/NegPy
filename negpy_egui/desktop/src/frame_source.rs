@@ -86,6 +86,32 @@ pub fn stored_config(profile: Option<&Path>, path: &Path) -> WorkspaceConfig {
         .unwrap_or_default()
 }
 
+/// The edit a frame prints with inside `roll_id`: its own store row with the roll
+/// defaults applied.
+#[must_use]
+pub fn load_config_in_roll(
+    profile: Option<&Path>,
+    path: impl AsRef<Path>,
+    roll_id: &str,
+) -> WorkspaceConfig {
+    let path = path.as_ref();
+    let config = stored_config(profile, path);
+    let Some(profile) = profile else {
+        return config;
+    };
+    let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+    let repo = StorageRepository::new(app.edits_db_path, app.settings_db_path);
+    let Ok(hash) = file_hash(path) else {
+        return config;
+    };
+    negpy_backend::services::assets::rolls::resolve_roll_config(
+        &repo,
+        Some(roll_id),
+        &hash,
+        &config,
+    )
+}
+
 /// The frame's stored History rows and work-print names, for the panel.
 #[must_use]
 pub fn stored_history(

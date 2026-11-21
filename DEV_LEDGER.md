@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 05:00 | **Last Commit:** `pending desktop: clear a picked bound`
+**Last Updated:** 2026-11-22 05:25 | **Last Commit:** `pending metadata: apply a preset to the roll`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -19,7 +19,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
    `LightSource` traits, with no gphoto2, Scanlight or simulated desktop
    adapter and no capture worker. A human must choose the hardware target.
 3. [ ] Pick Dmin and Dmax by hand on the canvas (store, clear and marker landed; the Python uncropped pick view is not ported).
-4. [ ] Metadata Presets: apply the stored fields to the selected frames or roll.
+4. [ ] Metadata Presets: apply to the open frame or the whole roll (landed; a multi-frame selection is still not modelled).
 5. [ ] Export presets: run a preset on the selected frames or the roll.
 6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back.
 7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard.
@@ -30,6 +30,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   stores the manual bound and its point, clears the stored bounds and disarms.
 - `desktop`: a set Dmin or Dmax has a clear × in the Pick by Hand fold, and the
   canvas paints each picked point with its label.
+- `metadata`: the Presets page takes an Apply to Frame or Roll choice and writes
+  the stored fields over every other frame of the roll.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and
