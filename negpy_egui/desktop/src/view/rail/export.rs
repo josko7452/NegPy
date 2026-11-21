@@ -57,6 +57,7 @@ pub struct ExportState {
     pub export_profile: StepCombo,
     pub destination: StepCombo,
     pub subfolder: String,
+    pub output_path: String,
     pub filename: String,
     pub overwrite: bool,
     pub proof: ProofSettings,
@@ -166,6 +167,7 @@ impl Default for ExportState {
                 ("Fixed folder", "absolute"),
             ]),
             subfolder: "export".to_string(),
+            output_path: String::new(),
             filename: "{{ original_name }}".to_string(),
             overwrite: false,
             proof: ProofSettings::default(),
@@ -232,6 +234,7 @@ impl ExportState {
             .pick(preset.icc_output_path.as_deref().unwrap_or(""));
         self.destination.pick(preset.output_mode.as_str());
         self.subfolder = preset.output_subfolder.clone();
+        self.output_path = preset.output_path.clone();
         self.filename = preset.filename_pattern.clone();
         self.overwrite = preset.overwrite;
         self.intent.current = usize::from(preset.render_intent == "flat");
@@ -272,6 +275,7 @@ impl ExportState {
             .pick(export.icc_output_path.as_deref().unwrap_or(""));
         self.destination.pick(export.output_mode.as_str());
         self.subfolder = export.output_subfolder.clone();
+        self.output_path = export.export_path.clone();
         self.filename = export.filename_pattern.clone();
         self.overwrite = export.overwrite;
         self.sidecars = export.export_sidecars_enabled;
@@ -345,6 +349,7 @@ impl ExportState {
             paper_aspect_ratio: self.paper_ratio.current_value().to_string(),
             output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
             output_subfolder: self.subfolder.clone(),
+            output_path: self.output_path.clone(),
             filename_pattern: self.filename.clone(),
             overwrite: self.overwrite,
             export_color_space: self.export_profile.current_value().to_string(),
@@ -390,6 +395,7 @@ impl ExportState {
             export_color_space: self.export_profile.current_value().to_string(),
             output_mode: ExportPresetOutputMode::coerce(self.destination.current_value()),
             output_subfolder: self.subfolder.clone(),
+            export_path: self.output_path.clone(),
             icc_input_path: optional_path(self.input_icc.current_value()),
             icc_output_path: optional_path(self.output_icc.current_value()),
             filename_pattern: self.filename.clone(),
@@ -540,6 +546,31 @@ impl ExportState {
             field_combo(ui, columns, "Folder", &mut self.destination, &mut changed);
             ui.add_space(f32::from(theme.space_md));
             entry_row(ui, columns, "Subfolder", &mut self.subfolder);
+            if self.destination.current_value() == "absolute" {
+                ui.add_space(f32::from(theme.space_md));
+                field_row(ui, columns, "Path", |ui| {
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.output_path)
+                                .desired_width(ui.available_width() - 40.0)
+                                .hint_text("Export folder..."),
+                        )
+                        .changed();
+                    if crate::styles::templates::icon_button(
+                        ui,
+                        Icon::FolderOpen.glyph(),
+                        "Choose the export folder",
+                    )
+                    .clicked()
+                        && let Some(folder) = rfd::FileDialog::new()
+                            .set_title("Choose Export Folder")
+                            .pick_folder()
+                    {
+                        self.output_path = folder.display().to_string();
+                        changed = true;
+                    }
+                });
+            }
             ui.add_space(f32::from(theme.space_md));
             entry_row(ui, columns, "Filename", &mut self.filename);
             ui.add_space(f32::from(theme.space_md));
@@ -862,6 +893,17 @@ mod tests {
         assert_eq!(export.webp_method, 2);
         assert_eq!(export.export_print_size, 40.0);
         assert_eq!(export.export_dpi, 600);
+    }
+
+    #[test]
+    fn the_absolute_folder_round_trips() {
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.destination.pick("absolute");
+        state.output_path = "/tmp/exports".to_string();
+        assert!(state.store(&mut edit));
+        assert_eq!(edit.config.export.export_path, "/tmp/exports");
     }
 
     #[test]
