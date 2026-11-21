@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 22:20 | **Last Commit:** `9957d874` desktop: zoom the canvas from presets and the wheel
+**Last Updated:** 2026-11-21 22:45 | **Last Commit:** `805c002b` desktop: toggle Roll Average from the toolbar
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,7 +15,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Wire Tools and Print (§9.10 B1-2).
+2. [ ] Wire Print (§9.10 B1-2).
 3. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
 
 ## Completed (Recent)
@@ -24,6 +24,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - Zoom presets, wheel zoom and double-click fit/original reach the canvas; the
   readout prints the true pixel scale.
 - Roll Average applies or clears Luma, Color and Cast on the open frame.
+- Tools arms Crop, Draw Region, a local mask or a retouch tool and opens the
+  page that owns it.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.

@@ -95,6 +95,8 @@ pub struct ShellHits {
     /// The toolbar's rotate counter-clockwise, rotate clockwise, flip horizontal and
     /// flip vertical, by index, when one is clicked.
     pub transform: Option<usize>,
+    /// The Tools button opened its menu.
+    pub tools: bool,
     /// The zoom percent a toolbar preset selected.
     pub zoom: Option<u32>,
     /// The Roll Average toggle, taken as its new state.
@@ -1133,6 +1135,23 @@ impl NegFeApp {
             if let Some(action) = hits.transform {
                 self.transform_frame(action, ctx);
             }
+            if hits.tools
+                && let Some(tool) = crate::view::tools_menu::show_from_pointer(ctx)
+            {
+                let mut subtab = self.rail.frame_subtab.current_key().to_string();
+                crate::view::tools_menu::arm(
+                    tool,
+                    &mut self.rail.geometry,
+                    &mut self.rail.exposure,
+                    &mut self.rail.finish,
+                    &mut self.rail.tab,
+                    &mut subtab,
+                );
+                self.view.tab = self.rail.tab;
+                self.view.subtab = subtab;
+                self.rail.select_view(&self.view);
+                ctx.request_repaint();
+            }
             if let Some(percent) = hits.zoom {
                 if let (Some(photo), Some(frame)) = (hits.photo, self.frame.as_ref()) {
                     let fit = crate::view::canvas::zoom_percent(
@@ -1774,6 +1793,7 @@ fn paint_shell(
     hits.redo = navigation.redo;
     hits.zoom = navigation.zoom;
     hits.roll_average = navigation.roll_average;
+    hits.tools = navigation.tools;
     (rail, hits)
 }
 
@@ -2085,6 +2105,10 @@ fn paint_toolbar(
                 Icon::ChevronDown,
                 theme.text_secondary,
             );
+            let hit = ui.interact(button, ui.id().with("toolbar-tools"), Sense::click());
+            if hit.clicked() {
+                hits.tools = true;
+            }
             x = button.right() + 8.0;
             continue;
         }
