@@ -220,6 +220,8 @@ pub struct ExposureState {
     pub channel: usize,
     /// The masks the canvas lasso has stored for this frame.
     pub mask_count: usize,
+    /// Which stored mask the card edits.
+    pub mask_index: usize,
     /// Whether the tab summary collapsed every card.
     pub cards_collapsed: bool,
     clear_masks: bool,
@@ -237,6 +239,7 @@ impl Default for ExposureState {
             region: 0,
             channel: 0,
             mask_count: 0,
+            mask_index: 0,
             cards_collapsed: false,
             clear_masks: false,
         }
@@ -247,7 +250,6 @@ impl ExposureState {
     /// Replace the controls with the exposure values the edit holds.
     pub fn load(&mut self, edit: &FrameEdit) {
         let exposure = &edit.config.exposure;
-        let process = &edit.config.process;
         self.filtration.region.current = self.region.min(2);
         self.tone.channel.current = self.channel.min(3);
         self.filtration.filter.current = bw_filter_index(exposure.bw_filter);
@@ -357,21 +359,19 @@ impl ExposureState {
         self.paper.toe_width.set_value(exposure.toe_width);
         self.paper.shoulder.set_value(exposure.shoulder);
         self.paper.shoulder_width.set_value(exposure.shoulder_width);
-        self.local.burn.set_value(exposure.shadow_density);
-        self.local.grade.set_value(exposure.shadow_grade);
-        self.local.flash.set_value(process.analysis_buffer);
-        self.local
-            .feather
-            .set_value(process.analysis_buffer.min(0.15));
-        self.local
-            .tone_zone
-            .set_value(process.analysis_buffer * 10.0);
-        self.local
-            .tone_softness
-            .set_value(process.analysis_buffer + 1.0);
+        let masks = &edit.config.local.masks;
+        self.mask_count = masks.len();
+        self.mask_index = self.mask_index.min(masks.len().saturating_sub(1));
+        if let Some(mask) = masks.get(self.mask_index) {
+            self.local.burn.set_value(mask.stops);
+            self.local.grade.set_value(mask.grade);
+            self.local.flash.set_value(mask.flash);
+            self.local.feather.set_value(mask.feather);
+            self.local.tone_zone.set_value(mask.key_zone);
+            self.local.tone_softness.set_value(mask.key_softness);
+        }
         self.tone.open = self.tone.open || edit.config.process.process_mode == ProcessMode::BW;
         self.is_bw = edit.config.process.process_mode == ProcessMode::BW;
-        self.mask_count = edit.config.local.masks.len();
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -528,7 +528,28 @@ impl ExposureState {
         exposure.toe_width = toe_width;
         exposure.shoulder = shoulder;
         exposure.shoulder_width = shoulder_width;
-        changed
+        let mut local_changed = false;
+        if let Some(mask) = edit.config.local.masks.get_mut(self.mask_index) {
+            let burn = self.local.burn.value;
+            let mask_grade = self.local.grade.value;
+            let flash = self.local.flash.value;
+            let feather = self.local.feather.value;
+            let zone = self.local.tone_zone.value;
+            let softness = self.local.tone_softness.value;
+            local_changed = !near(mask.stops, burn)
+                || !near(mask.grade, mask_grade)
+                || !near(mask.flash, flash)
+                || !near(mask.feather, feather)
+                || !near(mask.key_zone, zone)
+                || !near(mask.key_softness, softness);
+            mask.stops = burn;
+            mask.grade = mask_grade;
+            mask.flash = flash;
+            mask.feather = feather;
+            mask.key_zone = zone;
+            mask.key_softness = softness;
+        }
+        changed || local_changed
     }
 
     /// Paint the page. Returns whether a control changed the edit.
@@ -726,6 +747,28 @@ impl ExposureState {
             }
         });
         let _ = section_subheader(ui, &format!("MASKS · {}", self.mask_count));
+        if self.mask_count > 1 {
+            ui.horizontal(|ui| {
+                ui.label("Mask");
+                let mut index = self.mask_index;
+                let labels: Vec<String> = (1..=self.mask_count)
+                    .map(|number| format!("{number}"))
+                    .collect();
+                let combo = crate::view::widgets::step_combo::StepCombo::new(
+                    labels
+                        .iter()
+                        .map(|label| crate::view::widgets::step_combo::Choice::new(label.as_str()))
+                        .collect(),
+                );
+                let mut combo = combo;
+                combo.current = index;
+                if combo.show(ui) {
+                    index = combo.current;
+                    changed = true;
+                }
+                self.mask_index = index.min(self.mask_count.saturating_sub(1));
+            });
+        }
         changed |= self.local.burn.show(ui, "Burn").1;
         changed |= self.local.grade.show(ui, "Grade").1;
         changed |= self.local.flash.show(ui, "Flash").1;

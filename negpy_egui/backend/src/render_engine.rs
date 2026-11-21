@@ -142,6 +142,25 @@ pub fn base_key(settings: &WorkspaceConfig, context: &PipelineContext) -> String
 struct Planes {
     mask: Option<(String, Vec<f32>, usize, usize, f32)>,
     diffusion: Option<(String, Option<Vec<f32>>, usize, usize)>,
+    local: Option<(String, crate::features::local::processor::LocalMaps)>,
+}
+
+/// The local channels, copied once for the print settings' borrowed slices.
+#[derive(Default)]
+struct LocalPlanes {
+    stops: Option<Vec<f32>>,
+    grade: Option<Vec<f32>>,
+    flash: Option<Vec<f32>>,
+}
+
+impl LocalPlanes {
+    fn from(maps: Option<&crate::features::local::processor::LocalMaps>, grade: f64) -> Self {
+        maps.map_or_else(Self::default, |maps| Self {
+            stops: Some(maps.stops_plane()),
+            grade: Some(maps.grade_plane(grade)),
+            flash: Some(maps.flash_plane()),
+        })
+    }
 }
 
 /// The derived planes an exposure pass reads on its own frame size.
@@ -152,6 +171,7 @@ struct ExposurePlanes {
     diffusion: Option<Vec<f32>>,
     diffusion_dims: (usize, usize),
     diffusion_rect: [f64; 4],
+    local: Option<crate::features::local::processor::LocalMaps>,
 }
 
 /// The engine holds the stage checkpoints and the planes of the active source.
@@ -221,6 +241,7 @@ impl DarkroomEngine {
             .map_or((img.height, img.width), |entry| {
                 (entry.data.height, entry.data.width)
             });
+        self.store_local_planes(settings, frame_dims, (img.height, img.width));
         let planes = self.exposure_planes(settings, context, frame_dims);
         (current, _) = run_stage(
             &mut self.cache,
@@ -341,6 +362,46 @@ impl DarkroomEngine {
         }))
     }
 
+    fn store_local_planes(
+        &mut self,
+        settings: &WorkspaceConfig,
+        frame_dims: (usize, usize),
+        orig_dims: (usize, usize),
+    ) {
+        if settings.local.masks.is_empty()
+            || settings.exposure.render_intent == RenderIntent::Flat
+            || render_path(&settings.process) != RenderPath::Print
+        {
+            self.planes.local = None;
+            return;
+        }
+        let (height, width) = frame_dims;
+        let geometry = crate::features::local::logic::LocalGeometry {
+            rotation: settings.geometry.rotation,
+            fine_rotation: settings.geometry.fine_rotation,
+            flip_horizontal: settings.geometry.flip_horizontal,
+            flip_vertical: settings.geometry.flip_vertical,
+            distortion_k1: settings.geometry.distortion_k1,
+            converge_v: settings.geometry.converge_v,
+            converge_h: settings.geometry.converge_h,
+        };
+        let key = format!(
+            "{:?}|{:?}|{height}x{width}",
+            settings.geometry, settings.local
+        );
+        if self.planes.local.as_ref().map(|(cached, _)| cached) == Some(&key) {
+            return;
+        }
+        let maps = crate::features::local::processor::build(
+            &settings.local,
+            height,
+            width,
+            orig_dims,
+            geometry,
+        );
+        self.planes.local = Some((key, maps));
+    }
+
     fn store_plane_metrics(
         &mut self,
         image: &ImageBuffer,
@@ -430,6 +491,7 @@ impl DarkroomEngine {
             out.diffusion_dims = (*height, *width);
             out.diffusion_rect = [x1 as f64, y1 as f64, (x2 - x1) as f64, (y2 - y1) as f64];
         }
+        out.local = self.planes.local.as_ref().map(|(_, maps)| maps.clone());
         out
     }
 }
@@ -615,6 +677,7 @@ fn run_exposure(
     let output = if settings.exposure.render_intent == RenderIntent::Flat
         || render_path(&settings.process) == RenderPath::Print
     {
+        let local = LocalPlanes::from(planes.local.as_ref(), measured.exposure.grade);
         let print = PrintRenderSettings {
             config: &measured.exposure,
             process: &measured.process,
@@ -641,6 +704,9 @@ fn run_exposure(
                 width: planes.diffusion_dims.1,
                 rect: planes.diffusion_rect,
             }),
+            local_exposure: local.stops.as_deref(),
+            local_grade: local.grade.as_deref(),
+            local_flash: local.flash.as_deref(),
         };
         if settings.exposure.render_intent == RenderIntent::Flat {
             ImageBuffer::from_rgb(

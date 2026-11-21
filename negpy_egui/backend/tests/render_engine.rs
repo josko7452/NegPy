@@ -2,7 +2,7 @@
 //! tests/test_engine_order.py: a cached stage reuses its result, and an exposure edit leaves
 //! the base alone.
 
-use negpy_backend::domain::models::{ProcessMode, WorkspaceConfig};
+use negpy_backend::domain::models::{LocalMask, MaskShape, ProcessMode, WorkspaceConfig};
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::{DarkroomEngine, PipelineContext};
 
@@ -126,4 +126,40 @@ fn diffusion_reaches_the_print() {
     let with_diffusion =
         DarkroomEngine::new().process(&image, &diffused, "source-a", &mut PipelineContext::new());
     assert_ne!(plain.pixels, with_diffusion.pixels);
+}
+
+#[test]
+fn a_stored_local_mask_reaches_the_print() {
+    let image = textured_negative(120, 80);
+    let plain =
+        DarkroomEngine::new().process(&image, &settings(), "source-a", &mut PipelineContext::new());
+    let mut masked = settings();
+    masked.local.masks.push(LocalMask {
+        vertices: vec![[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]],
+        stops: 0.8,
+        feather: 0.0,
+        shape: MaskShape::Polygon,
+        ..LocalMask::default()
+    });
+    let with_mask =
+        DarkroomEngine::new().process(&image, &masked, "source-a", &mut PipelineContext::new());
+    assert_ne!(plain.pixels, with_mask.pixels);
+}
+
+#[test]
+fn a_local_grade_changes_the_print() {
+    let image = textured_negative(120, 80);
+    let plain =
+        DarkroomEngine::new().process(&image, &settings(), "source-a", &mut PipelineContext::new());
+    let mut graded = settings();
+    graded.local.masks.push(LocalMask {
+        vertices: vec![[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]],
+        grade: -30.0,
+        feather: 0.0,
+        shape: MaskShape::Polygon,
+        ..LocalMask::default()
+    });
+    let with_grade =
+        DarkroomEngine::new().process(&image, &graded, "source-a", &mut PipelineContext::new());
+    assert_ne!(plain.pixels, with_grade.pixels);
 }

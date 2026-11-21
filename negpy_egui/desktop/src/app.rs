@@ -94,6 +94,7 @@ pub struct ShellHits {
     pub crop: crate::view::canvas::CropAction,
     pub mask: Option<crate::view::canvas::DrawnMask>,
     pub retouch: crate::view::canvas::RetouchAction,
+    pub mask_action: crate::view::canvas::MaskAction,
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -990,6 +991,7 @@ impl NegFeApp {
                     self.rail.exposure.local.draw,
                     self.rail.exposure.local.oval,
                     self.rail.exposure.local.card,
+                    self.rail.exposure.mask_index,
                 ),
                 &mut self.mask_drag,
                 retouch_tool,
@@ -1016,6 +1018,22 @@ impl NegFeApp {
                 crate::view::canvas::CropAction::None => {}
             }
             self.apply_retouch(hits.retouch);
+            match hits.mask_action {
+                crate::view::canvas::MaskAction::None => {}
+                crate::view::canvas::MaskAction::Select(index) => {
+                    self.rail.exposure.mask_index = index;
+                    ctx.request_repaint();
+                }
+                crate::view::canvas::MaskAction::MoveVertex(index, vertex, point) => {
+                    if let Some(mask) = self.edit.config.local.masks.get_mut(index)
+                        && let Some(vertex) = mask.vertices.get_mut(vertex)
+                    {
+                        *vertex = point;
+                        self.edit.mark_dirty();
+                        ctx.request_repaint();
+                    }
+                }
+            }
             if let Some((shape, vertices)) = hits.mask {
                 self.edit
                     .config
@@ -1029,6 +1047,8 @@ impl NegFeApp {
                 self.rail.exposure.local.draw = false;
                 self.rail.exposure.local.oval = false;
                 self.rail.exposure.local.card = false;
+                self.rail.exposure.mask_index =
+                    self.edit.config.local.masks.len().saturating_sub(1);
                 self.edit.mark_dirty();
                 ctx.request_repaint();
             }
@@ -1266,6 +1286,7 @@ fn paint_shell(
         bool,
         bool,
         bool,
+        usize,
     ),
     mask_drag: &mut crate::view::canvas::MaskDrag,
     retouch_tool: crate::view::canvas::RetouchTool,
@@ -1352,7 +1373,10 @@ fn paint_shell(
         } else {
             crate::view::canvas::MaskTool::Off
         };
-        hits.mask = crate::view::canvas::local_tool(ui, photo, local.0, tool, mask_drag);
+        let (mask, action) =
+            crate::view::canvas::local_tool(ui, photo, local.0, local.4, tool, mask_drag);
+        hits.mask = mask;
+        hits.mask_action = action;
         hits.retouch = crate::view::canvas::retouch_tool(ui, photo, retouch_tool, retouch_drag);
     } else {
         hits.import = paint_empty_canvas(ui, photo);

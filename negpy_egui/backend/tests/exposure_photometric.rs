@@ -31,6 +31,9 @@ fn render(
             base_black_hold: 0.0,
             mask: None,
             diffusion: None,
+            local_exposure: None,
+            local_grade: None,
+            local_flash: None,
         },
     )
 }
@@ -74,6 +77,9 @@ fn the_solved_curve_has_three_channels() {
         base_black_hold: 0.0,
         mask: None,
         diffusion: None,
+        local_exposure: None,
+        local_grade: None,
+        local_flash: None,
     });
     assert!(solved.slopes.iter().all(|value| *value >= 2.0));
     assert_eq!(solved.curvatures, [0.0; 3]);
@@ -105,6 +111,9 @@ fn a_cast_free_neutral_axis_does_not_curve() {
         base_black_hold: 0.0,
         mask: None,
         diffusion: None,
+        local_exposure: None,
+        local_grade: None,
+        local_flash: None,
     });
     for ch in 1..3 {
         assert!((solved.slopes[ch] - solved.slopes[1]).abs() < 1e-6);
@@ -141,4 +150,39 @@ fn a_preflash_lifts_the_print() {
         .map(|value| light(*value))
         .sum();
     assert!(flash > plain);
+}
+
+#[test]
+fn a_local_burn_changes_the_print() {
+    let process = ProcessConfig::default();
+    let config = ExposureConfig::default();
+    let image = vec![0.3; 4 * 4 * 3];
+    let plain = render(&config, &process, &image, ProcessMode::C41);
+    let burned = vec![0.5f32; 4 * 4];
+    let bounds = negpy_backend::features::exposure::normalization::LogNegativeBounds::new(
+        [-1.6; 3], [-0.05; 3],
+    );
+    let out = render_negative(
+        &image,
+        4,
+        &PrintRenderSettings {
+            config: &config,
+            process: &process,
+            density_range: Some(1.5),
+            textural_range: Some(1.0),
+            shadow_point: Some(0.8),
+            highlight_point: Some(0.2),
+            anchor: Some(0.46),
+            bounds: Some(bounds),
+            neutral_axis: None,
+            mode: ProcessMode::C41,
+            base_black_hold: 0.0,
+            mask: None,
+            diffusion: None,
+            local_exposure: Some(&burned),
+            local_grade: None,
+            local_flash: None,
+        },
+    );
+    assert_ne!(plain, out);
 }

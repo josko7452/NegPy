@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 12:36 | **Last Commit:** `0ce8d52b` backend: bake retouch before both render paths
+**Last Updated:** 2026-11-21 13:20 | **Last Commit:** `c78b9905` frame: paint heal, line and clone strokes on the canvas
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -7,11 +7,12 @@ its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
 redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Add local mask selection and vertex editing on the canvas.
-2. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
+1. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
    the buffer, the chart itself still reads only the curve.
-3. [ ] Wire the remaining Export controls: input ICC and sidecar scope
+2. [ ] Wire the remaining Export controls: input ICC and sidecar scope
    (`MIGRATION_PLAN.md` §9.5 P3b-14, P3b-15).
+3. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
+   are still not passed to the print curve.
 
 ## Completed (Recent)
 - `98d7b11e` frame: keep crop drawing active until confirm.
@@ -27,6 +28,9 @@ redrew. Make that render path observable before the remaining tool work.
   the IR, heal, dust, hair and clone tokens.
 - The canvas emits typed Heal, Line and Clone gestures. Heal and Scratch share
   the heal-stroke path; Clone takes an Alt-click source.
+- The local stage now reaches the print for stops, grade and flash. A canvas
+  mask selects and moves its vertices; the Dodge & Burn card edits the selected
+  mask.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
@@ -60,8 +64,9 @@ redrew. Make that render path observable before the remaining tool work.
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
-- Retouch bakes are wired ahead of both engines. The local mask stage is still
-  absent from the Rust exposure pass, so canvas masks remain unwired.
+- Retouch bakes are wired ahead of both engines. Local masks reach the print
+  for unlimited stops, grade and flash; keyed masks need their alpha planes
+  and key parameters.
 - The histogram is binned from the display-encoded frame on the card strip. The
   Analysis card still reads only the curve and readouts.
 - Retouch runs on the source proxy and the full-resolution export. Its IR plane

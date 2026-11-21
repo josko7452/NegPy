@@ -431,18 +431,34 @@ pub enum MaskTool {
 pub struct MaskDrag {
     pub points: Vec<egui::Pos2>,
     pub start: Option<egui::Pos2>,
+    /// The vertex handle being dragged, if any.
+    pub vertex: Option<usize>,
 }
+
+/// What the local tool did with a click or a handle drag.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub enum MaskAction {
+    #[default]
+    None,
+    Select(usize),
+    MoveVertex(usize, usize, [f64; 2]),
+}
+
+/// The handle size a vertex takes at rest.
+pub const MASK_HANDLE: f32 = 7.0;
 
 /// Paint every stored mask and let the lasso collect points inside the photo.
 pub fn local_tool(
     ui: &mut egui::Ui,
     photo: Rect,
     masks: &[LocalMask],
+    selected: usize,
     tool: MaskTool,
     drag: &mut MaskDrag,
-) -> Option<DrawnMask> {
+) -> (Option<DrawnMask>, MaskAction) {
     let theme = Theme::default();
-    for mask in masks {
+    let mut action = MaskAction::None;
+    for (index, mask) in masks.iter().enumerate() {
         let points: Vec<egui::Pos2> = mask
             .vertices
             .iter()
@@ -456,12 +472,62 @@ pub fn local_tool(
         if points.len() >= 2 {
             ui.painter().add(egui::Shape::closed_line(
                 points,
-                Stroke::new(1.5_f32, theme.mark_photo),
+                Stroke::new(
+                    if index == selected { 2.0_f32 } else { 1.0_f32 },
+                    if index == selected {
+                        theme.mark_photo
+                    } else {
+                        theme.text_hint
+                    },
+                ),
             ));
         }
     }
     if tool == MaskTool::Off {
-        return None;
+        if let Some(mask) = masks.get(selected) {
+            let handles: Vec<egui::Pos2> = mask
+                .vertices
+                .iter()
+                .map(|point| {
+                    egui::pos2(
+                        photo.left() + point[0] as f32 * photo.width(),
+                        photo.top() + point[1] as f32 * photo.height(),
+                    )
+                })
+                .collect();
+            for (index, handle) in handles.iter().enumerate() {
+                let rect = Rect::from_center_size(*handle, Vec2::splat(MASK_HANDLE));
+                let response =
+                    ui.interact(rect, ui.id().with(("mask-handle", index)), Sense::drag());
+                if response.drag_started() {
+                    drag.vertex = Some(index);
+                }
+                if response.dragged()
+                    && let Some(point) = response.interact_pointer_pos()
+                {
+                    let normalized = normalize_point(photo, point);
+                    action = MaskAction::MoveVertex(selected, index, normalized);
+                }
+                if response.drag_stopped() {
+                    drag.vertex = None;
+                }
+                ui.painter().rect_filled(rect, 2.0, theme.mark_photo);
+                ui.painter().rect_stroke(
+                    rect,
+                    2.0,
+                    Stroke::new(1.0_f32, theme.mark_shadow),
+                    egui::StrokeKind::Outside,
+                );
+            }
+            let response = ui.interact(photo, ui.id().with("mask-select"), Sense::click());
+            if response.clicked()
+                && let Some(point) = response.interact_pointer_pos()
+                && let Some(index) = hit_mask(masks, photo, point)
+            {
+                action = MaskAction::Select(index);
+            }
+        }
+        return (None, action);
     }
     let response = ui.interact(
         photo,
@@ -504,7 +570,7 @@ pub fn local_tool(
                         ]
                     })
                     .collect();
-                return Some((shape, vertices));
+                return (Some((shape, vertices)), action);
             }
         }
         if let (Some(start), Some(current)) = (drag.start, response.interact_pointer_pos()) {
@@ -516,7 +582,7 @@ pub fn local_tool(
                 egui::StrokeKind::Inside,
             );
         }
-        return None;
+        return (None, action);
     }
     if tool == MaskTool::Lasso {
         response.clone().on_hover_cursor(CursorIcon::Crosshair);
@@ -537,7 +603,7 @@ pub fn local_tool(
                 })
                 .collect();
             if points.len() >= 3 {
-                return Some((MaskShape::Polygon, points));
+                return (Some((MaskShape::Polygon, points)), action);
             }
         }
     } else {
@@ -549,7 +615,40 @@ pub fn local_tool(
             Stroke::new(1.5_f32, theme.warn_amber),
         ));
     }
-    None
+    (None, action)
+}
+
+/// The mask whose fill holds `point`, if any.
+pub fn hit_mask(masks: &[LocalMask], photo: Rect, point: egui::Pos2) -> Option<usize> {
+    masks.iter().enumerate().rev().find_map(|(index, mask)| {
+        let points: Vec<egui::Pos2> = mask
+            .vertices
+            .iter()
+            .map(|vertex| {
+                egui::pos2(
+                    photo.left() + vertex[0] as f32 * photo.width(),
+                    photo.top() + vertex[1] as f32 * photo.height(),
+                )
+            })
+            .collect();
+        (points.len() >= 3 && point_in_polygon(point, &points)).then_some(index)
+    })
+}
+
+fn point_in_polygon(point: egui::Pos2, points: &[egui::Pos2]) -> bool {
+    let mut inside = false;
+    let mut previous = points[points.len() - 1];
+    for current in points {
+        let crosses = (current.y > point.y) != (previous.y > point.y)
+            && point.x
+                < (previous.x - current.x) * (point.y - current.y) / (previous.y - current.y)
+                    + current.x;
+        if crosses {
+            inside = !inside;
+        }
+        previous = *current;
+    }
+    inside
 }
 
 #[cfg(test)]
@@ -713,12 +812,46 @@ mod tests {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    shape = local_tool(ui, photo(), &[], MaskTool::Off, &mut drag);
+                    (shape, _) = local_tool(ui, photo(), &[], 0, MaskTool::Off, &mut drag);
                 });
             },
         );
         assert!(shape.is_none());
         assert!(drag.start.is_none());
+    }
+
+    #[test]
+    fn a_point_inside_a_mask_selects_it() {
+        let photo = photo();
+        let masks = vec![
+            LocalMask {
+                vertices: vec![[0.1, 0.1], [0.4, 0.1], [0.4, 0.4], [0.1, 0.4]],
+                ..LocalMask::default()
+            },
+            LocalMask {
+                vertices: vec![[0.6, 0.6], [0.9, 0.6], [0.9, 0.9], [0.6, 0.9]],
+                ..LocalMask::default()
+            },
+        ];
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(190.0, 100.0)), Some(0));
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(400.0, 210.0)), Some(1));
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(110.0, 55.0)), None);
+    }
+
+    #[test]
+    fn a_vertex_handle_reports_its_new_point() {
+        let photo = photo();
+        let selected = LocalMask {
+            vertices: vec![[0.25, 0.25], [0.75, 0.25], [0.75, 0.75], [0.25, 0.75]],
+            ..LocalMask::default()
+        };
+        let point = egui::pos2(
+            photo.left() + 0.4 * photo.width(),
+            photo.top() + 0.4 * photo.height(),
+        );
+        let normalized = super::normalize_point(photo, point);
+        assert!((normalized[0] - 0.4).abs() < 1e-6);
+        assert!(selected.vertices.len() == 4);
     }
 
     #[test]

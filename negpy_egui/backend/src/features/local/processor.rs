@@ -1,6 +1,7 @@
 //! The local stage's map accessors for the exposure processor.
 
 use crate::domain::models::LocalAdjustmentsConfig;
+use crate::features::exposure::constants as c;
 use crate::features::local::logic::{LocalGeometry, compute_local_maps, limited_indices};
 
 /// The maps a frame's exposure pass consumes.
@@ -31,6 +32,38 @@ impl LocalMaps {
     #[must_use]
     pub fn keyed(&self, k: usize, x: usize, y: usize) -> f32 {
         self.planes[(y * self.width + x) * self.plane_count + 3 + k]
+    }
+
+    /// The stops channel, contiguous for the print curve.
+    #[must_use]
+    pub fn stops_plane(&self) -> Vec<f32> {
+        self.channel(0)
+    }
+
+    /// The grade-delta channel turned into a slope multiplier at `grade`.
+    #[must_use]
+    pub fn grade_plane(&self, grade: f64) -> Vec<f32> {
+        let r0 = grade.clamp(c::ISO_R_MIN, c::ISO_R_MAX);
+        self.channel(1)
+            .into_iter()
+            .map(|delta| {
+                let r1 = (r0 + f64::from(delta)).clamp(c::ISO_R_MIN, c::ISO_R_MAX);
+                (r0 / r1) as f32
+            })
+            .collect()
+    }
+
+    /// The preflash channel.
+    #[must_use]
+    pub fn flash_plane(&self) -> Vec<f32> {
+        self.channel(2)
+    }
+
+    fn channel(&self, index: usize) -> Vec<f32> {
+        self.planes
+            .chunks_exact(self.plane_count)
+            .map(|pixel| pixel[index])
+            .collect()
     }
 }
 

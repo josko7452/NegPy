@@ -124,6 +124,9 @@ pub fn render_exposure(
         base_black_hold: black_hold_taper(&config.exposure),
         mask: None,
         diffusion: None,
+        local_exposure: None,
+        local_grade: None,
+        local_flash: None,
     };
     let pixels = apply_hue_trim(
         &ImageBuffer::from_rgb(

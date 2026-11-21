@@ -368,6 +368,12 @@ pub struct PrintRenderSettings<'a> {
     pub mask: Option<MaskPlane<'a>>,
     /// The Diffusion plane on its analysis grid, with the rect it covers.
     pub diffusion: Option<DiffusionPlane<'a>>,
+    /// The local exposure map, in print stops.
+    pub local_exposure: Option<&'a [f32]>,
+    /// The local grade factor map, one slope multiplier per pixel.
+    pub local_grade: Option<&'a [f32]>,
+    /// The local preflash map, a fraction of the threshold exposure.
+    pub local_flash: Option<&'a [f32]>,
 }
 
 /// A Contrast Mask plane and the value it was centred on.
@@ -536,7 +542,10 @@ pub fn render_negative(
     curve.shadow_grade = solved.shadow_grade;
     curve.highlight_grade = solved.highlight_grade;
     curve.dye_mix = if is_bw { None } else { curve.dye_mix };
-    let mut ev_map = Vec::new();
+    let mut ev_map = settings
+        .local_exposure
+        .map(<[f32]>::to_vec)
+        .unwrap_or_default();
     if let Some(mask) = settings.mask {
         let offsets = settings_out.cmy_offsets.map(f64::from);
         if let Some(coeffs) = contrast_mask_coeffs(
@@ -547,12 +556,18 @@ pub fn render_negative(
             offsets,
             settings.density_range.unwrap_or(0.0),
         ) {
-            ev_map = vec![0.0; image.len() / 3];
+            if ev_map.is_empty() {
+                ev_map = vec![0.0; image.len() / 3];
+            }
+            let mut contrast = vec![0.0; image.len() / 3];
             negpy_core::analysis::contrast_mask_stops(
                 mask.data,
-                &mut ev_map,
+                &mut contrast,
                 coeffs.map(|value| value as f32),
             );
+            for (value, add) in ev_map.iter_mut().zip(&contrast) {
+                *value += *add;
+            }
         }
     }
     if !ev_map.is_empty() {
@@ -561,6 +576,22 @@ pub fn render_negative(
             w: width,
         });
         curve.ev_scale = local_ev_scale(settings.bounds);
+    }
+    if let Some(grade) = settings.local_grade {
+        if grade.iter().any(|value| (*value - 1.0).abs() > 1e-6) {
+            curve.grade = Some(Plane {
+                data: grade,
+                w: width,
+            });
+        }
+    }
+    if let Some(flash) = settings.local_flash {
+        if flash.iter().any(|value| *value > 0.0) {
+            curve.flash_map = Some(Plane {
+                data: flash,
+                w: width,
+            });
+        }
     }
     if let Some(diffusion) = settings.diffusion {
         if !diffusion.data.is_empty() {
@@ -819,6 +850,9 @@ mod curve_tests {
             base_black_hold: 0.0,
             mask: None,
             diffusion: None,
+            local_exposure: None,
+            local_grade: None,
+            local_flash: None,
         };
         let points = sample_curve(&settings, -0.1, 1.1, 33);
         assert_eq!(points.len(), 33);

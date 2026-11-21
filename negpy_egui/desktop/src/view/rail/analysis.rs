@@ -61,6 +61,9 @@ impl AnalysisMetrics {
             base_black_hold: 0.0,
             mask: None,
             diffusion: None,
+            local_exposure: None,
+            local_grade: None,
+            local_flash: None,
         };
         let rows = negative_statistics(
             metrics.norm_density_range,
