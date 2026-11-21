@@ -459,32 +459,28 @@ pub fn local_tool(
     let theme = Theme::default();
     let mut action = MaskAction::None;
     for (index, mask) in masks.iter().enumerate() {
-        let points: Vec<egui::Pos2> = mask
-            .vertices
-            .iter()
-            .map(|point| {
-                egui::pos2(
-                    photo.left() + point[0] as f32 * photo.width(),
-                    photo.top() + point[1] as f32 * photo.height(),
-                )
-            })
+        let outline: Vec<egui::Pos2> = mask_outline(mask, photo)
+            .into_iter()
+            .map(|(x, y)| egui::pos2(x, y))
             .collect();
-        if points.len() >= 2 {
-            ui.painter().add(egui::Shape::closed_line(
-                points,
-                Stroke::new(
-                    if index == selected { 2.0_f32 } else { 1.0_f32 },
-                    if index == selected {
-                        theme.mark_photo
-                    } else {
-                        theme.text_hint
-                    },
-                ),
-            ));
+        let stroke = Stroke::new(
+            if index == selected { 2.0_f32 } else { 1.0_f32 },
+            if index == selected {
+                theme.mark_photo
+            } else {
+                theme.text_hint
+            },
+        );
+        if mask.shape == MaskShape::Gradient && outline.len() >= 2 {
+            ui.painter().add(egui::Shape::line(outline, stroke));
+        } else if outline.len() >= 3 {
+            ui.painter().add(egui::Shape::closed_line(outline, stroke));
         }
     }
     if tool == MaskTool::Off {
         if let Some(mask) = masks.get(selected) {
+            // An oval's axes are conjugate, so its three control points are its outline handles
+            // and its centre.
             let handles: Vec<egui::Pos2> = mask
                 .vertices
                 .iter()
@@ -620,19 +616,66 @@ pub fn local_tool(
 
 /// The mask whose fill holds `point`, if any.
 pub fn hit_mask(masks: &[LocalMask], photo: Rect, point: egui::Pos2) -> Option<usize> {
-    masks.iter().enumerate().rev().find_map(|(index, mask)| {
-        let points: Vec<egui::Pos2> = mask
-            .vertices
-            .iter()
-            .map(|vertex| {
-                egui::pos2(
-                    photo.left() + vertex[0] as f32 * photo.width(),
-                    photo.top() + vertex[1] as f32 * photo.height(),
-                )
-            })
-            .collect();
-        (points.len() >= 3 && point_in_polygon(point, &points)).then_some(index)
-    })
+    masks
+        .iter()
+        .enumerate()
+        .rev()
+        .find_map(|(index, mask)| mask_hit(mask, photo, point).then_some(index))
+}
+
+/// Whether `point` selects `mask`: inside its outline, or near a card's axis.
+fn mask_hit(mask: &LocalMask, photo: Rect, point: egui::Pos2) -> bool {
+    let outline: Vec<egui::Pos2> = mask_outline(mask, photo)
+        .into_iter()
+        .map(|(x, y)| egui::pos2(x, y))
+        .collect();
+    if mask.shape == MaskShape::Gradient {
+        return outline.len() >= 2 && distance_to_polyline(point, &outline) <= MASK_HANDLE;
+    }
+    outline.len() >= 3 && point_in_polygon(point, &outline)
+}
+
+/// The mask's screen outline: its smoothed fill, or the card's axis.
+fn mask_outline(mask: &LocalMask, photo: Rect) -> Vec<(f32, f32)> {
+    if mask.vertices.len() < negpy_backend::features::local::logic::min_points(mask.shape) {
+        return Vec::new();
+    }
+    // A card has no outline: its axis is its control line.
+    let points = if mask.shape == MaskShape::Gradient {
+        mask.vertices.clone()
+    } else {
+        negpy_backend::features::local::logic::outline_points(mask.shape, &mask.vertices)
+            .into_iter()
+            .map(|(x, y)| [x, y])
+            .collect()
+    };
+    points
+        .into_iter()
+        .map(|point| {
+            (
+                photo.left() + point[0] as f32 * photo.width(),
+                photo.top() + point[1] as f32 * photo.height(),
+            )
+        })
+        .collect()
+}
+
+/// Shortest distance from `point` to a polyline.
+fn distance_to_polyline(point: egui::Pos2, points: &[egui::Pos2]) -> f32 {
+    let mut best = f32::INFINITY;
+    for pair in points.windows(2) {
+        let (a, b) = (pair[0], pair[1]);
+        let ab = b - a;
+        let ap = point - a;
+        let denom = ab.length_sq();
+        let t = if denom <= 1e-12 {
+            0.0
+        } else {
+            (ap.dot(ab) / denom).clamp(0.0, 1.0)
+        };
+        best = best.min((point - (a + ab * t)).length());
+    }
+    best
 }
 
 fn point_in_polygon(point: egui::Pos2, points: &[egui::Pos2]) -> bool {
@@ -836,6 +879,31 @@ mod tests {
         assert_eq!(hit_mask(&masks, photo, egui::pos2(190.0, 100.0)), Some(0));
         assert_eq!(hit_mask(&masks, photo, egui::pos2(400.0, 210.0)), Some(1));
         assert_eq!(hit_mask(&masks, photo, egui::pos2(110.0, 55.0)), None);
+    }
+
+    #[test]
+    fn an_oval_is_selected_inside_its_outline_not_its_vertices() {
+        let photo = photo();
+        let masks = vec![LocalMask {
+            vertices: vec![[0.5, 0.5], [0.8, 0.5], [0.5, 0.8]],
+            shape: MaskShape::Oval,
+            ..LocalMask::default()
+        }];
+        // The centre lies inside the oval, though no control point is near it.
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(300.0, 150.0)), Some(0));
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(110.0, 55.0)), None);
+    }
+
+    #[test]
+    fn a_card_is_selected_near_its_axis() {
+        let photo = photo();
+        let masks = vec![LocalMask {
+            vertices: vec![[0.1, 0.5], [0.9, 0.5]],
+            shape: MaskShape::Gradient,
+            ..LocalMask::default()
+        }];
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(300.0, 152.0)), Some(0));
+        assert_eq!(hit_mask(&masks, photo, egui::pos2(300.0, 220.0)), None);
     }
 
     #[test]

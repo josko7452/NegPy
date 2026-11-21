@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 17:22 | **Last Commit:** `59e23e45` local: send tone-limited masks to the print
+**Last Updated:** 2026-11-21 17:40 | **Last Commit:** `<pending>` local: select oval and card masks on the canvas
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -22,6 +22,8 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
    vectorscope, then give each a view.
 
 ## Completed (Recent)
+- `<pending>` local: an oval and a card mask are hit-tested by their outline and
+  axis, not by their control points.
 - `59e23e45` local: the tone-limited mask key, zone and softness reach the print
   curve; the key edges invert the achromatic curve.
 - `<pending>` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
@@ -90,9 +92,8 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
   textures through egui only.
 - The Scan card's Prescan and Scan as Roll are disabled: their workers are not
   ported.
-- The mask picker edits unlimited masks. Card masks have no hit test, and oval
-  handles follow the raw control points rather than the outline (§9.9 A2-1,
-  A2-2).
+- The mask picker edits the selected mask; ovals select inside their outline and
+  cards near their axis.
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
 - The render worker resolves Auto Crop in its own config, then returns a hash
