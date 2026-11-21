@@ -86,27 +86,19 @@ pub fn decode_tiff(path: &Path, gamma_key: &str, expansion: Option<f64>) -> Opti
     }
     let image = ImageBuffer::from_rgb(image.width, image.height, linear);
     let image = crate::services::rendering::import::oriented(&image, loaded.orientation);
-    let ir = loaded
-        .ir
-        .map(|ir| orient_ir(&ir, loaded.ir_width, loaded.ir_height, loaded.orientation));
+    let ir = loaded.ir.map(|ir| {
+        crate::services::rendering::import::orient_ir(
+            &ir,
+            loaded.ir_width,
+            loaded.ir_height,
+            loaded.orientation,
+        )
+    });
     Some(DecodedTiff {
         image,
         ir,
         orientation: loaded.orientation,
     })
-}
-
-fn orient_ir(ir: &[f32], width: usize, height: usize, orientation: u8) -> Vec<f32> {
-    if orientation < 2 || width == 0 || height == 0 {
-        return ir.to_vec();
-    }
-    let bytes: Vec<u8> = ir.iter().flat_map(|value| value.to_ne_bytes()).collect();
-    let (out_height, out_width) = negpy_core::orient::oriented_dims(height, width, orientation);
-    let mut dst = vec![0u8; out_height * out_width * 4];
-    negpy_core::orient::orient(&bytes, height, width, 4, orientation, &mut dst);
-    dst.chunks_exact(4)
-        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
-        .collect()
 }
 
 fn is_pakon_f335(path: &Path) -> bool {

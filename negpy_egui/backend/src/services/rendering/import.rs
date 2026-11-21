@@ -34,6 +34,10 @@ pub struct CachedSource {
     pub orientation: u8,
     pub color_space: Option<String>,
     pub source_encoding: Option<String>,
+    /// The oriented IR plane, when the file carried one.
+    pub ir: Option<Vec<f32>>,
+    pub ir_width: usize,
+    pub ir_height: usize,
 }
 
 /// One-slot memo of the decoded and pre-corrected export source.
@@ -92,11 +96,18 @@ impl SourceCache {
             .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
         let image = oriented(&decoded, loaded.orientation);
         let image = precorrect_source(&image, config, entry, gain_slices, loaded.orientation);
+        let (ir, ir_width, ir_height) = loaded.ir.map_or((None, 0, 0), |ir| {
+            let oriented = orient_ir(&ir, loaded.ir_width, loaded.ir_height, loaded.orientation);
+            (Some(oriented), loaded.ir_width, loaded.ir_height)
+        });
         let cached = CachedSource {
             image,
             orientation: loaded.orientation,
             color_space: loaded.color_space,
             source_encoding: loaded.source_encoding,
+            ir,
+            ir_width,
+            ir_height,
         };
         if let Ok(mut guard) = self.entry.lock() {
             *guard = Some((key, cached.clone()));
@@ -152,6 +163,10 @@ pub struct ImportedSource {
     pub orientation: u8,
     pub color_space: Option<String>,
     pub source_encoding: Option<String>,
+    /// The oriented IR plane, when the file carried one.
+    pub ir: Option<Vec<f32>>,
+    pub ir_width: usize,
+    pub ir_height: usize,
 }
 
 /// Whether a preview may take the sensor unmix. Triplet composites take each channel from
@@ -159,6 +174,21 @@ pub struct ImportedSource {
 #[must_use]
 pub fn preview_takes_unmix(config: &WorkspaceConfig) -> bool {
     !is_rgb_triplet(&config.rgbscan) && !stitch_has_triplets(&config.stitch)
+}
+
+/// `apply_exif_orientation` for a one-band plane.
+#[must_use]
+pub fn orient_ir(ir: &[f32], width: usize, height: usize, orientation: u8) -> Vec<f32> {
+    if orientation < 2 || width == 0 || height == 0 {
+        return ir.to_vec();
+    }
+    let bytes: Vec<u8> = ir.iter().flat_map(|value| value.to_ne_bytes()).collect();
+    let (out_height, out_width) = negpy_core::orient::oriented_dims(height, width, orientation);
+    let mut dst = vec![0u8; out_height * out_width * 4];
+    negpy_core::orient::orient(&bytes, height, width, 4, orientation, &mut dst);
+    dst.chunks_exact(4)
+        .map(|chunk| f32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+        .collect()
 }
 
 /// `apply_exif_orientation` for a float frame.
@@ -231,6 +261,18 @@ pub fn import_source(
     } else {
         None
     };
+    let (ir, ir_width, ir_height) = loaded.ir.map_or((None, 0, 0), |ir| {
+        (
+            Some(orient_ir(
+                &ir,
+                loaded.ir_width,
+                loaded.ir_height,
+                loaded.orientation,
+            )),
+            loaded.ir_width,
+            loaded.ir_height,
+        )
+    });
     Ok(ImportedSource {
         image,
         process_mode,
@@ -239,6 +281,9 @@ pub fn import_source(
         orientation: loaded.orientation,
         color_space: loaded.color_space,
         source_encoding: loaded.source_encoding,
+        ir,
+        ir_width,
+        ir_height,
     })
 }
 

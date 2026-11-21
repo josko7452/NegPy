@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 11:26 | **Last Commit:** `ac484e4b` desktop: paint the render histogram on the card headers
+**Last Updated:** 2026-11-21 12:10 | **Last Commit:** `bece5c3c` desktop: keep every card state under the tab collapse
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -7,13 +7,13 @@ its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
 redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Auto Crop preview: freeze the resolved geometry before the texture is
-   shown, then show that texture once (`MIGRATION_PLAN.md` §10.6 commit 5).
-3. [ ] Add canvas strokes for Heal, Scratch, Line and Clone
+1. [ ] Add canvas strokes for Heal, Scratch, Line and Clone
    (`MIGRATION_PLAN.md` §9.4 P3-11).
-4. [ ] Add local mask selection and vertex editing on the canvas.
-5. [ ] Keep the Metadata, Crop, Straighten and Export card states across a
-   repaint (`MIGRATION_PLAN.md` §9.2 P1-4, P1-6, P1-8).
+2. [ ] Add local mask selection and vertex editing on the canvas.
+3. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
+   the buffer, the chart itself still reads only the curve.
+4. [ ] Wire the remaining Export controls: input ICC and sidecar scope
+   (`MIGRATION_PLAN.md` §9.5 P3b-14, P3b-15).
 
 ## Completed (Recent)
 - `98d7b11e` frame: keep crop drawing active until confirm.
@@ -25,6 +25,8 @@ redrew. Make that render path observable before the remaining tool work.
   painted; the Filtration and Tone card headers paint it.
 - `TabSummaryAction::Collapse` now toggles a page flag; each page keeps its own
   card open states across the folded view.
+- Preview and export both run the retouch source bakes. The source hash carries
+  the IR, heal, dust, hair and clone tokens.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
@@ -58,11 +60,12 @@ redrew. Make that render path observable before the remaining tool work.
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
-- The backend owns retouch and local kernels but the render engine calls none
-  of them; canvas strokes and masks would store dead edits until that seam is
-  wired. This is the current major blocker.
+- Retouch bakes are wired ahead of both engines. The local mask stage is still
+  absent from the Rust exposure pass, so canvas masks remain unwired.
 - The histogram is binned from the display-encoded frame on the card strip. The
   Analysis card still reads only the curve and readouts.
+- Retouch runs on the source proxy and the full-resolution export. Its IR plane
+  is oriented and resized with the source.
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
 - The render worker resolves Auto Crop in its own config, then returns a hash

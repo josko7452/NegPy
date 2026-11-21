@@ -150,7 +150,7 @@ pub fn load_linear_source(
         LoadOptions {
             linear_raw: config.process.linear_raw,
             positive_decode: None,
-            load_ir: false,
+            load_ir: true,
         },
     )?;
     let decoded = loaded
@@ -158,6 +158,22 @@ pub fn load_linear_source(
         .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
     let oriented = oriented(&decoded, loaded.orientation);
     let proxy = downsample_to_long_edge(&oriented, max_edge.max(1));
+    let (ir, ir_width, ir_height) = loaded.ir.map_or((None, 0, 0), |ir| {
+        let oriented = negpy_backend::services::rendering::import::orient_ir(
+            &ir,
+            loaded.ir_width,
+            loaded.ir_height,
+            loaded.orientation,
+        );
+        let (plane, width, height) = downsample_ir_plane(
+            &oriented,
+            loaded.ir_width,
+            loaded.ir_height,
+            proxy.width,
+            proxy.height,
+        );
+        (Some(plane), width, height)
+    });
     let hash = file_hash(path).map_err(|error| error.to_string())?;
     let name = path
         .file_name()
@@ -169,6 +185,9 @@ pub fn load_linear_source(
             name,
             hash,
             image: proxy,
+            ir,
+            ir_width,
+            ir_height,
         },
         config,
     ))
@@ -339,4 +358,27 @@ mod tests {
     fn a_missing_thumbnail_is_empty() {
         assert!(load_thumbnail(Path::new("/missing/frame.orf"), None, 320).is_none());
     }
+}
+
+/// Resize a one-band plane with area averaging to a target size.
+fn downsample_ir_plane(
+    plane: &[f32],
+    width: usize,
+    height: usize,
+    target_width: usize,
+    target_height: usize,
+) -> (Vec<f32>, usize, usize) {
+    if (width, height) == (target_width, target_height) || width == 0 || height == 0 {
+        return (plane.to_vec(), width, height);
+    }
+    let dense = negpy_backend::features::retouch::processor::downsample_to_long_edge(
+        &negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer::from_rgb(
+            width,
+            height,
+            plane.iter().flat_map(|value| [*value; 3]).collect(),
+        ),
+        target_width.max(target_height),
+    );
+    let out = dense.pixels.chunks_exact(3).map(|pixel| pixel[0]).collect();
+    (out, dense.width, dense.height)
 }

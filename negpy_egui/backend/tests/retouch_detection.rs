@@ -118,6 +118,22 @@ fn the_source_tokens_follow_the_toggles() {
     };
     assert!(source_tokens(&ir, true).contains("ir"));
     assert_eq!(source_tokens(&ir, false), "");
+    let mut painted = RetouchConfig::default();
+    painted
+        .manual_heal_strokes
+        .push(serde_json::json!([[[0.4, 0.4]], 12.0, 0.0, 0.0]));
+    assert!(source_tokens(&painted, false).contains("heal"));
+    let mut cloned = RetouchConfig::default();
+    cloned.clone_strokes.push(serde_json::json!([
+        [[0.2, 0.2], [0.3, 0.3]],
+        12.0,
+        0.05,
+        0.05,
+        1.0,
+        0.5,
+        true
+    ]));
+    assert!(source_tokens(&cloned, false).contains("clone"));
 }
 
 #[test]

@@ -2,7 +2,8 @@
 
 use crate::domain::models::RetouchConfig;
 use crate::features::retouch::logic::{
-    detect_luma_score, downsample_ir, ir_bake_token, ir_detect_target, luma_bake_token,
+    clone_token, detect_luma_score, downsample_ir, hair_bake_token, ir_bake_token,
+    ir_detect_target, luma_bake_token, manual_bake_token,
 };
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
@@ -32,11 +33,18 @@ pub fn detect_dust(img: &ImageBuffer, config: &RetouchConfig) -> Option<LumaDete
 /// The source-hash tokens the retouch bakes contribute.
 #[must_use]
 pub fn source_tokens(config: &RetouchConfig, has_ir: bool) -> String {
-    format!(
-        "{}{}",
+    [
+        ir_bake_token(config, has_ir),
+        manual_bake_token(config),
         luma_bake_token(config),
-        ir_bake_token(config, has_ir)
-    )
+        if config.dust_remove {
+            hair_bake_token(config)
+        } else {
+            String::new()
+        },
+        clone_token(config),
+    ]
+    .concat()
 }
 
 /// `_downsample_to_long_edge`: shrink so the long edge is at most `long_px`; never upscales.

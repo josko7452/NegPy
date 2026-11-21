@@ -14,6 +14,7 @@ use crate::render_engine::{DarkroomEngine, PipelineContext};
 use crate::services::export::print::{apply_layout, effective_border_color};
 use crate::services::rendering::import::{import_source, precorrect_source};
 use crate::services::rendering::lens::flatfield_source;
+use crate::services::rendering::retouch::IrPlane;
 
 /// One export render before color management.
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +41,16 @@ pub fn render_export_file(
 ) -> Result<ExportRender, String> {
     let entry = load_flatfield(config);
     let imported = import_source(path, config, entry.as_ref(), &[])?;
+    let (baked, retouch_tokens) = crate::services::rendering::retouch::bake_with_tokens(
+        &imported.image,
+        config,
+        imported.ir.as_deref().map(|samples| IrPlane {
+            samples,
+            width: imported.ir_width,
+            height: imported.ir_height,
+        }),
+        1600.0,
+    );
     let mut context = PipelineContext {
         cache_stages: false,
         readback_metrics: false,
@@ -49,8 +60,12 @@ pub fn render_export_file(
         source_base_log: imported.base_log,
         ..PipelineContext::default()
     };
-    let source_hash = crate::services::rendering::source_identity::source_token(config, None);
-    let buffer = engine.process(&imported.image, config, &source_hash, &mut context);
+    let source_hash = format!(
+        "{}{}",
+        crate::services::rendering::source_identity::source_token(config, None),
+        retouch_tokens
+    );
+    let buffer = engine.process(&baked, config, &source_hash, &mut context);
     let border_color = effective_border_color(&config.finish, &config.toning);
     let layout = apply_layout(
         &buffer,

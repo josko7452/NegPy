@@ -29,6 +29,10 @@ pub struct SourceFrame {
     pub name: String,
     pub hash: String,
     pub image: ImageBuffer,
+    /// The IR plane at the same proxy size, when the file carries one.
+    pub ir: Option<Vec<f32>>,
+    pub ir_width: usize,
+    pub ir_height: usize,
 }
 
 /// The soft proof the preview applies after the pipeline.
@@ -189,9 +193,22 @@ impl RenderWorker {
                 };
                 let preview_size =
                     negpy_backend::kernel::system::config::app_config().preview_render_size as f64;
-                let (config, autocrop) =
-                    resolve_armed_autocrop(&request.source.image, &request.config, preview_size);
                 let request_hash = request.config_hash();
+                let (baked, retouch_tokens) =
+                    negpy_backend::services::rendering::retouch::bake_with_tokens(
+                        &request.source.image,
+                        &request.config,
+                        request.source.ir.as_deref().map(|samples| {
+                            negpy_backend::services::rendering::retouch::IrPlane {
+                                samples,
+                                width: request.source.ir_width,
+                                height: request.source.ir_height,
+                            }
+                        }),
+                        preview_size,
+                    );
+                let (config, autocrop) =
+                    resolve_armed_autocrop(&baked, &request.config, preview_size);
                 let config_hash = if autocrop.is_some() {
                     RenderRequest {
                         config: config.clone(),
@@ -202,12 +219,8 @@ impl RenderWorker {
                     request_hash.clone()
                 };
                 let mut context = PipelineContext::new();
-                let output = engine.process(
-                    &request.source.image,
-                    &config,
-                    &request.source.hash,
-                    &mut context,
-                );
+                let source_hash = format!("{}{}", request.source.hash, retouch_tokens);
+                let output = engine.process(&baked, &config, &source_hash, &mut context);
                 if autocrop.is_some() {
                     context.metrics.insert(
                         "autocrop_resolved".to_string(),
@@ -309,6 +322,9 @@ mod tests {
             name: "frame.orf".to_string(),
             hash: "source".to_string(),
             image: ImageBuffer::from_rgb(16, 12, pixels),
+            ir: None,
+            ir_width: 0,
+            ir_height: 0,
         })
     }
 

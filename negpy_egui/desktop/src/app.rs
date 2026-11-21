@@ -1927,6 +1927,9 @@ mod tests {
             name: "frame.orf".to_string(),
             hash: "source".to_string(),
             image: ImageBuffer::from_rgb(16, 12, pixels),
+            ir: None,
+            ir_width: 0,
+            ir_height: 0,
         };
         app.set_source(Some(source));
         app.edit.config.geometry.crop_from_auto = true;
