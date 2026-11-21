@@ -125,6 +125,15 @@ impl RenderRequest {
     }
 }
 
+/// The output histogram of a display-encoded frame.
+fn histogram_of(pixels: &[u8], width: usize, height: usize) -> Option<Vec<f64>> {
+    let encoded: Vec<f32> = pixels
+        .iter()
+        .map(|value| f32::from(*value) / 255.0)
+        .collect();
+    negpy_backend::features::exposure::analysis::output_histogram(&encoded, width, height)
+}
+
 /// One finished preview.
 #[derive(Clone, Debug)]
 pub struct RenderOutput {
@@ -134,6 +143,8 @@ pub struct RenderOutput {
     /// The hash of the config that painted this frame, after Auto Crop resolved it.
     pub config_hash: String,
     pub frame: DisplayFrame,
+    /// The display histogram `(4, 256)` of the frame on the canvas, when it has one.
+    pub histogram: Option<Vec<f64>>,
     pub metrics: BTreeMap<String, Value>,
 }
 
@@ -219,6 +230,7 @@ impl RenderWorker {
                         }
                     }
                 }
+                let histogram = histogram_of(&pixels, output.width, output.height);
                 let frame = DisplayFrame::from_rgb(output.width, output.height, pixels);
                 let metrics = context.metrics;
                 if tx
@@ -227,6 +239,7 @@ impl RenderWorker {
                         request_hash,
                         config_hash,
                         frame,
+                        histogram,
                         metrics,
                     })
                     .is_err()
@@ -322,6 +335,22 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    fn a_render_returns_the_histogram_of_its_frame() {
+        let worker = RenderWorker::start();
+        let request = RenderRequest {
+            generation: 1,
+            source: source(),
+            config: WorkspaceConfig::default(),
+            proof: ProofRequest::default(),
+        };
+        worker.submit(request);
+        let output = wait_for(&worker);
+        let histogram = output.histogram.expect("a display histogram");
+        assert_eq!(histogram.len(), 4 * 256);
+        assert!(histogram.iter().sum::<f64>() > 0.0);
     }
 
     #[test]

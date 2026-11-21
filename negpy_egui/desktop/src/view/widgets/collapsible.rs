@@ -11,13 +11,16 @@ use crate::styles::layout::{HEADER_BUTTON_SIZE, HEADER_HEIGHT};
 use crate::styles::theme::Theme;
 
 /// The state a section keeps across frames.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CollapsibleSection {
     pub title: String,
     pub expanded: bool,
     pub modified: usize,
     pub has_guide: bool,
     pub icon: Option<Icon>,
+    /// The histogram strip painted behind the header, when the card has one.
+    pub background: Option<Vec<f64>>,
+    pub background_channels: bool,
 }
 
 impl CollapsibleSection {
@@ -30,6 +33,8 @@ impl CollapsibleSection {
             modified: 0,
             has_guide: false,
             icon: None,
+            background: None,
+            background_channels: false,
         }
     }
 
@@ -51,6 +56,14 @@ impl CollapsibleSection {
     #[must_use]
     pub fn with_icon(mut self, icon: Icon) -> Self {
         self.icon = Some(icon);
+        self
+    }
+
+    /// Paint a histogram behind the header, in the header's first half.
+    #[must_use]
+    pub fn with_background(mut self, bins: Vec<f64>, channels: bool) -> Self {
+        self.background = Some(bins);
+        self.background_channels = channels;
         self
     }
 
@@ -82,6 +95,17 @@ impl CollapsibleSection {
             se: if self.expanded { 0 } else { theme.radius_md },
         };
         ui.painter().rect_filled(header, top, theme.bg_header);
+        if let Some(bins) = &self.background {
+            let strip =
+                Rect::from_min_size(header.min, Vec2::new(header.width() * 0.5, header.height()));
+            crate::view::widgets::histogram::paint_strip(
+                ui,
+                strip,
+                bins,
+                false,
+                self.background_channels,
+            );
+        }
         ui.painter().line_segment(
             [header.left_bottom(), header.right_bottom()],
             Stroke::new(1.0_f32, theme.border_primary),

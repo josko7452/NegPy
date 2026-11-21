@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 10:28 | **Last Commit:** `f10b1c7b` frame: redraw after a crop confirms
+**Last Updated:** 2026-11-21 11:02 | **Last Commit:** `fd3d572d` frame: prove auto crop redraws its frozen rect
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -21,6 +21,8 @@ redrew. Make that render path observable before the remaining tool work.
   shell accepts a render only when both generation and request hash match.
 - Auto Crop freezes before the texture is shown; a second request finds the
   painted hash and submits nothing.
+- The render worker returns the `(4, 256)` output histogram of the texture it
+  painted; the Filtration and Tone card headers paint it.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
@@ -57,6 +59,8 @@ redrew. Make that render path observable before the remaining tool work.
 - The backend owns retouch and local kernels but the render engine calls none
   of them; canvas strokes and masks would store dead edits until that seam is
   wired. This is the current major blocker.
+- The histogram is binned from the display-encoded frame on the card strip. The
+  Analysis card still reads only the curve and readouts.
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
 - The render worker resolves Auto Crop in its own config, then returns a hash

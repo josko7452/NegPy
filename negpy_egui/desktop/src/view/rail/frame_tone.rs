@@ -529,17 +529,23 @@ impl ExposureState {
     }
 
     /// Paint the page. Returns whether a control changed the edit.
-    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
+    pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit, histogram: Option<&[f64]>) -> bool {
         self.load(edit);
         let mut changed = TabSummary::new(4).show(ui) != Default::default();
-        let (filtration_open, filtration_changed) =
-            show_card(ui, "Filtration", self.filtration.open, |ui| {
-                self.show_filtration(ui)
-            });
+        let (filtration_open, filtration_changed) = show_card_with(
+            ui,
+            "Filtration",
+            self.filtration.open,
+            histogram,
+            true,
+            |ui| self.show_filtration(ui),
+        );
         self.filtration.open = filtration_open;
         changed |= filtration_changed;
         let (tone_open, tone_changed) =
-            show_card(ui, "Tone", self.tone.open, |ui| self.show_tone(ui));
+            show_card_with(ui, "Tone", self.tone.open, histogram, false, |ui| {
+                self.show_tone(ui)
+            });
         self.tone.open = tone_open;
         changed |= tone_changed;
         let (paper_open, paper_changed) = show_card(ui, "Paper Response", self.paper.open, |ui| {
@@ -750,8 +756,22 @@ fn show_card(
     expanded: bool,
     body: impl FnOnce(&mut Ui) -> bool,
 ) -> (bool, bool) {
+    show_card_with(ui, title, expanded, None, false, body)
+}
+
+fn show_card_with(
+    ui: &mut Ui,
+    title: &str,
+    expanded: bool,
+    histogram: Option<&[f64]>,
+    channels: bool,
+    body: impl FnOnce(&mut Ui) -> bool,
+) -> (bool, bool) {
     let mut section = CollapsibleSection::new(title).with_guide();
     section.expanded = expanded;
+    if let Some(bins) = histogram {
+        section = section.with_background(bins.to_vec(), channels);
+    }
     let (_, result) = section.show(ui, |ui| card(ui, body));
     ui.add_space(f32::from(Theme::default().space_sm));
     (section.expanded, result.unwrap_or(false))
@@ -893,7 +913,7 @@ mod tests {
         let mut edit = FrameEdit::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                assert!(!state.show(ui, &mut edit));
+                assert!(!state.show(ui, &mut edit, None));
             });
         });
     }

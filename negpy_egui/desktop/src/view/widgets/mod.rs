@@ -7,6 +7,7 @@ pub mod elided_label;
 pub mod field_row;
 pub mod flat_rows;
 pub mod fold;
+pub mod histogram;
 pub mod marks;
 pub mod overflow_bar;
 pub mod panel_tab;

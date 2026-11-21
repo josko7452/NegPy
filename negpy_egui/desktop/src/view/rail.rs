@@ -81,6 +81,8 @@ pub struct RailState {
     pub readouts_open: bool,
     pub collapsed_sections: std::collections::BTreeMap<String, bool>,
     pub metrics: analysis::AnalysisMetrics,
+    /// The display histogram `(4, 256)` of the frame on the canvas.
+    pub histogram: Option<Vec<f64>>,
     pub export_status: ExportStatus,
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
@@ -151,6 +153,7 @@ impl RailState {
             readouts_open: false,
             collapsed_sections: std::collections::BTreeMap::new(),
             metrics: analysis::AnalysisMetrics::default(),
+            histogram: None,
             export_status: ExportStatus::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
@@ -162,6 +165,11 @@ impl RailState {
     /// Show the metrics the newest render measured.
     pub fn set_metrics(&mut self, metrics: analysis::AnalysisMetrics) {
         self.metrics = metrics;
+    }
+
+    /// Show the display histogram of the frame on the canvas.
+    pub fn set_histogram(&mut self, histogram: Option<Vec<f64>>) {
+        self.histogram = histogram;
     }
 
     /// Select the tab and page a capture or a launch asks for, keeping every card's state.
@@ -408,7 +416,8 @@ impl RailState {
                 }
             }
             "tone" => {
-                if self.exposure.show(ui, edit) {
+                let histogram = self.histogram.clone();
+                if self.exposure.show(ui, edit, histogram.as_deref()) {
                     edit.mark_dirty();
                 }
             }
@@ -1022,5 +1031,16 @@ mod tests {
         let (linear_raw, paper) = scan_setup_values("camera", "narrowband");
         assert!(linear_raw);
         assert_eq!(paper, "pakon");
+    }
+
+    #[test]
+    fn the_rail_keeps_the_render_histogram() {
+        let mut rail = RailState::for_view(&ViewState::default());
+        let mut bins = vec![0.0; 4 * 256];
+        bins[3 * 256 + 10] = 5.0;
+        rail.set_histogram(Some(bins.clone()));
+        assert_eq!(rail.histogram.as_deref(), Some(bins.as_slice()));
+        rail.set_histogram(None);
+        assert!(rail.histogram.is_none());
     }
 }
