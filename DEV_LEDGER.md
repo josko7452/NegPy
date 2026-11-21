@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 18:31 | **Last Commit:** `770e58e8 backend: respect the CPU override in the GPU engine`
+**Last Updated:** 2026-11-21 19:20 | **Last Commit:** `pending GPU crop`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -12,10 +12,10 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: run the prefix from the desktop render worker when the config
+1. [ ] GPU: port the exposure curve pass so the chain replaces the print
+   curve (§9.12 G-1, G-3).
+2. [ ] GPU: run the chain from the desktop render worker when the config
    allows it, and fall back to the CPU engine (§9.12 G-2).
-2. [ ] GPU: port the exposure curve pass so the chain replaces crop and the
-   print curve (§9.12 G-1, G-3).
 3. [ ] GPU: add stage caching and a texture pool, then the tiled path
    (§9.12 G-4).
 4. [ ] GPU: pin shader output bits and add per-channel and camera cases
@@ -33,6 +33,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 11. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: a GPU crop pass copies the resolved window and the chain exposes
+  a cropped base run.
 - `backend`: the GPU device opens once, textures and shaders are cached, and
   the geometry, normalization, encode, histogram and auto-crop passes have
   parity tests.

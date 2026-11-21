@@ -186,3 +186,57 @@ fn the_cpu_override_stops_the_engine() {
         assert!(GpuEngine::new().is_none());
     }
 }
+
+#[test]
+fn a_cropped_chain_matches_the_cpu_crop() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(40, 28);
+    let geometry = process(
+        &image,
+        &settings.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let cpu = normalize_negative(
+        &geometry.image.pixels,
+        geometry.image.width,
+        geometry.image.height,
+        NormalizationSettings {
+            config: &settings.process,
+            mode: settings.process.process_mode,
+            active_roi: None,
+            base_log: None,
+        },
+    );
+    let roi = (
+        2i64,
+        geometry.image.height as i64 - 3,
+        4i64,
+        geometry.image.width as i64 - 1,
+    );
+    let want = negpy_backend::features::geometry::processor::crop_image(
+        &ImageBuffer::from_rgb(
+            geometry.image.width,
+            geometry.image.height,
+            negpy_backend::features::exposure::analysis::working_oetf_encode(&cpu.image),
+        ),
+        Some(roi),
+    );
+    let gpu = engine.run_base_cropped(
+        &image,
+        &settings,
+        &BaseRun::plain(cpu.metrics.final_bounds),
+        Some(roi),
+    );
+    assert_eq!((gpu.width, gpu.height), (want.width, want.height));
+    let mut failures = 0usize;
+    for (index, expected) in want.pixels.iter().enumerate() {
+        if (gpu.pixels[index] - expected).abs() > 3e-2 {
+            failures += 1;
+        }
+    }
+    let fraction = failures as f64 / want.pixels.len() as f64;
+    assert!(fraction < 0.01, "{failures} samples differ");
+}
