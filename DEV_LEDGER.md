@@ -73,9 +73,9 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   Roll Average, Crop All, Find and the recipe line.
 
 ## Verification
-- This batch stopped after eight commits. `cargo check --workspace` and the
-  targeted GPU tests pass. The full suite was stopped while relinking tests,
-  so the next session must run `cargo test --workspace` before commit 9.
+- This batch stopped after eight commits. `cargo test --workspace`,
+  `cargo check --workspace` and `cargo fmt --all --check` pass. The GPU parity
+  tests ran on the local Vulkan adapter and skip without one.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
