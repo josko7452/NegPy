@@ -9,8 +9,8 @@ toolbar and card actions from the section 9 audit.
 ## Next Steps (Ordered)
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
-2. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
-   are still not passed to the print curve.
+2. [ ] Add the tone-limited local masks: the print curve accepts a keyed alpha
+   plane and key parameters, but the engine passes neither.
 3. [ ] Wire the dead toolbar and card actions from the section 9 audit
    (Photo/Roll mode, zoom, rotate/flip, Tools, Undo/Redo, Print, Roll Average,
    Prescan, Scan as Roll).
@@ -70,9 +70,8 @@ toolbar and card actions from the section 9 audit.
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
-- Retouch bakes are wired ahead of both engines. Local masks reach the print
-  for unlimited stops, grade and flash; keyed masks need their alpha planes
-  and key parameters.
+- Retouch bakes are wired ahead of both engines. Unlimited local masks reach
+  the print; tone-limited keyed masks do not.
 - The histogram is binned from the display-encoded frame on the card strip. The
   Analysis card still reads only the curve and readouts.
 - Retouch runs on the source proxy and the full-resolution export. Its IR plane
