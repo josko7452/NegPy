@@ -1105,6 +1105,7 @@ impl NegFeApp {
         egui::CentralPanel::default().frame(root).show(ctx, |ui| {
             ui.painter().rect_filled(screen, 0.0, surface());
             let label = self.frame_label();
+            let recipe = self.recipe();
             let retouch_tool = self.retouch_tool();
             let (rail_rect, hits) = paint_shell(
                 ui,
@@ -1137,6 +1138,7 @@ impl NegFeApp {
                     || self.edit.config.process.use_color_average
                     || self.edit.config.process.use_cast_average,
                 &mut self.find,
+                &recipe,
             );
             let find_results = self.find.results.clone();
             let search = Rect::from_min_max(
@@ -1605,6 +1607,25 @@ impl NegFeApp {
         }
     }
 
+    /// The print recipe the top bar prints for the open frame.
+    #[must_use]
+    pub fn recipe(&self) -> String {
+        use negpy_backend::features::exposure::papers::resolve_paper;
+        let exposure = &self.edit.config.exposure;
+        let paper = resolve_paper(&exposure.paper_profile).label;
+        let density = if exposure.auto_exposure {
+            format!("Print Density {:.2} (auto)", exposure.density)
+        } else {
+            format!("Print Density {:.2}", exposure.density)
+        };
+        let grade = if exposure.auto_normalize_contrast {
+            format!("Grade ISO-R {:.0} (auto)", exposure.grade)
+        } else {
+            format!("Grade ISO-R {:.0}", exposure.grade)
+        };
+        format!("{paper} · {density} · {grade}")
+    }
+
     fn texture_for(&mut self, ctx: &egui::Context) -> Option<&TextureHandle> {
         if self.texture.is_none()
             && let Some(frame) = &self.frame
@@ -1726,10 +1747,11 @@ fn paint_shell(
     zoom: f32,
     averages_on: bool,
     find: &mut FindState,
+    recipe: &str,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
-    paint_top_bar_with(&painter, screen, label);
+    paint_top_bar_with(&painter, screen, label, recipe);
 
     let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
     let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
@@ -1951,11 +1973,16 @@ pub fn top_bar_rect(screen: Rect) -> Rect {
 
 /// Paint the file name and the current recipe over `screen`.
 pub fn paint_top_bar(painter: &egui::Painter, screen: Rect) {
-    paint_top_bar_with(painter, screen, "P5080635.ORF · 7792 x 10388 px");
+    paint_top_bar_with(
+        painter,
+        screen,
+        "P5080635.ORF · 7792 x 10388 px",
+        "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
+    );
 }
 
 /// Paint the file name and the current recipe over `screen`.
-pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str) {
+pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str, recipe: &str) {
     let top = top_bar_rect(screen);
     painter.rect_filled(top, 0.0, surface());
     painter.text(
@@ -1968,7 +1995,7 @@ pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str) {
     painter.text(
         egui::pos2(screen.right() - RAIL_WIDTH - 26.0, top.center().y),
         egui::Align2::RIGHT_CENTER,
-        "Digital (Adobe RGB) · Print Density 1.08 (auto) · Grade ISO-R 83 (auto)",
+        recipe,
         egui::FontId::proportional(12.0),
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
     );
@@ -2703,6 +2730,29 @@ mod tests {
         let photo = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(800.0, 400.0));
         app.zoom = 100.0 / crate::view::canvas::zoom_percent(photo, 1600, 800) as f32;
         assert!((app.zoom - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_recipe_follows_the_open_frame() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.exposure.paper_profile = "ilford_multigrade_rc".to_string();
+        app.edit.config.exposure.density = 1.25;
+        app.edit.config.exposure.grade = 95.0;
+        let recipe = app.recipe();
+        assert!(recipe.contains("Print Density 1.25"), "{recipe}");
+        assert!(recipe.contains("Grade ISO-R 95"), "{recipe}");
+    }
+
+    #[test]
+    fn an_auto_recipe_names_its_autos() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.exposure.auto_exposure = true;
+        app.edit.config.exposure.auto_normalize_contrast = true;
+        let recipe = app.recipe();
+        assert!(recipe.contains("Print Density"));
+        assert!(recipe.contains("(auto)"), "{recipe}");
     }
 
     #[test]
