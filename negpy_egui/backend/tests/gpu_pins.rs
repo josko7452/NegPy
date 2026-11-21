@@ -126,3 +126,56 @@ fn a_per_channel_print_keeps_its_bits() {
     );
     assert_eq!(hash(&read(&output, &gpu)), "b16ee14d8e4e34b2");
 }
+
+#[test]
+fn the_clahe_shader_keeps_its_bits() {
+    let Some(gpu) = device() else {
+        return;
+    };
+    let (width, height) = (32, 24);
+    let pixels = frame(width, height);
+    let source = GpuTexture::new(&gpu.device, width as u32, height as u32, "encoded");
+    source.upload(&gpu.queue, &pixels, false);
+    let output = GpuTexture::new(&gpu.device, width as u32, height as u32, "clahe");
+    negpy_backend::features::lab::clahe_shader::run(
+        &gpu,
+        &ShaderLoader::default(),
+        &source,
+        &output,
+        &negpy_backend::features::lab::clahe_shader::ClaheUniforms::for_frame(1.0, width, height),
+    );
+    assert_eq!(hash(&read(&output, &gpu)), "f0b3fbe07153e072");
+}
+
+#[test]
+fn the_toning_shader_keeps_its_bits() {
+    let Some(gpu) = device() else {
+        return;
+    };
+    let (width, height) = (32, 24);
+    let pixels = frame(width, height);
+    let config = negpy_backend::domain::models::ToningConfig {
+        shadow_tint_hue: 30.0,
+        shadow_tint_strength: 0.4,
+        highlight_tint_hue: 210.0,
+        highlight_tint_strength: 0.3,
+        ..negpy_backend::domain::models::ToningConfig::default()
+    };
+    let source = GpuTexture::new(&gpu.device, width as u32, height as u32, "linear");
+    source.upload(&gpu.queue, &pixels, false);
+    let output = GpuTexture::new(&gpu.device, width as u32, height as u32, "toning");
+    negpy_backend::features::toning::shader::run(
+        &gpu,
+        &ShaderLoader::default(),
+        &source,
+        &output,
+        &negpy_backend::features::toning::shader::ToningUniforms::new(
+            &config,
+            1.0,
+            false,
+            negpy_backend::domain::models::AltProcess::None,
+            [0, 0],
+        ),
+    );
+    assert_eq!(hash(&read(&output, &gpu)), "cfd86f63ff1ce507");
+}
