@@ -27,6 +27,7 @@ use negpy_backend::session::proof::ProofSettings;
 pub mod analysis;
 pub mod calibration;
 pub mod export;
+pub mod favourites;
 pub mod frame_color;
 pub mod frame_finish;
 pub mod frame_geometry;
@@ -82,6 +83,8 @@ pub struct RailState {
     pub history: history::HistoryState,
     /// The strip frame names, for the Roll Analysis scene list.
     pub strip_names: Vec<String>,
+    /// The Favorites card's stored slider list.
+    pub favourites: favourites::FavouritesState,
     pub analysis_open: bool,
     pub analysis_log: bool,
     /// Which Analysis chart paints: 0 curve, 1 waveform, 2 parade, 3 vectorscope.
@@ -162,6 +165,7 @@ impl RailState {
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
             strip_names: Vec::new(),
+            favourites: favourites::FavouritesState::default(),
             analysis_open: view.analysis_open,
             analysis_log: view.analysis_log,
             analysis_view: 0,
@@ -467,6 +471,11 @@ impl RailState {
             }
             "finish" => {
                 if self.finish.show(ui, edit) {
+                    edit.mark_dirty();
+                }
+            }
+            "favourites" => {
+                if self.favourites.show(ui, edit) {
                     edit.mark_dirty();
                 }
             }
@@ -1022,7 +1031,7 @@ pub fn frame_cards(key: &str) -> &'static [&'static str] {
         "tone" => &["Filtration", "Tone", "Paper Response", "Dodge & Burn"],
         "color" => &["Lab", "Alternative Processes", "Toning"],
         "finish" => &["Retouch", "Finishing"],
-        "favourites" => &["Presets"],
+        "favourites" => &["Favorites"],
         "history" => &["Work Prints", "Edit History"],
         _ => &[],
     }

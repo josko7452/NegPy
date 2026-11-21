@@ -339,6 +339,34 @@ impl NegFeApp {
         self.rail.export.set_icc_profiles(&profiles);
         let store = metadata_presets(&app);
         self.rail.metadata.set_presets(store.list());
+        self.load_favourites();
+    }
+
+    /// Read the stored Favorites slider list.
+    fn load_favourites(&mut self) {
+        let Some(repo) = &self.settings else {
+            return;
+        };
+        let ids = repo
+            .global_setting("favourite_sliders")
+            .ok()
+            .flatten()
+            .and_then(|value| serde_json::from_value::<Vec<String>>(value).ok())
+            .unwrap_or_default();
+        self.rail.favourites.set_chosen(ids);
+    }
+
+    /// Save the Favorites slider list when the picker changed it.
+    fn save_favourites(&mut self) {
+        let Some(repo) = &mut self.settings else {
+            return;
+        };
+        let mut settings = serde_json::Map::new();
+        settings.insert(
+            "favourite_sliders".to_string(),
+            serde_json::json!(self.rail.favourites.chosen),
+        );
+        let _ = repo.save_global_settings(&settings);
     }
 
     /// Show a decoded frame on the canvas.
@@ -1696,6 +1724,7 @@ impl NegFeApp {
             self.open_scan_folder();
             let proof = self.proof.clone();
             let before = self.edit.config.clone();
+            let before_favourites = self.rail.favourites.chosen.clone();
             let switched = self
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
@@ -1704,6 +1733,9 @@ impl NegFeApp {
             }
             self.rail.apply_optics_action(&mut self.edit);
             self.rail.apply_history_action(&mut self.edit);
+            if self.rail.favourites.chosen != before_favourites {
+                self.save_favourites();
+            }
             self.apply_metadata_preset();
             self.apply_square_request(ctx);
             self.apply_detect_ratio(ctx);
@@ -3180,6 +3212,27 @@ mod tests {
         assert_eq!(other.metadata.camera_model, "Leica M3");
         let untouched = crate::frame_source::stored_config(Some(dir.path()), &photos[0]);
         assert!(untouched.metadata.camera_model.is_empty());
+    }
+
+    #[test]
+    fn the_favourites_list_round_trips_through_the_store() {
+        let dir = tempfile::tempdir().unwrap();
+        let app_config = negpy_backend::domain::types::AppConfig::for_user_dir(dir.path());
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app_config.edits_db_path,
+            app_config.settings_db_path,
+        );
+        repo.initialize().unwrap();
+        let mut app = NegFeApp::for_capture("frame", "favourites", "", "canvas", 0.0);
+        app.settings = Some(repo);
+        app.rail.favourites.chosen = vec!["density".to_string(), "grade".to_string()];
+        app.save_favourites();
+        app.rail.favourites.chosen.clear();
+        app.load_favourites();
+        assert_eq!(
+            app.rail.favourites.chosen,
+            vec!["density".to_string(), "grade".to_string()]
+        );
     }
 
     #[test]

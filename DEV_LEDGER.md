@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 06:45 | **Last Commit:** `pending roll: detect scenes by their light`
+**Last Updated:** 2026-11-22 07:10 | **Last Commit:** `pending frame: give Favorites its own card`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -23,7 +23,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 5. [ ] Export presets: run a preset on the strip (landed; the Presets page runs one selected preset).
 6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back (landed as a list in the dialog; the sheet tiles are not clickable yet).
 7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard (landed; it decodes the strip synchronously).
-8. [ ] Frame Favorites: the stored slider list and its editor.
+8. [ ] Frame Favorites: the stored slider list and its editor (landed for the seven Exposure sliders; History still has a placeholder card).
 
 ## Completed (Recent)
 - `desktop`: Dmin and Dmax pick on the canvas samples the unmixed log patch,
@@ -38,6 +38,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   sheet entries, the page plan and the export.
 - `roll-analysis`: Detect measures each strip frame's neutral axis, groups the
   frames under another light and Accept writes each group as a scene.
+- `favourites`: the Frame tab's Favorites page lists seven Exposure sliders,
+  saves the chosen ids under `favourite_sliders` and mirrors their values.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and
