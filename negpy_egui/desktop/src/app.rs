@@ -1909,6 +1909,45 @@ mod tests {
     }
 
     #[test]
+    fn an_auto_crop_freezes_before_its_texture_is_shown() {
+        use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
+        use negpy_backend::kernel::caching::logic::calculate_config_hash;
+
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let mut pixels = Vec::new();
+        for y in 0..12 {
+            for x in 0..16 {
+                let value = 0.05 + 0.8 * (y as f32 / 12.0);
+                pixels.extend_from_slice(&[value, value * 0.9, value * 0.8 + x as f32 * 1e-4]);
+            }
+        }
+        let source = crate::render_worker::SourceFrame {
+            name: "frame.orf".to_string(),
+            hash: "source".to_string(),
+            image: ImageBuffer::from_rgb(16, 12, pixels),
+        };
+        app.set_source(Some(source));
+        app.edit.config.geometry.crop_from_auto = true;
+        app.edit.config.process.lock_bounds = true;
+        let ctx = egui::Context::default();
+        app.request_render(&ctx, false);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while !app.receive_render(&ctx) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let geometry = &app.edit.config.geometry;
+        assert!(geometry.crop_rect.is_some());
+        assert!(!geometry.crop_detect_key.is_empty());
+        let painted = app.rendered.as_deref().expect("a painted hash");
+        assert!(painted.starts_with(&calculate_config_hash(&app.edit.config)));
+        let generation = app.generation;
+        app.request_render(&ctx, false);
+        assert_eq!(app.generation, generation);
+    }
+
+    #[test]
     fn a_render_is_accepted_only_for_the_request_in_flight() {
         use crate::render_worker::RenderOutput;
         let fixture = ReferenceFixture::bundled().unwrap();
