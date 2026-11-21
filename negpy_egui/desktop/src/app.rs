@@ -90,6 +90,8 @@ pub struct ShellHits {
     pub import: bool,
     pub previous: bool,
     pub next: bool,
+    /// The toolbar's Photo and Roll mode: `true` selects Photo.
+    pub photo_mode: Option<bool>,
     pub undo: bool,
     pub redo: bool,
     pub tile: Option<usize>,
@@ -171,6 +173,8 @@ pub struct NegFeApp {
     pub strip: Vec<FrameImage>,
     /// The open frame's index in the strip.
     pub selected: usize,
+    /// The toolbar's Photo and Roll mode; Photo selects the Frame tab.
+    pub photo_mode: bool,
     /// The open frame's linear proxy, held until the frame changes.
     source: Option<std::sync::Arc<crate::render_worker::SourceFrame>>,
     renderer: crate::render_worker::RenderWorker,
@@ -208,6 +212,7 @@ impl NegFeApp {
             frame: None,
             strip: Vec::new(),
             selected: 0,
+            photo_mode: false,
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
@@ -240,6 +245,7 @@ impl NegFeApp {
             frame: None,
             strip: Vec::new(),
             selected: 0,
+            photo_mode: tab == "frame",
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
             exporter: ExportWorker::start(),
@@ -1012,6 +1018,7 @@ impl NegFeApp {
                     self.rail.exposure.local.card,
                     self.rail.exposure.mask_index,
                 ),
+                self.photo_mode,
                 &mut self.mask_drag,
                 retouch_tool,
                 &mut self.retouch_drag,
@@ -1033,6 +1040,11 @@ impl NegFeApp {
             }
             if hits.redo {
                 self.redo_edit(ctx);
+            }
+            if let Some(photo) = hits.photo_mode {
+                self.rail.tab = if photo { Tab::Frame } else { Tab::Roll };
+                self.photo_mode = photo;
+                ctx.request_repaint();
             }
             match hits.crop {
                 crate::view::canvas::CropAction::Pending(rect) => self.store_crop(rect),
@@ -1365,6 +1377,7 @@ fn paint_shell(
         bool,
         usize,
     ),
+    photo_mode: bool,
     mask_drag: &mut crate::view::canvas::MaskDrag,
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
@@ -1547,7 +1560,14 @@ fn paint_shell(
 
     painter.rect_filled(rail, 0.0, surface());
     painter.rect_stroke(rail, 0.0, line(), egui::StrokeKind::Outside);
-    let navigation = paint_toolbar(ui, &painter, toolbar, selected, thumbnails.len());
+    let navigation = paint_toolbar(
+        ui,
+        &painter,
+        toolbar,
+        selected,
+        thumbnails.len(),
+        photo_mode,
+    );
     hits.previous = navigation.previous;
     hits.next = navigation.next;
     hits.undo = navigation.undo;
@@ -1653,6 +1673,7 @@ fn paint_toolbar(
     toolbar: Rect,
     selected: usize,
     frames: usize,
+    photo_mode: bool,
 ) -> ShellHits {
     use crate::styles::icons::Icon;
     use crate::styles::layout::{
@@ -1696,39 +1717,50 @@ fn paint_toolbar(
         egui::pos2(photo.right(), photo.top()),
         Vec2::new(segment.width() / 2.0, BAR_TRACK_BUTTON_HEIGHT),
     );
-    painter.rect_filled(photo, 4.0, theme.bg_checked);
-    painter.rect_stroke(
-        photo,
-        4.0,
-        egui::Stroke::new(1.0_f32, theme.border_checked),
-        egui::StrokeKind::Inside,
-    );
-    flat(
-        painter,
-        Rect::from_min_size(photo.min, Vec2::new(24.0, photo.height())),
-        Icon::Image,
-        theme.text_primary,
-    );
-    painter.text(
-        photo.left_center() + Vec2::new(26.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        "Photo",
-        egui::FontId::proportional(13.0),
-        theme.text_primary,
-    );
-    flat(
-        painter,
-        Rect::from_min_size(roll.min, Vec2::new(24.0, roll.height())),
-        Icon::Film,
-        theme.text_hint,
-    );
-    painter.text(
-        roll.left_center() + Vec2::new(26.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        "Roll",
-        egui::FontId::proportional(13.0),
-        theme.text_hint,
-    );
+    let photo_on = photo_mode;
+    for (segment, icon, label, on) in [
+        (photo, Icon::Image, "Photo", photo_on),
+        (roll, Icon::Film, "Roll", !photo_on),
+    ] {
+        if on {
+            painter.rect_filled(segment, 4.0, theme.bg_checked);
+            painter.rect_stroke(
+                segment,
+                4.0,
+                egui::Stroke::new(1.0_f32, theme.border_checked),
+                egui::StrokeKind::Inside,
+            );
+        }
+        flat(
+            painter,
+            Rect::from_min_size(segment.min, Vec2::new(24.0, segment.height())),
+            icon,
+            if on {
+                theme.text_primary
+            } else {
+                theme.text_hint
+            },
+        );
+        painter.text(
+            segment.left_center() + Vec2::new(26.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            label,
+            egui::FontId::proportional(13.0),
+            if on {
+                theme.text_primary
+            } else {
+                theme.text_hint
+            },
+        );
+    }
+    let photo_hit = ui.interact(photo, ui.id().with("toolbar-photo"), Sense::click());
+    let roll_hit = ui.interact(roll, ui.id().with("toolbar-roll"), Sense::click());
+    if photo_hit.clicked() {
+        hits.photo_mode = Some(true);
+    }
+    if roll_hit.clicked() {
+        hits.photo_mode = Some(false);
+    }
     x = mode.right() + 8.0;
 
     let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(172.0, row_height));
@@ -1998,6 +2030,20 @@ mod tests {
         ));
         assert!(app.has_frame());
         assert_eq!(app.frame_label(), "frame.orf · 4 x 2 px");
+    }
+
+    #[test]
+    fn the_toolbar_photo_mode_selects_the_frame_tab() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        assert_eq!(app.rail.tab, Tab::Roll);
+        app.photo_mode = true;
+        app.rail.tab = if app.photo_mode {
+            Tab::Frame
+        } else {
+            Tab::Roll
+        };
+        assert_eq!(app.rail.tab, Tab::Frame);
     }
 
     #[test]
