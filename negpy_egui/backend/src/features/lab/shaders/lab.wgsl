@@ -1,0 +1,503 @@
+// Spectral crosstalk moved to the normalization stage (capture-side,
+// negative-density domain) — see normalization.wgsl.
+struct LabUniforms {
+    sharpen: f32,
+    chroma_denoise: f32,
+    saturation: f32,
+    glow_amount: f32,
+    halation_strength: f32,
+    scale_factor: f32,
+    sharpen_radius_px: f32,
+    sharpen_masking: f32,
+    sharpen_method: f32,
+    skin_protection: f32,
+    chroma_radius_px: f32,
+    auto_masking: f32,
+    halation_r: f32,
+    halation_g: f32,
+    halation_b: f32,
+    frame_short_px: f32,
+};
+
+@group(0) @binding(0) var input_tex: texture_2d<f32>;
+@group(0) @binding(1) var output_tex: texture_storage_2d<rgba32float, write>;
+@group(0) @binding(2) var<uniform> params: LabUniforms;
+// USM: (blurred L*, original L*) from lab_sharpen_h/v.wgsl.
+// RL:  (deconvolved Y, observed Y) from the rl_*.wgsl chain. 1x1 dummy when sharpen=0.
+@group(0) @binding(3) var sharpen_tex: texture_2d<f32>;
+// (low-pass a*, low-pass b*) from chroma_lowpass_h/v.wgsl. 1x1 dummy when Chroma Denoise is off.
+@group(0) @binding(4) var chroma_tex: texture_2d<f32>;
+// (masking to apply, auto share) from sharpen_grain_pick.wgsl, read when Auto Masking is on.
+@group(0) @binding(5) var<storage, read> auto_mask: array<f32, 2>;
+
+// Sharpen constants — mirrored from negpy_core/src/lab.rs.
+const SHARPEN_GATE_LO = 0.25;
+const SHARPEN_GATE_HI = 0.33;
+const SHARPEN_OVERSHOOT_LIGHT = 1.0;
+const SHARPEN_OVERSHOOT_DARK = 2.0;
+const SHARPEN_MASK_T_HI = 10.0;
+const SHARPEN_SHADOW_FLOOR = 1.0 / 3.0;
+const SHARPEN_SHADOW_L_HI = 35.0;
+const RL_EPS = 1e-6;
+
+// Adobe RGB (1998) -> XYZ D65 luminance row (Yn=1) — mirrors LUM_R/LUM_G/LUM_B in
+// logic.py and the y row in rgb_to_lab below.
+const WORKING_LUMA_COEFFS = vec3<f32>(0.2973769, 0.6273491, 0.0752741);
+
+// CIELAB L* from linear luminance Y (D65, Yn=1) — mirrors lab_l_from_y in negpy_core/src/lab.rs.
+// Mirrors sharpen_shadow_gain in logic.py: gain rolls off toward paper black.
+fn sharpen_shadow_gain(l: f32) -> f32 {
+    return SHARPEN_SHADOW_FLOOR + (1.0 - SHARPEN_SHADOW_FLOOR) * smoothstep(0.0, SHARPEN_SHADOW_L_HI, l);
+}
+
+fn lab_l_from_y(y_in: f32) -> f32 {
+    var y = max(y_in, 0.0);
+    if (y > 0.008856) { y = pow(y, 1.0 / 3.0); } else { y = (7.787 * y) + (16.0 / 116.0); }
+    return (116.0 * y) - 16.0;
+}
+
+// 64-tap Fibonacci spiral — uniform area coverage, smooth Gaussian approximation.
+// Points lie in the unit disk; scale by the desired pixel radius when sampling.
+const FIBONACCI_64 = array<vec2<f32>, 64>(
+    vec2<f32>(0.088388, 0.000000),
+    vec2<f32>(-0.112886, 0.103413),
+    vec2<f32>(0.017279, -0.196886),
+    vec2<f32>(0.142286, 0.185586),
+    vec2<f32>(-0.261112, -0.046187),
+    vec2<f32>(0.247348, -0.157342),
+    vec2<f32>(-0.082733, 0.307763),
+    vec2<f32>(-0.157781, -0.303797),
+    vec2<f32>(0.342321, 0.125015),
+    vec2<f32>(-0.356128, 0.147004),
+    vec2<f32>(0.171677, -0.366864),
+    vec2<f32>(0.126865, 0.404466),
+    vec2<f32>(-0.382373, -0.221593),
+    vec2<f32>(0.448567, -0.098616),
+    vec2<f32>(-0.273753, 0.389386),
+    vec2<f32>(-0.063243, -0.488045),
+    vec2<f32>(0.388252, 0.327220),
+    vec2<f32>(-0.522466, 0.021606),
+    vec2<f32>(0.381099, -0.379244),
+    vec2<f32>(-0.025497, 0.551396),
+    vec2<f32>(-0.362617, -0.434536),
+    vec2<f32>(0.574425, 0.077288),
+    vec2<f32>(-0.486709, 0.338640),
+    vec2<f32>(0.132997, -0.591185),
+    vec2<f32>(0.307615, 0.536829),
+    vec2<f32>(-0.601358, -0.191850),
+    vec2<f32>(0.584143, -0.269889),
+    vec2<f32>(-0.253065, 0.604686),
+    vec2<f32>(-0.225855, -0.627935),
+    vec2<f32>(0.600976, 0.315856),
+    vec2<f32>(-0.667533, 0.175960),
+    vec2<f32>(0.379431, -0.590102),
+    vec2<f32>(0.120699, 0.702313),
+    vec2<f32>(-0.572008, -0.442995),
+    vec2<f32>(0.731702, -0.060620),
+    vec2<f32>(-0.505760, 0.546712),
+    vec2<f32>(0.003684, -0.755181),
+    vec2<f32>(0.514305, 0.566946),
+    vec2<f32>(-0.772295, -0.071576),
+    vec2<f32>(0.625787, -0.474950),
+    vec2<f32>(-0.142381, 0.782650),
+    vec2<f32>(-0.428884, -0.681539),
+    vec2<f32>(0.785920, 0.215388),
+    vec2<f32>(-0.733486, 0.376413),
+    vec2<f32>(0.289862, -0.781852),
+    vec2<f32>(0.317911, 0.780942),
+    vec2<f32>(-0.770264, -0.365042),
+    vec2<f32>(0.823263, -0.253821),
+    vec2<f32>(-0.440157, 0.751049),
+    vec2<f32>(-0.184643, -0.859851),
+    vec2<f32>(0.724177, 0.514422),
+    vec2<f32>(-0.890157, 0.110939),
+    vec2<f32>(0.587054, -0.689695),
+    vec2<f32>(0.033320, 0.913689),
+    vec2<f32>(-0.647727, -0.657276),
+    vec2<f32>(0.930014, 0.047552),
+    vec2<f32>(-0.724323, 0.598472),
+    vec2<f32>(0.130975, -0.938767),
+    vec2<f32>(0.542205, 0.787449),
+    vec2<f32>(-0.939649, -0.216211),
+    vec2<f32>(0.845937, -0.479274),
+    vec2<f32>(-0.302492, 0.932436),
+    vec2<f32>(-0.410097, -0.899101),
+    vec2<f32>(0.916976, 0.389028)
+);
+
+// Mirror GLOW_PSF, GLOW_THRESHOLD, HALATION_SIGMA and HALATION_BOUNCES in features/lab/logic.py.
+const GLOW_PSF = array<vec2<f32>, 4>(
+    vec2<f32>(0.1104, 0.001582),
+    vec2<f32>(0.3559, 0.004122),
+    vec2<f32>(0.4014, 0.010181),
+    vec2<f32>(0.1323, 0.024798)
+);
+const GLOW_THRESHOLD = 0.5;
+const HALATION_SIGMA = 0.0027;
+const HALATION_BOUNCES = array<vec2<f32>, 3>(
+    vec2<f32>(0.5714286, 1.0),
+    vec2<f32>(0.2857143, 1.4142136),
+    vec2<f32>(0.1428571, 1.7320508)
+);
+
+// Chroma Denoise edge test — mirrors CHROMA_EDGE_LO/HI in negpy_core/src/lab.rs.
+const CHROMA_EDGE_LO = 1.0;
+const CHROMA_EDGE_HI = 2.5;
+
+// Working-space TRC (Adobe RGB: pure 563/256 gamma). Lab is the encoded->linear
+// transition: input samples are decoded; the highlight/sharpen perceptual domain uses the same TRC.
+fn oetf_encode(c: vec3<f32>) -> vec3<f32> {
+    let x = clamp(c, vec3<f32>(0.0), vec3<f32>(1.0));
+    return pow(x, vec3<f32>(0.45470693));
+}
+
+fn oetf_decode(c: vec3<f32>) -> vec3<f32> {
+    let e = max(c, vec3<f32>(0.0));
+    return pow(e, vec3<f32>(2.19921875));
+}
+
+// Glow's scattered light: the highlights above GLOW_THRESHOLD of display-encoded luma.
+fn glow_light(coords: vec2<i32>) -> vec3<f32> {
+    let s = load_lin(coords);
+    return s * clamp((dot(oetf_encode(s), WORKING_LUMA_COEFFS) - GLOW_THRESHOLD) / (1.0 - GLOW_THRESHOLD), 0.0, 1.0);
+}
+
+fn load_lin(coords: vec2<i32>) -> vec3<f32> {
+    return oetf_decode(textureLoad(input_tex, coords, 0).rgb);
+}
+
+fn rgb_to_lab(rgb: vec3<f32>) -> vec3<f32> {
+    // Linear working RGB -> CIELAB (D65). Input is scene-linear (no TRC decode).
+    let r = max(rgb.r, 0.0);
+    let g = max(rgb.g, 0.0);
+    let b = max(rgb.b, 0.0);
+
+    // Adobe RGB (1998) -> XYZ, D65 (working-space primaries; matches CPU rgb_to_lab_working).
+    var x = r * 0.5767309 + g * 0.1855540 + b * 0.1881852;
+    var y = r * 0.2973769 + g * 0.6273491 + b * 0.0752741;
+    var z = r * 0.0270343 + g * 0.0706872 + b * 0.9911085;
+
+    x = x / 0.95047;
+    y = y / 1.00000;
+    z = z / 1.08883;
+
+    if (x > 0.008856) { x = pow(x, 1.0/3.0); } else { x = (7.787 * x) + (16.0 / 116.0); }
+    if (y > 0.008856) { y = pow(y, 1.0/3.0); } else { y = (7.787 * y) + (16.0 / 116.0); }
+    if (z > 0.008856) { z = pow(z, 1.0/3.0); } else { z = (7.787 * z) + (16.0 / 116.0); }
+
+    let l = (116.0 * y) - 16.0;
+    let a = 500.0 * (x - y);
+    let b_lab = 200.0 * (y - z);
+
+    return vec3<f32>(l, a, b_lab);
+}
+
+fn lab_to_rgb(lab: vec3<f32>) -> vec3<f32> {
+    var y = (lab.x + 16.0) / 116.0;
+    var x = lab.y / 500.0 + y;
+    var z = y - lab.z / 200.0;
+
+    if (pow(x, 3.0) > 0.008856) { x = pow(x, 3.0); } else { x = (x - 16.0 / 116.0) / 7.787; }
+    if (pow(y, 3.0) > 0.008856) { y = pow(y, 3.0); } else { y = (y - 16.0 / 116.0) / 7.787; }
+    if (pow(z, 3.0) > 0.008856) { z = pow(z, 3.0); } else { z = (z - 16.0 / 116.0) / 7.787; }
+
+    x = x * 0.95047;
+    y = y * 1.00000;
+    z = z * 1.08883;
+
+    // XYZ -> Adobe RGB (1998), D65. Returns scene-linear (no encode).
+    let r = x * 2.0413690 + y * -0.5649464 + z * -0.3446944;
+    let g = x * -0.9692660 + y * 1.8760108 + z * 0.0415560;
+    let b = x * 0.0134474 + y * -0.1183897 + z * 1.0154096;
+
+    return max(vec3<f32>(r, g, b), vec3<f32>(0.0));
+}
+
+// Adobe RGB (1998) linear to the Oklab cone response and back; each row of OK_LMS sums to 1, so a
+// gray has no chroma. Mirrors OK_LMS, OK_RGB, OK_LAB and OK_LAB_INV in negpy_core/src/color.rs.
+fn rgb_to_oklab(rgb: vec3<f32>) -> vec3<f32> {
+    let c = max(rgb, vec3<f32>(0.0));
+    let lms = pow(vec3<f32>(
+        dot(vec3<f32>(0.576470467, 0.369889566, 0.053639967), c),
+        dot(vec3<f32>(0.296350558, 0.591667029, 0.111982413), c),
+        dot(vec3<f32>(0.123509264, 0.219525143, 0.656965594), c),
+    ), vec3<f32>(1.0 / 3.0));
+    return vec3<f32>(
+        dot(vec3<f32>(0.2104542553, 0.7936177850, -0.0040720468), lms),
+        dot(vec3<f32>(1.9779984951, -2.4285922050, 0.4505937099), lms),
+        dot(vec3<f32>(0.0259040371, 0.7827717662, -0.8086757660), lms),
+    );
+}
+
+// Linear RGB of an Oklab color with its chroma scaled by k, unclamped.
+fn oklab_to_rgb(lab: vec3<f32>, k: f32) -> vec3<f32> {
+    let v = vec3<f32>(lab.x, lab.y * k, lab.z * k);
+    let r = vec3<f32>(
+        dot(vec3<f32>(0.999999998, 0.396337792, 0.215803758), v),
+        dot(vec3<f32>(1.000000009, -0.105561342, -0.063854175), v),
+        dot(vec3<f32>(1.000000055, -0.089484182, -1.291485538), v),
+    );
+    let lms = r * r * r;
+    return vec3<f32>(
+        dot(vec3<f32>(2.553867783, -1.621790027, 0.067922244), lms),
+        dot(vec3<f32>(-1.268519417, 2.609797725, -0.341278309), lms),
+        dot(vec3<f32>(-0.056250165, -0.567168402, 1.623418568), lms),
+    );
+}
+
+fn in_gamut(rgb: vec3<f32>) -> bool {
+    let tol = 1e-4;
+    return all(rgb >= vec3<f32>(-tol)) && all(rgb <= vec3<f32>(1.0 + tol));
+}
+
+// Saturation: an Oklab chroma scale. A pixel whose full push leaves the gamut takes a soft knee
+// toward its own headroom, found by 10 bisection steps, because an RGB clamp shifts hue.
+// Mirrors oklab_chroma_block in negpy_core/src/color.rs.
+fn oklab_saturate(rgb: vec3<f32>, saturation: f32) -> vec3<f32> {
+    let lab = rgb_to_oklab(rgb);
+    let full = oklab_to_rgb(lab, saturation);
+    if (saturation <= 1.0 || in_gamut(full)) { return full; }
+    var lo = 1.0;
+    var hi = saturation;
+    let still_ok = in_gamut(oklab_to_rgb(lab, 1.0));
+    for (var i = 0; i < 10; i++) {
+        let mid = (lo + hi) / 2.0;
+        if (still_ok && in_gamut(oklab_to_rgb(lab, mid))) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    let knee = max(lo, 1.0 + 1e-4) - 1.0;
+    return oklab_to_rgb(lab, 1.0 + knee * (1.0 - exp(-(saturation - 1.0) / knee)));
+}
+
+// Skin-tone mask and chroma rein -- mirror _skin_weight / _skin_chroma_rein_kernel
+// in kernel/image/logic.py exactly, same constants.
+const SKIN_HUE_CENTER_DEG = 52.0;
+const SKIN_HUE_WIDTH_DEG = 20.0;
+const SKIN_CHROMA_FULL = 35.0;
+const SKIN_CHROMA_ZERO = 60.0;
+const SKIN_L_LO = 15.0;
+const SKIN_L_HI = 95.0;
+const SKIN_CEIL_AT_FULL = 22.0;
+const SKIN_KNEE_START_FRAC = 0.6;
+
+fn skin_weight(lab: vec3<f32>) -> f32 {
+    let chroma = length(lab.yz);
+    if (chroma < 2.0) { return 0.0; }
+    let hue_deg = degrees(atan2(lab.z, lab.y));
+    var dist = hue_deg - SKIN_HUE_CENTER_DEG;
+    dist = dist - 360.0 * round(dist / 360.0);
+    let x = dist / SKIN_HUE_WIDTH_DEG;
+    let w_hue = exp(-0.5 * x * x);
+    let w_chroma = 1.0 - smoothstep(SKIN_CHROMA_FULL, SKIN_CHROMA_ZERO, chroma);
+    let w_light = smoothstep(0.0, SKIN_L_LO, lab.x) * (1.0 - smoothstep(SKIN_L_HI, 100.0, lab.x));
+    return w_hue * w_chroma * w_light;
+}
+
+fn skin_chroma_rein(lab: vec3<f32>, strength: f32) -> vec3<f32> {
+    let ceiling = SKIN_CEIL_AT_FULL / strength;
+    let start = SKIN_KNEE_START_FRAC * ceiling;
+    let chroma = length(lab.yz);
+    if (chroma <= start) { return lab; }
+    let w = skin_weight(lab);
+    if (w <= 0.0) { return lab; }
+    let span = ceiling - start;
+    let knee = start + span * (1.0 - exp(-(chroma - start) / span));
+    let scale = (chroma + w * (knee - chroma)) / chroma;
+    return vec3<f32>(lab.x, lab.y * scale, lab.z * scale);
+}
+
+fn rgb_to_hsv(c: vec3<f32>) -> vec3<f32> {
+    let v = max(c.r, max(c.g, c.b));
+    let m = min(c.r, min(c.g, c.b));
+    let d = v - m;
+    var h: f32;
+    var s: f32;
+    if (d == 0.0) { h = 0.0; }
+    else if (v == c.r) { h = (c.g - c.b) / d; }
+    else if (v == c.g) { h = (c.b - c.r) / d + 2.0; }
+    else { h = (c.r - c.g) / d + 4.0; }
+    h = fract(h / 6.0);
+    if (v == 0.0) { s = 0.0; } else { s = d / v; }
+    return vec3<f32>(h, s, v);
+}
+
+fn hsv_to_rgb(c: vec3<f32>) -> vec3<f32> {
+    let h = c.x * 6.0;
+    let s = c.y;
+    let v = c.z;
+    let i = floor(h);
+    let f = h - i;
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+    let cond = i32(i) % 6;
+    if (cond == 0) { return vec3<f32>(v, t, p); }
+    else if (cond == 1) { return vec3<f32>(q, v, p); }
+    else if (cond == 2) { return vec3<f32>(p, v, t); }
+    else if (cond == 3) { return vec3<f32>(p, q, v); }
+    else if (cond == 4) { return vec3<f32>(t, p, v); }
+    else { return vec3<f32>(v, p, q); }
+}
+
+@compute @workgroup_size(8, 8)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let dims = textureDimensions(input_tex);
+    if (gid.x >= dims.x || gid.y >= dims.y) { return; }
+
+    let coords = vec2<i32>(i32(gid.x), i32(gid.y));
+    var color = load_lin(coords);
+
+    // 1. Chroma Denoise — mirrors apply_chroma_denoise in logic.py. chroma_tex holds the
+    // low-pass a*/b*; chroma above it is kept only where the low band's own gradient marks
+    // a color edge (central differences, clamped like the CPU's edge-replicated pad).
+    if (params.chroma_radius_px > 0.0) {
+        let lo = vec2<i32>(0);
+        let hi = vec2<i32>(dims) - 1;
+        let low = textureLoad(chroma_tex, coords, 0).xy;
+        let gx = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(1, 0), lo, hi), 0).xy
+            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(1, 0), lo, hi), 0).xy) * 0.5;
+        let gy = (textureLoad(chroma_tex, clamp(coords + vec2<i32>(0, 1), lo, hi), 0).xy
+            - textureLoad(chroma_tex, clamp(coords - vec2<i32>(0, 1), lo, hi), 0).xy) * 0.5;
+        let g = sqrt(dot(gx, gx) + dot(gy, gy)) * params.chroma_denoise * params.scale_factor;
+        let keep = smoothstep(CHROMA_EDGE_LO, CHROMA_EDGE_HI, g);
+        let current_lab = rgb_to_lab(color);
+        let ab = low + keep * (current_lab.yz - low);
+        color = lab_to_rgb(vec3<f32>(current_lab.x, ab.x, ab.y));
+    }
+
+    // 2. Saturation: the Oklab chroma scale, with the pixel's own L* put back, so the sharpen
+    // state below stays valid. Then the skin chroma rein, which runs at saturation 1.0 too.
+    if (params.saturation != 1.0 || params.skin_protection > 0.0) {
+        var lab = rgb_to_lab(color);
+        if (params.saturation != 1.0) {
+            lab = vec3<f32>(lab.x, rgb_to_lab(oklab_saturate(color, params.saturation)).yz);
+        }
+        if (params.skin_protection > 0.0) {
+            lab = skin_chroma_rein(lab, params.skin_protection);
+        }
+        color = lab_to_rgb(lab);
+    }
+
+    // 3. Sharpening — sharpen_tex holds precomputed state from the h/v (USM) or
+    // rl_*.wgsl (deconvolution) passes over input_tex, which the earlier
+    // chroma/saturation stages never touch in L*/Y (they only rewrite
+    // a*/b*), so the state matches what `color` would produce.
+    let masking = select(params.sharpen_masking, auto_mask[0], params.auto_masking > 0.5);
+    if (params.sharpen > 0.0 && params.sharpen_method < 0.5) {
+        // Unsharp mask — mirrors apply_usm_sharpening in logic.py.
+        let blur_l = textureLoad(sharpen_tex, coords, 0).x;
+        let current_lab = rgb_to_lab(color);
+        let diff = current_lab.x - blur_l;
+        let gate = smoothstep(SHARPEN_GATE_LO, SHARPEN_GATE_HI, abs(diff));
+        var gain = params.sharpen * 2.5 * gate * sharpen_shadow_gain(current_lab.x);
+
+        // Local 3x3 stats over the original L* (sharpen_tex.y), clamped coords —
+        // matches the CPU's BORDER_REPLICATE erode/dilate and boxed gradient.
+        var l_min = 1e9;
+        var l_max = -1e9;
+        var grad_box = 0.0;
+        for (var j = -1; j <= 1; j++) {
+            for (var i = -1; i <= 1; i++) {
+                let p = clamp(coords + vec2<i32>(i, j), vec2<i32>(0), vec2<i32>(dims) - 1);
+                let lv = textureLoad(sharpen_tex, p, 0).y;
+                l_min = min(l_min, lv);
+                l_max = max(l_max, lv);
+                if (masking > 0.0) {
+                    let px = clamp(p + vec2<i32>(1, 0), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let mx = clamp(p - vec2<i32>(1, 0), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let py = clamp(p + vec2<i32>(0, 1), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let my = clamp(p - vec2<i32>(0, 1), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let gx = (textureLoad(sharpen_tex, px, 0).y - textureLoad(sharpen_tex, mx, 0).y) * 0.5;
+                    let gy = (textureLoad(sharpen_tex, py, 0).y - textureLoad(sharpen_tex, my, 0).y) * 0.5;
+                    grad_box += sqrt(gx * gx + gy * gy);
+                }
+            }
+        }
+
+        // Edge mask: sharpening ramps in with local gradient; higher masking
+        // raises the bar, protecting flat areas (sky, skin, grain).
+        if (masking > 0.0) {
+            let t = SHARPEN_MASK_T_HI * masking;
+            gain = gain * smoothstep(0.5 * t, t, grad_box / 9.0);
+        }
+
+        // Overshoot clamp to the local range kills halos; tighter above than
+        // below because L*-domain USM exaggerates light halos.
+        var l_new = current_lab.x + diff * gain;
+        l_new = clamp(l_new, l_min - SHARPEN_OVERSHOOT_DARK, l_max + SHARPEN_OVERSHOOT_LIGHT);
+        l_new = clamp(l_new, 0.0, 100.0);
+        color = lab_to_rgb(vec3<f32>(l_new, current_lab.y, current_lab.z));
+    } else if (params.sharpen > 0.0) {
+        // Richardson-Lucy — mirrors apply_rl_sharpening in logic.py. sharpen_tex
+        // is (deconvolved Y, observed Y); apply the luminance ratio to RGB
+        // (chroma-preserving), gated by the shared edge mask over L*(obs).
+        let d = textureLoad(sharpen_tex, coords, 0);
+        var gain = params.sharpen * sharpen_shadow_gain(lab_l_from_y(d.y));
+        if (masking > 0.0) {
+            var grad_box = 0.0;
+            for (var j = -1; j <= 1; j++) {
+                for (var i = -1; i <= 1; i++) {
+                    let p = clamp(coords + vec2<i32>(i, j), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let px = clamp(p + vec2<i32>(1, 0), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let mx = clamp(p - vec2<i32>(1, 0), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let py = clamp(p + vec2<i32>(0, 1), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let my = clamp(p - vec2<i32>(0, 1), vec2<i32>(0), vec2<i32>(dims) - 1);
+                    let gx = (lab_l_from_y(textureLoad(sharpen_tex, px, 0).y) - lab_l_from_y(textureLoad(sharpen_tex, mx, 0).y)) * 0.5;
+                    let gy = (lab_l_from_y(textureLoad(sharpen_tex, py, 0).y) - lab_l_from_y(textureLoad(sharpen_tex, my, 0).y)) * 0.5;
+                    grad_box += sqrt(gx * gx + gy * gy);
+                }
+            }
+            let t = SHARPEN_MASK_T_HI * masking;
+            gain = gain * smoothstep(0.5 * t, t, grad_box / 9.0);
+        }
+        let ratio = d.x / max(d.y, RL_EPS);
+        color = color * max(1.0 + (ratio - 1.0) * gain, 0.0);
+    }
+
+    // 4. Glow and Halation: each I + a·(K*L − L). One 64-tap disc per Gaussian, out to three of
+    // its sigmas, offsets rounded to texels and normalized over the taps.
+    if (params.glow_amount > 0.0 || params.halation_strength > 0.0) {
+        if (params.glow_amount > 0.0) {
+            var spread = vec3<f32>(0.0);
+            for (var k = 0; k < 4; k++) {
+                let s = GLOW_PSF[k].y * params.frame_short_px;
+                var acc = vec3<f32>(0.0);
+                var sum = 0.0;
+                for (var tap = 0; tap < 64; tap++) {
+                    let off = vec2<i32>(round(FIBONACCI_64[tap] * (3.0 * s)));
+                    let d = vec2<f32>(off);
+                    let g = exp(-dot(d, d) / (2.0 * s * s));
+                    acc += glow_light(clamp(coords + off, vec2<i32>(0), vec2<i32>(dims) - 1)) * g;
+                    sum += g;
+                }
+                spread += acc * (GLOW_PSF[k].x / max(sum, 1e-6));
+            }
+            color = color + params.glow_amount * (spread - glow_light(coords));
+        }
+
+        // One disc per bounce: a shared one undersamples the narrow first bounce.
+        if (params.halation_strength > 0.0) {
+            var spread = vec3<f32>(0.0);
+            for (var k = 0; k < 3; k++) {
+                let s = HALATION_BOUNCES[k].y * HALATION_SIGMA * params.frame_short_px;
+                var acc = vec3<f32>(0.0);
+                var sum = 0.0;
+                for (var tap = 0; tap < 64; tap++) {
+                    let off = vec2<i32>(round(FIBONACCI_64[tap] * (3.0 * s)));
+                    let d = vec2<f32>(off);
+                    let g = exp(-dot(d, d) / (2.0 * s * s));
+                    acc += load_lin(clamp(coords + off, vec2<i32>(0), vec2<i32>(dims) - 1)) * g;
+                    sum += g;
+                }
+                spread += acc * (HALATION_BOUNCES[k].x / max(sum, 1e-6));
+            }
+            let a = vec3<f32>(params.halation_r, params.halation_g, params.halation_b);
+            color = color + a * (spread - load_lin(coords));
+        }
+    }
+
+    textureStore(output_tex, coords, vec4<f32>(clamp(color, vec3<f32>(0.0), vec3<f32>(1.0)), 1.0));
+}
