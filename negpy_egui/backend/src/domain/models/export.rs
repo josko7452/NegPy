@@ -244,6 +244,52 @@ impl Default for ExportPreset {
     }
 }
 
+impl ExportPreset {
+    /// The export config this preset asks for, over `base`.
+    ///
+    /// A preset stores only the export fields it owns. The destination follows its
+    /// output mode: a fixed folder wins, else the subfolder of the source.
+    #[must_use]
+    pub fn apply_to(&self, base: &ExportConfig, source_dir: &std::path::Path) -> ExportConfig {
+        let mut config = base.clone();
+        config.export_fmt = self.export_fmt;
+        config.export_bit_depth = self.export_bit_depth;
+        config.jpeg_quality = self.jpeg_quality;
+        config.jpeg_progressive = self.jpeg_progressive;
+        config.tiff_compression = self.tiff_compression;
+        config.png_compress_level = self.png_compress_level;
+        config.jxl_lossless = self.jxl_lossless;
+        config.jxl_distance = self.jxl_distance;
+        config.jxl_effort = self.jxl_effort;
+        config.webp_quality = self.webp_quality;
+        config.webp_lossless = self.webp_lossless;
+        config.webp_method = self.webp_method;
+        config.export_resolution_mode = self.export_resolution_mode;
+        config.paper_aspect_ratio = self.paper_aspect_ratio.clone();
+        config.export_print_size = self.export_print_size;
+        config.export_dpi = self.export_dpi;
+        config.export_target_long_edge_px = self.export_target_long_edge_px;
+        config.filename_pattern = self.filename_pattern.clone();
+        config.overwrite = self.overwrite;
+        config.output_mode = self.output_mode;
+        config.output_subfolder = self.output_subfolder.clone();
+        config.export_color_space = self.export_color_space.clone();
+        config.icc_input_path = self.icc_input_path.clone();
+        config.icc_output_path = self.icc_output_path.clone();
+        config.export_path = match self.output_mode {
+            ExportPresetOutputMode::Absolute => self.output_path.clone(),
+            ExportPresetOutputMode::SubfolderOfSource if !self.output_subfolder.is_empty() => {
+                source_dir
+                    .join(&self.output_subfolder)
+                    .display()
+                    .to_string()
+            }
+            _ => source_dir.display().to_string(),
+        };
+        config
+    }
+}
+
 /// The preset list/checkbox label, flagging flat-master presets.
 #[must_use]
 pub fn preset_display_name(preset: &ExportPreset) -> String {
@@ -259,6 +305,38 @@ pub fn preset_display_name(preset: &ExportPreset) -> String {
 pub fn preset_from_dict(value: &Value) -> ExportPreset {
     let map = value.as_object().cloned().unwrap_or_default();
     crate::domain::models::build_lenient(&map)
+}
+
+#[cfg(test)]
+mod preset_export_tests {
+    use super::*;
+
+    #[test]
+    fn a_preset_overlays_its_export_fields_and_its_folder() {
+        let base = ExportConfig::default();
+        let preset = ExportPreset {
+            export_fmt: ExportFormat::Webp,
+            jpeg_quality: 70,
+            output_mode: ExportPresetOutputMode::SubfolderOfSource,
+            output_subfolder: "web".to_string(),
+            ..ExportPreset::default()
+        };
+        let applied = preset.apply_to(&base, std::path::Path::new("/roll"));
+        assert_eq!(applied.export_fmt, ExportFormat::Webp);
+        assert_eq!(applied.jpeg_quality, 70);
+        assert_eq!(applied.export_path, "/roll/web");
+    }
+
+    #[test]
+    fn a_fixed_folder_preset_keeps_its_path() {
+        let preset = ExportPreset {
+            output_mode: ExportPresetOutputMode::Absolute,
+            output_path: "/prints".to_string(),
+            ..ExportPreset::default()
+        };
+        let applied = preset.apply_to(&ExportConfig::default(), std::path::Path::new("/roll"));
+        assert_eq!(applied.export_path, "/prints");
+    }
 }
 
 fn new_preset_id() -> String {

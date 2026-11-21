@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 05:25 | **Last Commit:** `pending metadata: apply a preset to the roll`
+**Last Updated:** 2026-11-22 05:50 | **Last Commit:** `pending export: run a saved preset on the strip`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -20,7 +20,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
    adapter and no capture worker. A human must choose the hardware target.
 3. [ ] Pick Dmin and Dmax by hand on the canvas (store, clear and marker landed; the Python uncropped pick view is not ported).
 4. [ ] Metadata Presets: apply to the open frame or the whole roll (landed; a multi-frame selection is still not modelled).
-5. [ ] Export presets: run a preset on the selected frames or the roll.
+5. [ ] Export presets: run a preset on the strip (landed; the Presets page runs one selected preset).
 6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back.
 7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard.
 8. [ ] Frame Favorites: the stored slider list and its editor.
@@ -32,6 +32,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   canvas paints each picked point with its label.
 - `metadata`: the Presets page takes an Apply to Frame or Roll choice and writes
   the stored fields over every other frame of the roll.
+- `export`: Export to Preset runs the selected preset on every non-rejected
+  frame, with the preset's encoder fields and destination.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and

@@ -75,6 +75,8 @@ pub struct ExportState {
     /// The selected preset's enabled state while the row is edited.
     pub preset_enabled: bool,
     pub delete_preset_requested: bool,
+    /// The selected preset the user asked to run on the strip.
+    pub run_preset_requested: bool,
     pub toggle_preset: Option<(usize, bool)>,
     /// The selected preset's name when the row was opened, for the rename check.
     pub preset_original_name: String,
@@ -182,6 +184,7 @@ impl Default for ExportState {
             preset_name: String::new(),
             preset_enabled: true,
             delete_preset_requested: false,
+            run_preset_requested: false,
             toggle_preset: None,
             preset_original_name: String::new(),
             status: String::new(),
@@ -300,6 +303,13 @@ impl ExportState {
     /// Take the one Delete Preset request for the selected row.
     pub fn take_delete_preset_request(&mut self) -> Option<usize> {
         self.delete_preset_requested
+            .then(|| self.selected_preset)
+            .flatten()
+    }
+
+    /// Take the one Run request for the selected preset.
+    pub fn take_run_preset_request(&mut self) -> Option<usize> {
+        std::mem::take(&mut self.run_preset_requested)
             .then(|| self.selected_preset)
             .flatten()
     }
@@ -656,6 +666,10 @@ impl ExportState {
                         self.delete_preset_requested = true;
                         changed = true;
                     }
+                    if labeled_action(ui, "Export to Preset...", ActionRank::Normal).clicked() {
+                        self.run_preset_requested = true;
+                        changed = true;
+                    }
                 });
             }
         }
@@ -955,6 +969,15 @@ mod tests {
         assert_eq!(preset.export_fmt, ExportFormat::Tiff);
         assert_eq!(preset.jpeg_quality, 77);
         assert_eq!(preset.output_subfolder, "out");
+    }
+
+    #[test]
+    fn the_run_button_leaves_one_request_for_the_selected_preset() {
+        let mut state = ExportState::default();
+        state.selected_preset = Some(1);
+        state.run_preset_requested = true;
+        assert_eq!(state.take_run_preset_request(), Some(1));
+        assert_eq!(state.take_run_preset_request(), None);
     }
 
     #[test]

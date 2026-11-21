@@ -19,6 +19,8 @@ use negpy_backend::services::export::service::write_export;
 pub struct ExportRequest {
     pub paths: Vec<PathBuf>,
     pub configs: Vec<WorkspaceConfig>,
+    /// The export config each path writes with, when it is not the frame's own.
+    pub preset_exports: Vec<Option<negpy_backend::domain::models::ExportConfig>>,
     pub color_space: String,
     pub user_icc_dir: PathBuf,
 }
@@ -93,10 +95,12 @@ impl Drop for ExportWorker {
 #[must_use]
 pub fn run_export(request: &ExportRequest, engine: &mut DarkroomEngine) -> ExportReport {
     let mut report = ExportReport::default();
-    for (path, config) in request.paths.iter().zip(&request.configs) {
+    for (index, (path, config)) in request.paths.iter().zip(&request.configs).enumerate() {
+        let preset = request.preset_exports.get(index).and_then(Option::as_ref);
         match export_one(
             path,
             config,
+            preset,
             &request.color_space,
             &request.user_icc_dir,
             engine,
@@ -111,16 +115,21 @@ pub fn run_export(request: &ExportRequest, engine: &mut DarkroomEngine) -> Expor
 fn export_one(
     path: &Path,
     config: &WorkspaceConfig,
+    preset: Option<&negpy_backend::domain::models::ExportConfig>,
     color_space: &str,
     user_icc_dir: &Path,
     engine: &mut DarkroomEngine,
 ) -> Result<PathBuf, String> {
-    let render = render_export_file(path, config, Some(color_space), engine)?;
+    let mut frame = config.clone();
+    if let Some(preset) = preset {
+        frame.export = preset.clone();
+    }
+    let render = render_export_file(path, &frame, Some(color_space), engine)?;
     let written = write_export(
         &ImageBuffer::from_rgb(render.image.width, render.image.height, render.image.pixels),
         path,
-        &config.export,
-        config,
+        &frame.export,
+        &frame,
         &render.color_space,
         user_icc_dir,
     )?;
@@ -153,6 +162,7 @@ mod tests {
         let request = ExportRequest {
             paths: Vec::new(),
             configs: Vec::new(),
+            preset_exports: Vec::new(),
             color_space: "sRGB".to_string(),
             user_icc_dir: PathBuf::new(),
         };
@@ -173,6 +183,7 @@ mod tests {
         let request = ExportRequest {
             paths: vec![PathBuf::from("/missing/frame.dng")],
             configs: vec![WorkspaceConfig::default()],
+            preset_exports: vec![None],
             color_space: "sRGB".to_string(),
             user_icc_dir: PathBuf::new(),
         };

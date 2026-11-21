@@ -672,16 +672,78 @@ impl NegFeApp {
             return;
         }
         let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let count = paths.len();
         self.rail.export_status.running = true;
         self.rail.export_status.failed = false;
         self.rail.export_status.message = format!(
             "Exporting {}...",
-            crate::view::rail::count_of(paths.len(), "frame")
+            crate::view::rail::count_of(count, "frame")
         );
         self.exporter.submit(ExportRequest {
             paths,
             configs,
+            preset_exports: vec![None; count],
             color_space: self.edit.config.export.export_color_space.clone(),
+            user_icc_dir: std::path::PathBuf::from(app.user_icc_dir),
+        });
+        ctx.request_repaint();
+    }
+
+    /// Run the chosen preset on every non-rejected frame of the strip.
+    fn run_export_preset(&mut self, ctx: &egui::Context) {
+        let Some(index) = self.rail.export.take_run_preset_request() else {
+            return;
+        };
+        let Some(preset) = self.rail.export.presets.get(index).cloned() else {
+            return;
+        };
+        let Some(profile) = self.profile.clone() else {
+            self.rail.export_status.failed = true;
+            self.rail.export_status.message = "Open a profile first.".to_string();
+            return;
+        };
+        let mut paths = Vec::new();
+        let mut configs = Vec::new();
+        for frame in &self.strip {
+            let Some(path) = &frame.path else {
+                continue;
+            };
+            if crate::frame_source::stored_mark(Some(&profile), path).as_deref() == Some("excluded")
+            {
+                continue;
+            }
+            paths.push(path.clone());
+            configs.push(crate::frame_source::stored_config(Some(&profile), path));
+        }
+        if paths.is_empty() {
+            self.rail.export_status.failed = true;
+            self.rail.export_status.message = "No frames to export.".to_string();
+            return;
+        }
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let preset_exports = paths
+            .iter()
+            .zip(&configs)
+            .map(|(path, config)| {
+                Some(preset.apply_to(
+                    &config.export,
+                    path.parent().unwrap_or(std::path::Path::new(".")),
+                ))
+            })
+            .collect();
+        let count = paths.len();
+        self.rail.export_status.running = true;
+        self.rail.export_status.failed = false;
+        self.rail.export_status.message = format!(
+            "Exporting {} with {}...",
+            crate::view::rail::count_of(count, "frame"),
+            preset.name
+        );
+        self.exporter.submit(ExportRequest {
+            paths,
+            configs,
+            preset_exports,
+            color_space: preset.export_color_space.clone(),
             user_icc_dir: std::path::PathBuf::from(app.user_icc_dir),
         });
         ctx.request_repaint();
@@ -1623,6 +1685,7 @@ impl NegFeApp {
             self.request_export(ctx);
             self.update_export_presets();
             self.save_export_preset();
+            self.run_export_preset(ctx);
             self.request_scan(ctx);
             self.open_scan_folder();
             let proof = self.proof.clone();
