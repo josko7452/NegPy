@@ -179,3 +179,36 @@ fn the_toning_shader_keeps_its_bits() {
     );
     assert_eq!(hash(&read(&output, &gpu)), "cfd86f63ff1ce507");
 }
+
+#[test]
+fn the_lab_shader_keeps_its_bits() {
+    let Some(gpu) = device() else {
+        return;
+    };
+    let (width, height) = (32, 24);
+    let pixels = frame(width, height);
+    let config = negpy_backend::domain::models::LabConfig {
+        saturation: 1.2,
+        sharpen: 0.6,
+        sharpen_masking: 0.0,
+        chroma_denoise: 0.0,
+        ..negpy_backend::domain::models::LabConfig::default()
+    };
+    let source = GpuTexture::new(&gpu.device, width as u32, height as u32, "encoded");
+    source.upload(&gpu.queue, &pixels, false);
+    let output = GpuTexture::new(&gpu.device, width as u32, height as u32, "lab");
+    let _ = negpy_backend::features::lab::lab_shader::run(
+        &gpu,
+        &ShaderLoader::default(),
+        &source,
+        &output,
+        &config,
+        negpy_backend::features::lab::lab_shader::LabRun {
+            mono: false,
+            scale_factor: 1.0,
+            auto_masking: None,
+        },
+        &negpy_backend::infrastructure::gpu::resources::TexturePool::default(),
+    );
+    assert_eq!(hash(&read(&output, &gpu)), "0f912719594648be");
+}

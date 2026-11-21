@@ -1,10 +1,10 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 22:05 | **Last Commit:** `f82cfcad backend: pin GPU shader output bits`
+**Last Updated:** 2026-11-22 00:20 | **Last Commit:** `8e1e2d23 lab: measure auto masking on the GPU`
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
-the device, resources, five shaders and a prefix chain with parity tests. Next
-is the GPU audit's G-2 and G-3 in `MIGRATION_PLAN.md` §9.12, then its G-1.
+Port `negpy/` to Rust in `negpy_egui/`. The eighth batch closed the CLAHE
+blocker and moved CLAHE, Lab and toning onto the GPU tail, with the crop fused
+into toning. The finish stage and the alt-process passes stay on the CPU.
 
 ## Batch Protocol
 After commit #10, run the source audit in `MIGRATION_PLAN.md` §8.7. Write its
@@ -12,25 +12,35 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: reconcile the CLAHE tile rule before porting it. The CPU bins with
-   `ceil` spans and `x / tsx`; the shader bins with `(dims + 7) / 8` and
-   `wid * tile_size`. See §9.12.
-2. [ ] GPU: add the tiled export path (§9.12 G-4).
-3. [ ] GPU: port the Lab, toning and carrier passes so the chain replaces the
-   rest of the tail (§9.12 G-1, G-3).
+1. [ ] GPU: port the finish and carrier passes so the chain replaces the
+   whole tail (§9.12 G-1).
+2. [ ] GPU: port the alt-process and RL sharpen passes, then drop the
+   alt-process eligibility gate.
+3. [ ] GPU: add the tiled export path (§9.12 G-4).
 4. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
    (§9.11 C2-1).
-5. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
+6. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
    then analyze an accepted scene (§9.11 C2-3).
-6. [ ] Metadata Presets: honour a multi-frame selection and card locks
+7. [ ] Metadata Presets: honour a multi-frame selection and card locks
    (§9.11 C2-4).
-7. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
+8. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
    clickable (§9.11 C2-5).
-8. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
-9. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
-10. [ ] Camera capture: blocked until a human picks the hardware target.
+9. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
+10. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
+11. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: the CLAHE passes run on the GPU. The empty-tile CDF divides by one,
+  so a dimension that is not a multiple of 8 no longer blends NaN.
+- `backend`: the Lab pass and its sharpen and chroma low-pass preconditions run
+  on the GPU.
+- `backend`: the toning pass runs on the GPU and performs the crop, as upstream.
+- `backend`: the GPU tail now runs print, CLAHE, Lab and toning, and a cropped
+  frame matches the CPU engine.
+- `backend`: a cropped GPU frame was cropped twice; the chain now crops once.
+- `backend`: the GPU worker meters through the crop window, matching the CPU.
+- `backend`: auto masking measures its grain on the device in two passes.
+- `backend`: an alt-process frame stays on the CPU engine.
 - `backend`: the GPU print, per-channel print and vignette passes have pinned
   output hashes, and a transfer-path camera matrix matches the core.
 - `backend`: the GPU engine keeps the geometry and normalization textures until
@@ -52,30 +62,15 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   parity tests.
 - `backend`: the GPU chain runs the prefix over one texture chain and reads
   `use_gpu` before it opens a device.
-- `desktop`: History shows its two real cards; the duplicate Metering card and
-  the placeholder painter are gone.
-- `favourites`: the Favorites page lists seven Exposure sliders, saves the
-  chosen ids under `favourite_sliders` and mirrors their values.
-- `roll-analysis`: Detect measures each strip frame's neutral axis, groups the
-  frames under another light and Accept writes each group as a scene.
-- `contact-sheet`: Pick Frames lists the strip; a left-out frame leaves the
-  entries, the page plan and the export.
-- `export`: Export to Preset runs the selected preset on the non-rejected
-  strip, with the preset's encoder fields and destination.
-- `metadata`: the Presets page takes an Apply to Frame or Roll choice.
-- `desktop`: a set Dmin or Dmax has a clear button, and the canvas paints each
-  picked point with its label.
-- `desktop`: a Dmin or Dmax click samples the unmixed log patch, stores the
-  manual bound and its point, clears the stored bounds and disarms.
-- `backend`: `sample_log_patch` reads the unmixed log density under a point.
-- Earlier batches: crosstalk, preset, culling, crop-guide and export forms,
-  analysis scopes, local masks, crop confirm, Undo/Redo, zoom, Tools, Print,
-  Roll Average, Crop All, Find and the recipe line.
+- Earlier batches: History cards, Favorites, Detect Scenes, Contact Sheet,
+  Export to Preset, Metadata Presets, Dmin/Dmax picks, crosstalk, culling,
+  analysis scopes, local masks, crop confirm, Undo/Redo and zoom.
 
 ## Verification
-- This batch stopped after eight commits. `cargo test --workspace`,
-  `cargo check --workspace` and `cargo fmt --all --check` pass. The GPU parity
-  tests ran on the local Vulkan adapter and skip without one.
+- `cargo check --workspace`, `cargo test --workspace` and
+  `cargo fmt --all --check` pass. `timing::tests` is a wall-clock test that
+  flakes under load and passes alone. The GPU parity tests ran on the local
+  Vulkan adapter and skip without one.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
@@ -91,7 +86,10 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   score is a diagnostic.
 - Deferred: Film Strip cells, canvas bar segments, Contact Sheet tile metrics,
   exact font widths and sub-4px spacing.
-- `MIGRATION_PLAN.md` section 9 is the gap register; §9.12 is the sixth audit.
+- `MIGRATION_PLAN.md` section 9 is the gap register; §9.12 holds the CLAHE
+  resolution. The empty tile row is why the CDF divides by `max(total, 1)`.
+- The Lab pass decodes its encoded input and writes scene-linear pixels.
+  Toning reads linear at `crop_offset`; finish reads the cropped frame.
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
