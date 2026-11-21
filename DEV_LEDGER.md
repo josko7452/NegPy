@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 21:45 | **Last Commit:** `pending GPU pins`
+**Last Updated:** 2026-11-21 22:05 | **Last Commit:** `f82cfcad backend: pin GPU shader output bits`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -12,20 +12,23 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: add the tiled export path (§9.12 G-4).
-2. [ ] GPU: port the CLAHE, Lab, toning and carrier passes so the chain
-   replaces the rest of the tail (§9.12 G-1, G-3).
-3. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
+1. [ ] GPU: reconcile the CLAHE tile rule before porting it. The CPU bins with
+   `ceil` spans and `x / tsx`; the shader bins with `(dims + 7) / 8` and
+   `wid * tile_size`. See §9.12.
+2. [ ] GPU: add the tiled export path (§9.12 G-4).
+3. [ ] GPU: port the Lab, toning and carrier passes so the chain replaces the
+   rest of the tail (§9.12 G-1, G-3).
+4. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
    (§9.11 C2-1).
-4. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
+5. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
    then analyze an accepted scene (§9.11 C2-3).
-5. [ ] Metadata Presets: honour a multi-frame selection and card locks
+6. [ ] Metadata Presets: honour a multi-frame selection and card locks
    (§9.11 C2-4).
-6. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
+7. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
    clickable (§9.11 C2-5).
-7. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
-8. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
-9. [ ] Camera capture: blocked until a human picks the hardware target.
+8. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
+9. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
+10. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
 - `backend`: the GPU print, per-channel print and vignette passes have pinned
@@ -70,9 +73,9 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   Roll Average, Crop All, Find and the recipe line.
 
 ## Verification
-- This batch: `cargo test --workspace`, `cargo check --workspace` and
-  `cargo fmt --all --check` pass after the ten commits. The GPU parity tests
-  ran on the local Vulkan adapter and skip without one.
+- This batch stopped after eight commits. `cargo check --workspace` and the
+  targeted GPU tests pass. The full suite was stopped while relinking tests,
+  so the next session must run `cargo test --workspace` before commit 9.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
@@ -97,8 +100,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 - Detect decodes the strip in `update`; see C2-2 before a long roll.
 - Retouch bakes are wired ahead of both engines; the scopes are binned from the
   display and normalized frames.
-- `negpy_egui` holds five ported WGSL shaders. The other 28 upstream shaders
-  have no Rust pass, and the desktop worker still renders on the CPU.
+- `negpy_egui` holds eight ported WGSL shaders. The other 25 upstream shaders
+  have no Rust pass. The worker uses the GPU only for an eligible print frame.
 - The GPU chain reads CPU-measured bounds. The meters themselves are not on the
   GPU, so a GPU-only run would need the measurement pass first.
 - `GpuTexture::readback` waits on the queue; no pipelining or stage cache exists.
