@@ -1208,6 +1208,7 @@ impl NegFeApp {
     /// Show the roll's thumbnails in the Film Strip.
     pub fn set_strip(&mut self, strip: Vec<FrameImage>) {
         self.strip_textures.clear();
+        self.rail.strip_names = strip.iter().map(|frame| frame.name.clone()).collect();
         self.strip = strip;
         self.selected = 0;
     }
@@ -1887,6 +1888,18 @@ impl NegFeApp {
             self.rendered = None;
             ctx.request_repaint();
         }
+        if self.rail.roll_analysis.take_detect() {
+            self.detect_scenes();
+        }
+        if self.rail.roll_analysis.take_accept() {
+            self.accept_scenes();
+            self.requested = None;
+            self.rendered = None;
+            ctx.request_repaint();
+        }
+        if self.rail.roll_analysis.take_discard() {
+            self.rail.roll_analysis.found.clear();
+        }
     }
 
     /// Save the open frame's own measurement as the roll baseline, then load it back.
@@ -1938,6 +1951,112 @@ impl NegFeApp {
         self.requested = None;
         self.rendered = None;
         ctx.request_repaint();
+    }
+
+    /// Group the strip by light for Roll Analysis Detect.
+    fn detect_scenes(&mut self) {
+        let Some(profile) = self.profile.clone() else {
+            return;
+        };
+        let mut axes = Vec::with_capacity(self.strip.len());
+        for frame in &self.strip {
+            let Some(path) = frame.path.as_deref() else {
+                axes.push(None);
+                continue;
+            };
+            let Ok((source, config)) =
+                crate::frame_source::load_linear_source(path, Some(&profile), 1600)
+            else {
+                axes.push(None);
+                continue;
+            };
+            let processed = negpy_backend::features::geometry::processor::process(
+                &source.image,
+                &config.geometry,
+                negpy_backend::features::geometry::processor::GeometryContext {
+                    scale_factor: source.image.height.max(source.image.width) as f64 / 4000.0,
+                },
+            );
+            let width = processed.image.width;
+            let height = processed.image.height;
+            let (grid, grid_width, grid_height) =
+                negpy_backend::features::exposure::metering::analysis_grid(
+                    &processed.image.pixels,
+                    width,
+                    height,
+                    None,
+                    config.process.analysis_buffer,
+                );
+            let unmix = negpy_backend::features::exposure::metering::effective_crosstalk_matrix(
+                &config.process,
+                Some(config.process.process_mode),
+            );
+            let grid = negpy_backend::features::exposure::metering::unmix_log_image(&grid, unmix);
+            let bounds =
+                negpy_backend::features::exposure::normalization::analyze_log_exposure_bounds(
+                    &grid,
+                    config.process.luma_range_clip,
+                    config.process.color_range_clip,
+                );
+            axes.push(
+                negpy_backend::features::exposure::metering::measure_neutral_axis(
+                    &grid,
+                    grid_width,
+                    grid_height,
+                    bounds,
+                    true,
+                )
+                .map(|axis| {
+                    negpy_backend::features::exposure::normalization::SceneAxis {
+                        mid: axis.mid,
+                        shadow: axis.shadow,
+                        confidence: axis.confidence,
+                    }
+                }),
+            );
+        }
+        self.rail.roll_analysis.found =
+            negpy_backend::features::exposure::normalization::detect_light_groups(&axes);
+        self.rail.roll_analysis.open = true;
+    }
+
+    /// Write each found group as a scene of the open roll.
+    fn accept_scenes(&mut self) {
+        let Some(profile) = self.profile.clone() else {
+            return;
+        };
+        let Some(roll_id) = self.rail.roll_analysis.roll_id.clone() else {
+            return;
+        };
+        let found = std::mem::take(&mut self.rail.roll_analysis.found);
+        if found.is_empty() {
+            return;
+        }
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app.edits_db_path,
+            app.settings_db_path,
+        );
+        let names = negpy_backend::services::assets::rolls::next_scene_names(
+            &repo,
+            Some(&roll_id),
+            found.len(),
+        );
+        for (group, name) in found.iter().zip(names) {
+            let hashes: Vec<String> = group
+                .iter()
+                .filter_map(|index| self.strip.get(*index))
+                .filter_map(|frame| frame.path.as_deref())
+                .filter_map(|path| {
+                    negpy_backend::infrastructure::storage::local_asset_store::file_hash(path).ok()
+                })
+                .collect();
+            if hashes.len() >= 2 {
+                negpy_backend::services::assets::rolls::create_scene(
+                    &mut repo, &roll_id, &name, &hashes,
+                );
+            }
+        }
     }
 
     fn open_requested_roll(&mut self) {
@@ -3061,6 +3180,48 @@ mod tests {
         assert_eq!(other.metadata.camera_model, "Leica M3");
         let untouched = crate::frame_source::stored_config(Some(dir.path()), &photos[0]);
         assert!(untouched.metadata.camera_model.is_empty());
+    }
+
+    #[test]
+    fn accepting_found_scenes_writes_them_to_the_roll() {
+        let dir = tempfile::tempdir().unwrap();
+        let photos: Vec<std::path::PathBuf> = (0..3)
+            .map(|index| {
+                let path = dir.path().join(format!("frame{index}.orf"));
+                std::fs::write(&path, format!("frame {index}")).unwrap();
+                path
+            })
+            .collect();
+        let app_config = negpy_backend::domain::types::AppConfig::for_user_dir(dir.path());
+        let mut repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
+            app_config.edits_db_path.clone(),
+            app_config.settings_db_path.clone(),
+        );
+        repo.initialize().unwrap();
+        let roll_id = negpy_backend::services::assets::rolls::create_virtual_roll(
+            &mut repo,
+            "Roll",
+            &photos
+                .iter()
+                .map(|path| path.display().to_string())
+                .collect::<Vec<_>>(),
+        );
+        let mut app = NegFeApp::for_capture("roll", "", "metering", "canvas", 0.0);
+        app.profile = Some(dir.path().to_path_buf());
+        app.settings = Some(repo);
+        app.rail.roll_analysis.roll_id = Some(roll_id.clone());
+        app.set_strip(
+            photos
+                .iter()
+                .map(|path| crate::frame_source::FrameImage::empty().with_path(path))
+                .collect(),
+        );
+        app.rail.roll_analysis.found = vec![vec![1, 2]];
+        app.accept_scenes();
+        let repo = app.settings.as_ref().unwrap();
+        let scenes = negpy_backend::services::assets::rolls::roll_scenes(repo, Some(&roll_id));
+        assert_eq!(scenes.len(), 1);
+        assert!(app.rail.roll_analysis.found.is_empty());
     }
 
     #[test]

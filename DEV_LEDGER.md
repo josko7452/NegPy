@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 06:15 | **Last Commit:** `pending contact-sheet: leave frames off the sheet`
+**Last Updated:** 2026-11-22 06:45 | **Last Commit:** `pending roll: detect scenes by their light`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -22,7 +22,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 4. [ ] Metadata Presets: apply to the open frame or the whole roll (landed; a multi-frame selection is still not modelled).
 5. [ ] Export presets: run a preset on the strip (landed; the Presets page runs one selected preset).
 6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back (landed as a list in the dialog; the sheet tiles are not clickable yet).
-7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard.
+7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard (landed; it decodes the strip synchronously).
 8. [ ] Frame Favorites: the stored slider list and its editor.
 
 ## Completed (Recent)
@@ -36,6 +36,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   frame, with the preset's encoder fields and destination.
 - `contact-sheet`: Pick Frames toggles a frame list; a left-out frame leaves the
   sheet entries, the page plan and the export.
+- `roll-analysis`: Detect measures each strip frame's neutral axis, groups the
+  frames under another light and Accept writes each group as a scene.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and

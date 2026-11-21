@@ -595,3 +595,250 @@ pub fn expand_mask_plane(
     )?;
     Some(out)
 }
+
+/// A frame's neutral axis as the scene detector reads it: mid and shadow bands and a
+/// confidence. The highlight band is ignored because not every frame has one.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SceneAxis {
+    pub mid: [f64; 3],
+    pub shadow: [f64; 3],
+    pub confidence: f64,
+}
+
+/// Detect Scenes: one group of frame indices per light other than the roll's own, at least two
+/// frames, largest first. A frame's light is its midtone offset from the pooled axis at its own
+/// green. The largest group stays with the roll baseline.
+#[must_use]
+pub fn detect_light_groups(axes: &[Option<SceneAxis>]) -> Vec<Vec<usize>> {
+    const LIGHT_DISTANCE: f64 = 0.08;
+    const MIN_CONFIDENCE: f64 = 0.2;
+    const MEMBER_RADIUS: f64 = 0.05;
+    let usable: Vec<usize> = axes
+        .iter()
+        .enumerate()
+        .filter(|(_, axis)| axis.is_some_and(|axis| axis.confidence > MIN_CONFIDENCE))
+        .map(|(index, _)| index)
+        .collect();
+    if usable.len() < 2 {
+        return Vec::new();
+    }
+    let frames: Vec<SceneAxis> = usable.iter().filter_map(|index| axes[*index]).collect();
+    let pooled = pooled_axis(&frames);
+    let residuals: Vec<[f64; 2]> = frames
+        .iter()
+        .map(|axis| axis_curve_residuals(*axis, &pooled))
+        .collect();
+    let light: Vec<[f64; 3]> = residuals
+        .iter()
+        .map(|residual| [residual[0], 0.0, residual[1]])
+        .collect();
+    let smooth = smooth_along_scan_order(&light);
+    let mut groups = complete_linkage(&smooth, LIGHT_DISTANCE);
+    groups.sort_by_key(|group| (std::cmp::Reverse(group.len()), group[0]));
+    let mut found = Vec::new();
+    for group in groups.into_iter().skip(1) {
+        let center = median_point(&group.iter().map(|index| light[*index]).collect::<Vec<_>>());
+        let kept: Vec<usize> = group
+            .iter()
+            .copied()
+            .filter(|index| distance(light[*index], center) < MEMBER_RADIUS)
+            .collect();
+        if kept.len() >= 2 {
+            found.push(kept);
+        }
+    }
+    found.sort_by_key(|group| (std::cmp::Reverse(group.len()), group[0]));
+    found
+        .into_iter()
+        .map(|group| group.into_iter().map(|index| usable[index]).collect())
+        .collect()
+}
+
+fn distance(left: [f64; 3], right: [f64; 3]) -> f64 {
+    ((left[0] - right[0]).powi(2) + (left[1] - right[1]).powi(2) + (left[2] - right[2]).powi(2))
+        .sqrt()
+}
+
+fn median_point(points: &[[f64; 3]]) -> [f64; 3] {
+    let mut out = [0.0; 3];
+    for (channel, value) in out.iter_mut().enumerate() {
+        let mut values: Vec<f64> = points.iter().map(|point| point[channel]).collect();
+        values.sort_by(f64::total_cmp);
+        let middle = values.len() / 2;
+        *value = if values.len() % 2 == 0 {
+            (values[middle - 1] + values[middle]) / 2.0
+        } else {
+            values[middle]
+        };
+    }
+    out
+}
+
+/// A confidence-weighted median per band and channel. The highlight band pools out.
+fn pooled_axis(frames: &[SceneAxis]) -> [[f64; 3]; 2] {
+    let weighted = |channel: usize, band: fn(&SceneAxis) -> [f64; 3]| {
+        let mut values: Vec<(f64, f64)> = frames
+            .iter()
+            .map(|frame| (band(frame)[channel], frame.confidence))
+            .collect();
+        values.sort_by(|left, right| left.0.total_cmp(&right.0));
+        let total: f64 = values.iter().map(|(_, weight)| weight).sum();
+        let mut sum = 0.0;
+        for (value, weight) in &values {
+            sum += weight;
+            if sum >= total / 2.0 {
+                return *value;
+            }
+        }
+        values.last().map_or(0.0, |(value, _)| *value)
+    };
+    std::array::from_fn(|band| {
+        let read: fn(&SceneAxis) -> [f64; 3] = if band == 0 {
+            |axis| axis.mid
+        } else {
+            |axis| axis.shadow
+        };
+        std::array::from_fn(|channel| weighted(channel, read))
+    })
+}
+
+/// The R/B distance of each band from the pooled R/B-vs-G line, read at its own green.
+fn axis_curve_residuals(axis: SceneAxis, pooled: &[[f64; 3]; 2]) -> [f64; 2] {
+    let slope = |channel: usize| {
+        let (g0, v0) = (pooled[0][1], pooled[0][channel]);
+        let (g1, v1) = (pooled[1][1], pooled[1][channel]);
+        if (g1 - g0).abs() > 1e-6 {
+            (v1 - v0) / (g1 - g0)
+        } else {
+            0.0
+        }
+    };
+    let fit = |channel: usize, reference: f64| {
+        let base = pooled[0][channel] - pooled[0][1] + reference;
+        if (pooled[1][1] - pooled[0][1]).abs() <= 1e-6 {
+            return base;
+        }
+        pooled[0][channel] + (reference - pooled[0][1]) * slope(channel)
+    };
+    [
+        axis.mid[0] - fit(0, axis.mid[1]),
+        axis.mid[2] - fit(2, axis.mid[1]),
+    ]
+}
+
+fn smooth_along_scan_order(light: &[[f64; 3]]) -> Vec<[f64; 3]> {
+    const REACH: [f64; 3] = [1.5, 0.9, 0.45];
+    let n = light.len();
+    if n < 4 {
+        return light.to_vec();
+    }
+    let steps: Vec<f64> = light
+        .windows(2)
+        .map(|pair| distance(pair[0], pair[1]))
+        .collect();
+    let mut pairs = Vec::new();
+    for i in 0..n {
+        for j in i + 1..n {
+            pairs.push(distance(light[i], light[j]));
+        }
+    }
+    pairs.sort_by(f64::total_cmp);
+    let spread = pairs[pairs.len() / 2];
+    if spread <= 0.0 {
+        return light.to_vec();
+    }
+    let mut steps_sorted = steps.clone();
+    steps_sorted.sort_by(f64::total_cmp);
+    let median_step = steps_sorted[steps_sorted.len() / 2];
+    let evidence = (1.0 - median_step / spread).clamp(0.0, 1.0);
+    let mut out = light.to_vec();
+    for x in 0..n {
+        let mut total = light[x];
+        let mut weight = 1.0;
+        for (k, reach) in REACH.iter().enumerate() {
+            let k = k + 1;
+            for y in [x.checked_sub(k), Some(x + k)].into_iter().flatten() {
+                if y < n && distance(light[x], light[y]) < 0.08 {
+                    for channel in 0..3 {
+                        total[channel] += evidence * reach * light[y][channel];
+                    }
+                    weight += evidence * reach;
+                }
+            }
+        }
+        out[x] = total.map(|value| value / weight);
+    }
+    out
+}
+
+fn complete_linkage(points: &[[f64; 3]], cut: f64) -> Vec<Vec<usize>> {
+    let n = points.len();
+    let mut dist = vec![vec![f64::INFINITY; n]; n];
+    for i in 0..n {
+        for j in 0..n {
+            if i != j {
+                dist[i][j] = distance(points[i], points[j]);
+            }
+        }
+    }
+    let mut groups: Vec<Vec<usize>> = (0..n).map(|index| vec![index]).collect();
+    while n > 1 {
+        let mut best = (0, 0, f64::INFINITY);
+        for i in 0..n {
+            for j in i + 1..n {
+                if dist[i][j] < best.2 {
+                    best = (i, j, dist[i][j]);
+                }
+            }
+        }
+        if best.2 >= cut {
+            break;
+        }
+        let (i, j, _) = best;
+        let taken = std::mem::take(&mut groups[j]);
+        groups[i].extend(taken);
+        for k in 0..n {
+            dist[i][k] = dist[i][k].max(dist[j][k]);
+            dist[j][k] = f64::INFINITY;
+            dist[k][i] = dist[i][k];
+        }
+        dist[i][i] = f64::INFINITY;
+    }
+    groups.retain(|group| !group.is_empty());
+    for group in &mut groups {
+        group.sort_unstable();
+    }
+    groups
+}
+
+#[cfg(test)]
+mod scene_tests {
+    use super::*;
+
+    fn axis(light: f64) -> Option<SceneAxis> {
+        Some(SceneAxis {
+            mid: [0.55 + light, 0.55, 0.55 + light],
+            shadow: [0.75 + light, 0.75, 0.75 + light],
+            confidence: 0.9,
+        })
+    }
+
+    #[test]
+    fn one_group_under_another_light_is_found() {
+        let axes = vec![axis(0.0), axis(0.0), axis(0.0), axis(0.2), axis(0.2)];
+        let groups = detect_light_groups(&axes);
+        assert_eq!(groups, vec![vec![3, 4]]);
+    }
+
+    #[test]
+    fn one_light_across_the_roll_finds_no_scene() {
+        let axes = vec![axis(0.0), axis(0.0), axis(0.0), axis(0.0)];
+        assert!(detect_light_groups(&axes).is_empty());
+    }
+
+    #[test]
+    fn a_single_frame_is_no_scene() {
+        let axes = vec![axis(0.0), axis(0.2)];
+        assert!(detect_light_groups(&axes).is_empty());
+    }
+}

@@ -11,7 +11,9 @@ use crate::app::{Tab, ViewState};
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
-use crate::styles::templates::{ActionRank, action_with_icon, labeled_toggle, section_subheader};
+use crate::styles::templates::{
+    ActionRank, action_with_icon, labeled_action, labeled_toggle, section_subheader,
+};
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -78,6 +80,8 @@ pub struct RailState {
     pub export: export::ExportState,
     pub scan: scan::ScanState,
     pub history: history::HistoryState,
+    /// The strip frame names, for the Roll Analysis scene list.
+    pub strip_names: Vec<String>,
     pub analysis_open: bool,
     pub analysis_log: bool,
     /// Which Analysis chart paints: 0 curve, 1 waveform, 2 parade, 3 vectorscope.
@@ -157,6 +161,7 @@ impl RailState {
             export,
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
+            strip_names: Vec::new(),
             analysis_open: view.analysis_open,
             analysis_log: view.analysis_log,
             analysis_view: 0,
@@ -857,19 +862,58 @@ impl RailState {
             ui.horizontal(|ui| {
                 let _ = section_subheader(ui, "SCENES");
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    let _ = action_with_icon(
+                    if action_with_icon(
                         ui,
                         Icon::Circle,
                         "Detect",
                         ActionRank::Normal,
                         "Find the scenes the selected frames belong to",
-                    );
+                    )
+                    .clicked()
+                    {
+                        self.roll_analysis.detect_requested = true;
+                    }
                 });
             });
-            let _ = hint(
-                ui,
-                "Select frames in the Film Strip, then right-click › Scene › Group as Scene...",
-            );
+            if self.roll_analysis.found.is_empty() {
+                let _ = hint(
+                    ui,
+                    "Select frames in the Film Strip, then right-click › Scene › Group as Scene...",
+                );
+            } else {
+                let names: Vec<String> = self
+                    .roll_analysis
+                    .found
+                    .iter()
+                    .map(|group| {
+                        let frames: Vec<String> = group
+                            .iter()
+                            .filter_map(|index| self.strip_names.get(*index).cloned())
+                            .collect();
+                        format!("{}: {}", count_of(group.len(), "frame"), frames.join(", "))
+                    })
+                    .collect();
+                for name in names {
+                    let _ = hint(ui, &name);
+                }
+                ui.horizontal(|ui| {
+                    if action_with_icon(
+                        ui,
+                        Icon::Check,
+                        "Accept All",
+                        ActionRank::Primary,
+                        "Make every group a scene with its own baseline",
+                    )
+                    .clicked()
+                    {
+                        self.roll_analysis.accept_requested = true;
+                    }
+                    ui.add_space(f32::from(theme.space_sm));
+                    if labeled_action(ui, "Discard", ActionRank::Normal).clicked() {
+                        self.roll_analysis.discard_requested = true;
+                    }
+                });
+            }
             ui.add_space(f32::from(theme.space_sm));
             let _ = section_subheader(ui, "USE AVERAGE");
             if let Some(warning) = self.roll_analysis.baseline_warning() {

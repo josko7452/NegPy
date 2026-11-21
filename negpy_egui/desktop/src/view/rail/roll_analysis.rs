@@ -18,6 +18,14 @@ pub struct RollAnalysisState {
     pub open: bool,
     pub use_frame_requested: bool,
     pub reanalyze_requested: bool,
+    /// The Detect button, which groups the strip under another light.
+    pub detect_requested: bool,
+    /// The groups Detect found, as strip indices.
+    pub found: Vec<Vec<usize>>,
+    /// The found groups the user accepted.
+    pub accept_requested: bool,
+    /// The found groups the user discarded.
+    pub discard_requested: bool,
 }
 
 impl RollAnalysisState {
@@ -71,6 +79,10 @@ impl RollAnalysisState {
             open: true,
             use_frame_requested: false,
             reanalyze_requested: false,
+            detect_requested: false,
+            found: Vec::new(),
+            accept_requested: false,
+            discard_requested: false,
         };
         if state.roll_name.is_none() {
             state.roll_name = rolls::saved_rolls(repo)
@@ -101,6 +113,10 @@ impl RollAnalysisState {
             open: true,
             use_frame_requested: false,
             reanalyze_requested: false,
+            detect_requested: false,
+            found: Vec::new(),
+            accept_requested: false,
+            discard_requested: false,
         }
     }
 
@@ -130,6 +146,21 @@ impl RollAnalysisState {
     /// Take the one Reanalyze request.
     pub fn take_reanalyze(&mut self) -> bool {
         std::mem::take(&mut self.reanalyze_requested)
+    }
+
+    /// Take the one Detect request.
+    pub fn take_detect(&mut self) -> bool {
+        std::mem::take(&mut self.detect_requested)
+    }
+
+    /// Take the one Accept request.
+    pub fn take_accept(&mut self) -> bool {
+        std::mem::take(&mut self.accept_requested)
+    }
+
+    /// Take the one Discard request.
+    pub fn take_discard(&mut self) -> bool {
+        std::mem::take(&mut self.discard_requested)
     }
 }
 
