@@ -1,0 +1,157 @@
+//! The GPU prefix matches the CPU base stage for a frame with no crop.
+
+use negpy_backend::domain::models::WorkspaceConfig;
+use negpy_backend::features::exposure::processor::{NormalizationSettings, normalize_negative};
+use negpy_backend::features::geometry::processor::{GeometryContext, process};
+use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
+use negpy_backend::services::rendering::gpu_engine::{BaseRun, GpuEngine};
+
+fn frame(width: usize, height: usize) -> ImageBuffer {
+    let mut pixels = Vec::with_capacity(width * height * 3);
+    for y in 0..height {
+        for x in 0..width {
+            let fx = x as f32 / width as f32;
+            let fy = y as f32 / height as f32;
+            pixels.extend_from_slice(&[
+                0.05 + 0.9 * fx,
+                0.08 + 0.85 * fy,
+                0.06 + 0.8 * (fx + fy) * 0.5,
+            ]);
+        }
+    }
+    ImageBuffer::from_rgb(width, height, pixels)
+}
+
+#[test]
+fn the_gpu_prefix_matches_the_cpu_base() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(48, 32);
+    let geometry = process(
+        &image,
+        &settings.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let cpu = normalize_negative(
+        &geometry.image.pixels,
+        geometry.image.width,
+        geometry.image.height,
+        NormalizationSettings {
+            config: &settings.process,
+            mode: settings.process.process_mode,
+            active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: None,
+        },
+    );
+    let gpu = engine.run_normalized(&image, &settings, &BaseRun::plain(cpu.metrics.final_bounds));
+    assert_eq!(gpu.width, geometry.image.width);
+    assert_eq!(gpu.height, geometry.image.height);
+    let mut worst = 0.0f32;
+    let mut violations = 0usize;
+    for (index, want) in cpu.image.iter().enumerate() {
+        let got = gpu.pixels[index];
+        worst = worst.max((got - want).abs());
+        if (got - want).abs() > 3e-2 {
+            violations += 1;
+        }
+    }
+    let fraction = violations as f64 / cpu.image.len() as f64;
+    assert!(
+        fraction < 0.01,
+        "{violations} samples differ, worst {worst}"
+    );
+}
+
+#[test]
+fn a_rotated_prefix_swaps_dimensions() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let mut settings = WorkspaceConfig::default();
+    settings.geometry.rotation = 1;
+    let image = frame(48, 32);
+    let geometry = process(
+        &image,
+        &settings.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let cpu = normalize_negative(
+        &geometry.image.pixels,
+        geometry.image.width,
+        geometry.image.height,
+        NormalizationSettings {
+            config: &settings.process,
+            mode: settings.process.process_mode,
+            active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: None,
+        },
+    );
+    let gpu = engine.run_normalized(&image, &settings, &BaseRun::plain(cpu.metrics.final_bounds));
+    assert_eq!((gpu.width, gpu.height), (32, 48));
+    let mut violations = 0usize;
+    for (index, want) in cpu.image.iter().enumerate() {
+        if (gpu.pixels[index] - want).abs() > 3e-2 {
+            violations += 1;
+        }
+    }
+    let fraction = violations as f64 / cpu.image.len() as f64;
+    assert!(fraction < 0.01, "{violations} samples differ");
+}
+
+#[test]
+fn the_encoded_prefix_matches_the_cpu_encode() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(40, 28);
+    let geometry = process(
+        &image,
+        &settings.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let cpu = normalize_negative(
+        &geometry.image.pixels,
+        geometry.image.width,
+        geometry.image.height,
+        NormalizationSettings {
+            config: &settings.process,
+            mode: settings.process.process_mode,
+            active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: None,
+        },
+    );
+    let encoded = negpy_backend::features::exposure::analysis::working_oetf_encode(&cpu.image);
+    let gpu = engine.run_base(&image, &settings, &BaseRun::plain(cpu.metrics.final_bounds));
+    let mut violations = 0usize;
+    for (index, want) in encoded.iter().enumerate() {
+        if (gpu.pixels[index] - want).abs() > 3e-3 {
+            violations += 1;
+        }
+    }
+    let fraction = violations as f64 / encoded.len() as f64;
+    assert!(fraction < 0.01, "{violations} samples differ");
+}
