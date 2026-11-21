@@ -95,6 +95,10 @@ pub struct ShellHits {
     /// The toolbar's rotate counter-clockwise, rotate clockwise, flip horizontal and
     /// flip vertical, by index, when one is clicked.
     pub transform: Option<usize>,
+    /// The zoom percent a toolbar preset selected.
+    pub zoom: Option<u32>,
+    /// The photo rect the canvas drew, for a zoom preset to read its fit scale.
+    pub photo: Option<Rect>,
     pub undo: bool,
     pub redo: bool,
     pub tile: Option<usize>,
@@ -199,6 +203,8 @@ pub struct NegFeApp {
     mask_drag: crate::view::canvas::MaskDrag,
     /// The retouch stroke in progress.
     retouch_drag: crate::view::canvas::RetouchDrag,
+    /// The fit-relative canvas zoom.
+    pub zoom: f32,
 }
 
 impl NegFeApp {
@@ -233,6 +239,7 @@ impl NegFeApp {
             crop_drag: None,
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
+            zoom: 1.0,
         }
     }
 
@@ -267,6 +274,7 @@ impl NegFeApp {
             crop_drag: None,
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
+            zoom: 1.0,
         }
     }
 
@@ -1097,6 +1105,7 @@ impl NegFeApp {
                 &mut self.mask_drag,
                 retouch_tool,
                 &mut self.retouch_drag,
+                self.zoom,
             );
             if hits.import {
                 self.rail.library.import_with_picker(false);
@@ -1119,6 +1128,20 @@ impl NegFeApp {
             if let Some(action) = hits.transform {
                 self.transform_frame(action, ctx);
             }
+            if let Some(percent) = hits.zoom {
+                if let (Some(photo), Some(frame)) = (hits.photo, self.frame.as_ref()) {
+                    let fit = crate::view::canvas::zoom_percent(
+                        photo,
+                        frame.width as u32,
+                        frame.height as u32,
+                    )
+                    .max(1) as f32;
+                    self.zoom = (percent as f32 / fit)
+                        .clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
+                    ctx.request_repaint();
+                }
+            }
+            self.apply_canvas_zoom(ctx, hits.photo);
             if let Some(photo) = hits.photo_mode {
                 self.rail.tab = if photo { Tab::Frame } else { Tab::Roll };
                 self.photo_mode = photo;
@@ -1267,6 +1290,40 @@ impl NegFeApp {
         self.edit.checkpoint_before(before);
         self.request_render(ctx, false);
         ctx.request_repaint();
+    }
+
+    /// Read the wheel and a double-click over the canvas into the zoom state.
+    fn apply_canvas_zoom(&mut self, ctx: &egui::Context, photo: Option<Rect>) {
+        let Some(photo) = photo else {
+            return;
+        };
+        let response = ctx.input(|input| {
+            let hover = input
+                .pointer
+                .hover_pos()
+                .is_some_and(|point| photo.contains(point));
+            let scroll = if hover {
+                input.smooth_scroll_delta.y
+            } else {
+                0.0
+            };
+            let double = input
+                .pointer
+                .button_double_clicked(egui::PointerButton::Primary);
+            (scroll, double)
+        });
+        if response.0 != 0.0 {
+            self.zoom = crate::view::canvas::zoom_for_wheel(self.zoom, response.0 / 120.0);
+            ctx.request_repaint();
+        }
+        if response.1 {
+            self.zoom = if (self.zoom - 1.0).abs() < 1e-3 {
+                crate::view::canvas::ZOOM_MAX
+            } else {
+                1.0
+            };
+            ctx.request_repaint();
+        }
     }
 
     /// Square the open frame to its film edges when the Geometry card asks.
@@ -1501,6 +1558,7 @@ fn paint_shell(
     mask_drag: &mut crate::view::canvas::MaskDrag,
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
+    zoom: f32,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1551,13 +1609,19 @@ fn paint_shell(
         geometry.1.map_or_else(
             || fitted_rect(canvas_rect, Vec2::new(1208.0, 1181.0)),
             |(width, height)| {
-                crate::view::canvas::photo_rect(canvas_rect, width as u32, height as u32)
+                crate::view::canvas::zoomed_photo_rect(
+                    canvas_rect,
+                    width as u32,
+                    height as u32,
+                    zoom,
+                )
             },
         )
     } else {
         canvas_rect
     };
     let mut hits = ShellHits::default();
+    hits.photo = Some(photo);
     if let Some(texture) = frame.filter(|_| has_frame) {
         painter.image(
             texture,
@@ -1687,11 +1751,15 @@ fn paint_shell(
         selected,
         thumbnails.len(),
         photo_mode,
+        geometry.1.map_or(100, |(width, height)| {
+            crate::view::canvas::zoom_percent(photo, width as u32, height as u32)
+        }),
     );
     hits.previous = navigation.previous;
     hits.next = navigation.next;
     hits.undo = navigation.undo;
     hits.redo = navigation.redo;
+    hits.zoom = navigation.zoom;
     (rail, hits)
 }
 
@@ -1794,6 +1862,7 @@ fn paint_toolbar(
     selected: usize,
     frames: usize,
     photo_mode: bool,
+    zoom_percent: u32,
 ) -> ShellHits {
     use crate::styles::icons::Icon;
     use crate::styles::layout::{
@@ -1909,7 +1978,7 @@ fn paint_toolbar(
     painter.text(
         zoom.center() - Vec2::new(6.0, 0.0),
         egui::Align2::CENTER_CENTER,
-        "16%",
+        &format!("{zoom_percent}%"),
         egui::FontId::proportional(13.0),
         theme.text_secondary,
     );
@@ -1922,6 +1991,10 @@ fn paint_toolbar(
         Icon::ChevronDown,
         theme.text_secondary,
     );
+    let zoom_hit = ui.interact(zoom, ui.id().with("toolbar-zoom"), Sense::click());
+    if let Some(percent) = zoom_menu(zoom_hit) {
+        hits.zoom = Some(percent);
+    }
     x = zoom.right() + 8.0;
 
     let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(160.0, row_height));
@@ -2128,6 +2201,22 @@ fn paint_toolbar(
     hits.previous = previous.clicked();
     hits.next = next.clicked();
     hits
+}
+
+/// The zoom presets a click on the toolbar readout opens.
+fn zoom_menu(response: egui::Response) -> Option<u32> {
+    egui::Popup::menu(&response)
+        .show(|ui| {
+            ui.set_min_width(120.0);
+            let mut picked = None;
+            for percent in [25, 50, 100, 200, 400] {
+                if ui.button(format!("{percent}%")).clicked() {
+                    picked = Some(percent);
+                }
+            }
+            picked
+        })
+        .and_then(|response| response.inner)
 }
 
 #[cfg(test)]
@@ -2395,6 +2484,15 @@ mod tests {
         assert!(!app.rail.geometry.crop.draw);
         assert!(app.rail.geometry.crop.has_crop);
         assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_zoom_preset_sets_the_fit_relative_scale() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let photo = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(800.0, 400.0));
+        app.zoom = 100.0 / crate::view::canvas::zoom_percent(photo, 1600, 800) as f32;
+        assert!((app.zoom - 2.0).abs() < 1e-6);
     }
 
     #[test]

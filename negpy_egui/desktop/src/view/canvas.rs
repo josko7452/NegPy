@@ -11,6 +11,9 @@ use crate::styles::theme::Theme;
 pub const MIN_CROP: f64 = 0.02;
 /// The crop hint, shown while Draw is on.
 pub const CROP_HINT: &str = "Drag a crop. Right-click or Enter keeps it.";
+/// The zoom range a fit-relative canvas scale uses.
+pub const ZOOM_MIN: f32 = 0.25;
+pub const ZOOM_MAX: f32 = 8.0;
 
 /// A crop drag in progress, in photo coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,6 +58,38 @@ pub fn photo_rect(area: Rect, width: u32, height: u32) -> Rect {
     let scale = (area.width() / content.x).min(area.height() / content.y);
     Rect::from_center_size(area.center(), content * scale)
 }
+
+/// The fitted rect at `zoom`, centered in `area`. `zoom` is fit-relative: 1.0 fits.
+#[must_use]
+pub fn zoomed_photo_rect(area: Rect, width: u32, height: u32, zoom: f32) -> Rect {
+    let fitted = photo_rect(area, width, height);
+    let zoom = if zoom.is_finite() {
+        zoom.clamp(ZOOM_MIN, ZOOM_MAX)
+    } else {
+        1.0
+    };
+    Rect::from_center_size(fitted.center(), fitted.size() * zoom)
+}
+
+/// The true pixel zoom: the drawn long edge against the source's long edge.
+#[must_use]
+pub fn zoom_percent(photo: Rect, width: u32, height: u32) -> u32 {
+    let source = (width.max(height)) as f32;
+    if source <= 0.0 {
+        return 100;
+    }
+    ((photo.width().max(photo.height()) / source) * 100.0)
+        .round()
+        .clamp(1.0, 9999.0) as u32
+}
+
+/// Read a wheel notch as a zoom step, where one notch is `WHEEL_ZOOM_STEP`.
+pub fn zoom_for_wheel(zoom: f32, scroll: f32) -> f32 {
+    (zoom * WHEEL_ZOOM_STEP.powf(scroll)).clamp(ZOOM_MIN, ZOOM_MAX)
+}
+
+/// One wheel notch, as Python's canvas widget reads it.
+pub const WHEEL_ZOOM_STEP: f32 = 1.15;
 
 /// A normalized crop rect that follows `from` to `to` inside `photo`.
 #[must_use]
@@ -711,6 +746,24 @@ mod tests {
         );
         assert!((rect.width() - 500.0).abs() < 1e-4);
         assert!((rect.height() - 250.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_zoomed_photo_keeps_its_aspect_and_reports_pixels() {
+        let area = Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(500.0, 500.0));
+        let fitted = zoomed_photo_rect(area, 400, 200, 1.0);
+        assert!((fitted.width() - 500.0).abs() < 1e-4);
+        assert_eq!(zoom_percent(fitted, 400, 200), 125);
+        let doubled = zoomed_photo_rect(area, 400, 200, 2.0);
+        assert!((doubled.width() - 1000.0).abs() < 1e-4);
+        assert_eq!(zoom_percent(doubled, 400, 200), 250);
+    }
+
+    #[test]
+    fn the_wheel_stays_inside_the_zoom_range() {
+        assert!((zoom_for_wheel(1.0, 1.0) - WHEEL_ZOOM_STEP).abs() < 1e-6);
+        assert_eq!(zoom_for_wheel(1.0, 100.0), ZOOM_MAX);
+        assert_eq!(zoom_for_wheel(1.0, -100.0), ZOOM_MIN);
     }
 
     #[test]
