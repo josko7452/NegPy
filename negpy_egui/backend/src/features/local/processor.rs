@@ -59,6 +59,26 @@ impl LocalMaps {
         self.channel(2)
     }
 
+    /// The raw grade-delta channel, before the slope-ratio conversion.
+    #[must_use]
+    pub fn grade_delta_plane(&self) -> Vec<f32> {
+        self.channel(1)
+    }
+
+    /// The tone-limited alphas, one plane per mask, interleaved by pixel.
+    #[must_use]
+    pub fn key_alpha(&self) -> Option<(Vec<f32>, usize)> {
+        let count = self.plane_count.saturating_sub(3);
+        (count > 0).then(|| {
+            let alpha = self
+                .planes
+                .chunks_exact(self.plane_count)
+                .flat_map(|pixel| pixel[3..].iter().copied())
+                .collect();
+            (alpha, count)
+        })
+    }
+
     fn channel(&self, index: usize) -> Vec<f32> {
         self.planes
             .chunks_exact(self.plane_count)

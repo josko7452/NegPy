@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 15:10 | **Last Commit:** `41bfb44f` plan: correct the ledger keyed-mask status
+**Last Updated:** 2026-11-21 17:20 | **Last Commit:** `<pending>` local: send tone-limited masks to the print
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -14,15 +14,17 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 ## Next Steps (Ordered)
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
-2. [ ] Add the tone-limited local masks: the print curve accepts a keyed alpha
-   plane and key parameters, but the engine passes neither.
-3. [ ] Wire the dead toolbar and card actions in §9.9: Photo/Roll mode, zoom,
+   This is a multi-batch epic, not one commit.
+2. [ ] Wire the dead toolbar and card actions in §9.9: Photo/Roll mode, zoom,
    rotate/flip, Tools, Undo/Redo, Print, Roll Average, Crop All Frames, Square
    to Film and Drop Empty Corners.
-4. [ ] Add a render output for the density histogram, waveform, parade and
+3. [ ] Add a render output for the density histogram, waveform, parade and
    vectorscope, then give each a view.
 
 ## Completed (Recent)
+- `<pending>` local: the tone-limited mask key, zone and softness reach the print
+  curve; the key edges invert the achromatic curve.
+- `<pending>` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
 - `98d7b11e` frame: keep crop drawing active until confirm.
 - The render worker returns the request hash and the painted config hash; the
   shell accepts a render only when both generation and request hash match.
@@ -77,8 +79,8 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
-- Retouch bakes are wired ahead of both engines. Unlimited local masks reach
-  the print; tone-limited keyed masks do not.
+- Retouch bakes are wired ahead of both engines. Unlimited and tone-limited
+  local masks reach the print; the card sets the key and the zone rail.
 - The output histogram is binned from the display-encoded frame. The Analysis
   card paints it with the curve and readouts; the density and scope views are
   absent (§9.9 A2-3).
@@ -88,8 +90,6 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
   textures through egui only.
 - The Scan card's Prescan and Scan as Roll are disabled: their workers are not
   ported.
-- Tone-limited local masks do not reach the print: the curve accepts keyed alpha
-  and key parameters, but the engine passes neither (§9.9 A0-2).
 - The mask picker edits unlimited masks. Card masks have no hit test, and oval
   handles follow the raw control points rather than the outline (§9.9 A2-1,
   A2-2).

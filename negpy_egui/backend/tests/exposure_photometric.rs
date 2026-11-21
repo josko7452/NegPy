@@ -34,6 +34,9 @@ fn render(
             local_exposure: None,
             local_grade: None,
             local_flash: None,
+            key_params: None,
+            key_alpha: None,
+            grade_deltas: None,
         },
     )
 }
@@ -80,6 +83,9 @@ fn the_solved_curve_has_three_channels() {
         local_exposure: None,
         local_grade: None,
         local_flash: None,
+        key_params: None,
+        key_alpha: None,
+        grade_deltas: None,
     });
     assert!(solved.slopes.iter().all(|value| *value >= 2.0));
     assert_eq!(solved.curvatures, [0.0; 3]);
@@ -114,6 +120,9 @@ fn a_cast_free_neutral_axis_does_not_curve() {
         local_exposure: None,
         local_grade: None,
         local_flash: None,
+        key_params: None,
+        key_alpha: None,
+        grade_deltas: None,
     });
     for ch in 1..3 {
         assert!((solved.slopes[ch] - solved.slopes[1]).abs() < 1e-6);
@@ -182,6 +191,9 @@ fn a_local_burn_changes_the_print() {
             local_exposure: Some(&burned),
             local_grade: None,
             local_flash: None,
+            key_params: None,
+            key_alpha: None,
+            grade_deltas: None,
         },
     );
     assert_ne!(plain, out);

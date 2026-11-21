@@ -2,7 +2,7 @@
 //! `negpy_core::print_curve`. The pure curve stays in the core; this module builds the
 //! per-image values the Python wrapper derives from the paper profile and config.
 
-use negpy_core::print_curve::{Diffusion, Lut, Plane, PrintCurve, apply_print_curve, tetra};
+use negpy_core::print_curve::{Diffusion, Keys, Lut, Plane, PrintCurve, apply_print_curve, tetra};
 
 use crate::domain::models::{ExposureConfig, ProcessConfig, ProcessMode, RenderIntent};
 use crate::features::exposure::constants as c;
@@ -374,6 +374,12 @@ pub struct PrintRenderSettings<'a> {
     pub local_grade: Option<&'a [f32]>,
     /// The local preflash map, a fraction of the threshold exposure.
     pub local_flash: Option<&'a [f32]>,
+    /// The tone-limited mask parameters, `(stops, ISO-R delta, e0, e1)` per mask.
+    pub key_params: Option<&'a [[f64; 4]]>,
+    /// The tone-limited shape alphas, `(alpha, mask count)`, interleaved by pixel.
+    pub key_alpha: Option<(&'a [f32], usize)>,
+    /// The unlimited masks' raw ISO-R deltas, so a keyed grade starts from their sum.
+    pub grade_deltas: Option<&'a [f32]>,
 }
 
 /// A Contrast Mask plane and the value it was centred on.
@@ -591,6 +597,22 @@ pub fn render_negative(
                 data: flash,
                 w: width,
             });
+        }
+    }
+    if let (Some(params), Some((alpha, _))) = (settings.key_params, settings.key_alpha) {
+        let deltas = settings
+            .grade_deltas
+            .unwrap_or(settings.local_grade.unwrap_or(&[]));
+        if !params.is_empty() && !alpha.is_empty() && deltas.len() == image.len() / 3 {
+            curve.keys = Some(Keys {
+                alpha,
+                params,
+                deltas: Plane {
+                    data: deltas,
+                    w: width,
+                },
+            });
+            curve.r0 = exposure.grade.clamp(c::ISO_R_MIN, c::ISO_R_MAX);
         }
     }
     if let Some(diffusion) = settings.diffusion {
@@ -853,6 +875,9 @@ mod curve_tests {
             local_exposure: None,
             local_grade: None,
             local_flash: None,
+            key_params: None,
+            key_alpha: None,
+            grade_deltas: None,
         };
         let points = sample_curve(&settings, -0.1, 1.1, 33);
         assert_eq!(points.len(), 33);

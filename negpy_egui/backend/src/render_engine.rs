@@ -151,14 +151,31 @@ struct LocalPlanes {
     stops: Option<Vec<f32>>,
     grade: Option<Vec<f32>>,
     flash: Option<Vec<f32>>,
+    grade_deltas: Option<Vec<f32>>,
+    key_alpha: Option<(Vec<f32>, usize)>,
+    key_params: Option<Vec<[f64; 4]>>,
 }
 
 impl LocalPlanes {
-    fn from(maps: Option<&crate::features::local::processor::LocalMaps>, grade: f64) -> Self {
+    fn from(
+        maps: Option<&crate::features::local::processor::LocalMaps>,
+        local: &crate::domain::models::LocalAdjustmentsConfig,
+        exposure: &crate::domain::models::ExposureConfig,
+        mode: crate::domain::models::ProcessMode,
+        metrics: &crate::features::exposure::auto_metrics::AutoSliderMetrics,
+    ) -> Self {
         maps.map_or_else(Self::default, |maps| Self {
             stops: Some(maps.stops_plane()),
-            grade: Some(maps.grade_plane(grade)),
+            grade: Some(maps.grade_plane(exposure.grade)),
             flash: Some(maps.flash_plane()),
+            grade_deltas: Some(maps.grade_delta_plane()),
+            key_alpha: maps.key_alpha(),
+            key_params: crate::features::exposure::placement::limited_mask_params(
+                local,
+                exposure,
+                Some(mode),
+                metrics,
+            ),
         })
     }
 }
@@ -677,7 +694,13 @@ fn run_exposure(
     let output = if settings.exposure.render_intent == RenderIntent::Flat
         || render_path(&settings.process) == RenderPath::Print
     {
-        let local = LocalPlanes::from(planes.local.as_ref(), measured.exposure.grade);
+        let local = LocalPlanes::from(
+            planes.local.as_ref(),
+            &measured.local,
+            &measured.exposure,
+            measured.process.process_mode,
+            &metrics,
+        );
         let print = PrintRenderSettings {
             config: &measured.exposure,
             process: &measured.process,
@@ -707,6 +730,12 @@ fn run_exposure(
             local_exposure: local.stops.as_deref(),
             local_grade: local.grade.as_deref(),
             local_flash: local.flash.as_deref(),
+            key_params: local.key_params.as_deref(),
+            key_alpha: local
+                .key_alpha
+                .as_ref()
+                .map(|(alpha, count)| (alpha.as_slice(), *count)),
+            grade_deltas: local.grade_deltas.as_deref(),
         };
         if settings.exposure.render_intent == RenderIntent::Flat {
             ImageBuffer::from_rgb(

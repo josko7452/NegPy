@@ -5,7 +5,7 @@
 //! for two, plus one knee control for the middle tone of three.
 
 use crate::domain::color::WORKING_GAMMA;
-use crate::domain::models::ExposureConfig;
+use crate::domain::models::{ExposureConfig, LocalMask, MaskKey, ProcessMode};
 use crate::features::exposure::analysis::zone_of_encoded;
 use crate::features::exposure::auto_metrics::AutoSliderMetrics;
 use crate::features::exposure::constants as c;
@@ -27,6 +27,12 @@ const KNEE_SENSITIVITY_FLOOR: f64 = 0.05;
 const KNEE_PASSES: usize = 3;
 const KNEE_SETTLED: f64 = 0.02;
 const ON_TARGET_TOL: f64 = 1.0 / 6.0;
+/// The inversion grid for a tone-limited mask's edges.
+const KEY_GRID_MIN: f64 = -0.5;
+const KEY_GRID_MAX: f64 = 1.5;
+const KEY_GRID_SAMPLES: usize = 512;
+/// The minimum edge span, so an edge pair past paper white cannot divide by zero.
+const KEY_MIN_SPAN: f64 = 1e-4;
 
 /// One control a third pin can be solved on.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -128,9 +134,14 @@ fn softplus(x: f64) -> f64 {
 }
 
 /// The achromatic print curve's density, as `CharacteristicCurve`.
-fn curve_density(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: f64) -> f64 {
-    let (slopes, pivots, curvatures) = curve_params_from_metrics(exposure, None, metrics);
-    let profile = effective_paper_profile(&exposure.paper_profile, None);
+fn curve_density_for(
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+    value: f64,
+) -> f64 {
+    let (slopes, pivots, curvatures) = curve_params_from_metrics(exposure, mode, metrics);
+    let profile = effective_paper_profile(&exposure.paper_profile, mode);
     let constants = effective_constants(Some(profile));
     let d_min = if exposure.paper_dmin {
         profile.tonal.d_min
@@ -262,8 +273,13 @@ fn curve_density(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: 
     -mapped.max(1e-12).log10()
 }
 
-fn encoded_output(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: f64) -> f64 {
-    let linear = 10f64.powf(-curve_density(exposure, metrics, value));
+fn encoded_output_for(
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+    value: f64,
+) -> f64 {
+    let linear = 10f64.powf(-curve_density_for(exposure, mode, metrics, value));
     (linear as f32).powf(1.0 / WORKING_GAMMA as f32) as f64
 }
 
@@ -271,8 +287,109 @@ fn encoded_output(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value:
 #[must_use]
 pub fn predicted_zone(exposure: &ExposureConfig, metrics: &AutoSliderMetrics, value: f64) -> f64 {
     f64::from(zone_of_encoded(
-        encoded_output(exposure, metrics, value) as f32
+        encoded_output_for(exposure, None, metrics, value) as f32,
     ))
+}
+
+/// The zone the achromatic print curve puts `value` on under `mode`.
+fn predicted_zone_for(
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+    value: f64,
+) -> f64 {
+    f64::from(zone_of_encoded(
+        encoded_output_for(exposure, mode, metrics, value) as f32,
+    ))
+}
+
+/// `_zones_of`: the zones a whole normalized-log grid lands on.
+fn zones_of(
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+    values: &[f64],
+) -> Vec<f64> {
+    values
+        .iter()
+        .map(|&value| predicted_zone_for(exposure, mode, metrics, value))
+        .collect()
+}
+
+/// `np.interp` for a rising `xs`: linear between samples, held at both ends.
+fn interp(x: f64, xs: &[f64], ys: &[f64]) -> f64 {
+    if x <= xs[0] {
+        return ys[0];
+    }
+    let last = xs.len() - 1;
+    if x >= xs[last] {
+        return ys[last];
+    }
+    let upper = xs.partition_point(|&value| value <= x);
+    let (x0, x1) = (xs[upper - 1], xs[upper]);
+    let t = if x1 == x0 { 0.0 } else { (x - x0) / (x1 - x0) };
+    ys[upper - 1] + t * (ys[upper] - ys[upper - 1])
+}
+
+/// A tone-limited mask's weight edges in normalized-log luma: weight 0 at the first, 1 at the
+/// second. Inverts the print curve so the zone reads as the strip and the probe show it.
+#[must_use]
+pub fn key_edges(
+    mask: &LocalMask,
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+) -> (f64, f64) {
+    let values: Vec<f64> = (0..KEY_GRID_SAMPLES)
+        .map(|index| {
+            KEY_GRID_MIN
+                + (KEY_GRID_MAX - KEY_GRID_MIN) * index as f64 / (KEY_GRID_SAMPLES - 1) as f64
+        })
+        .collect();
+    let zones = zones_of(exposure, mode, metrics, &values);
+    let mut xs: Vec<f64> = zones.into_iter().rev().collect();
+    let mut ys: Vec<f64> = values.into_iter().rev().collect();
+    // Zones fall as the value rises; the reversed grid is not strictly rising where the curve
+    // flattens, so keep the first sample of each plateau.
+    let mut rising = Vec::with_capacity(xs.len());
+    let mut rising_values = Vec::with_capacity(ys.len());
+    for (x, y) in xs.drain(..).zip(ys.drain(..)) {
+        if rising.last().is_none_or(|&last: &f64| x > last) {
+            rising.push(x);
+            rising_values.push(y);
+        }
+    }
+    let half = 0.5 * mask.key_softness;
+    let lighter = interp(mask.key_zone + half, &rising, &rising_values);
+    let darker = interp(mask.key_zone - half, &rising, &rising_values).max(lighter + KEY_MIN_SPAN);
+    if mask.key == MaskKey::Highlights {
+        (darker, lighter)
+    } else {
+        (lighter, darker)
+    }
+}
+
+/// `(stops, ISO-R delta, e0, e1)` per tone-limited mask, in plane order.
+#[must_use]
+pub fn limited_mask_params(
+    local: &crate::domain::models::LocalAdjustmentsConfig,
+    exposure: &ExposureConfig,
+    mode: Option<ProcessMode>,
+    metrics: &AutoSliderMetrics,
+) -> Option<Vec<[f64; 4]>> {
+    let masks = crate::features::local::logic::limited_masks(local);
+    if masks.is_empty() {
+        return None;
+    }
+    Some(
+        masks
+            .into_iter()
+            .map(|mask| {
+                let (e0, e1) = key_edges(mask, exposure, mode, metrics);
+                [mask.stops, mask.grade, e0, e1]
+            })
+            .collect(),
+    )
 }
 
 fn solve_density(

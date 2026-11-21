@@ -127,6 +127,9 @@ pub fn render_exposure(
         local_exposure: None,
         local_grade: None,
         local_flash: None,
+        key_params: None,
+        key_alpha: None,
+        grade_deltas: None,
     };
     let pixels = apply_hue_trim(
         &ImageBuffer::from_rgb(

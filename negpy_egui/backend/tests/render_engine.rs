@@ -2,7 +2,9 @@
 //! tests/test_engine_order.py: a cached stage reuses its result, and an exposure edit leaves
 //! the base alone.
 
-use negpy_backend::domain::models::{LocalMask, MaskShape, ProcessMode, WorkspaceConfig};
+use negpy_backend::domain::models::{LocalMask, MaskKey, MaskShape, ProcessMode, WorkspaceConfig};
+use negpy_backend::features::exposure::auto_metrics::AutoSliderMetrics;
+use negpy_backend::features::exposure::placement::{key_edges, predicted_zone};
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::{DarkroomEngine, PipelineContext};
 
@@ -162,4 +164,82 @@ fn a_local_grade_changes_the_print() {
     let with_grade =
         DarkroomEngine::new().process(&image, &graded, "source-a", &mut PipelineContext::new());
     assert_ne!(plain.pixels, with_grade.pixels);
+}
+
+#[test]
+fn a_tone_limited_mask_burns_only_the_tones_it_selects() {
+    let image = textured_negative(120, 80);
+    let plain =
+        DarkroomEngine::new().process(&image, &settings(), "source-a", &mut PipelineContext::new());
+    let mut keyed = settings();
+    keyed.local.masks.push(LocalMask {
+        vertices: vec![[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        stops: 0.8,
+        feather: 0.0,
+        shape: MaskShape::Polygon,
+        key: MaskKey::Shadows,
+        key_zone: 4.0,
+        key_softness: 1.0,
+        ..LocalMask::default()
+    });
+    let with_key =
+        DarkroomEngine::new().process(&image, &keyed, "source-a", &mut PipelineContext::new());
+    assert_ne!(plain.pixels, with_key.pixels);
+    let darker = with_key
+        .pixels
+        .chunks_exact(3)
+        .zip(plain.pixels.chunks_exact(3))
+        .filter(|(keyed, plain)| keyed[1] < plain[1] - 1e-4)
+        .count();
+    let untouched = with_key
+        .pixels
+        .chunks_exact(3)
+        .zip(plain.pixels.chunks_exact(3))
+        .filter(|(keyed, plain)| keyed[1] == plain[1])
+        .count();
+    assert!(darker > 0);
+    assert!(untouched > 0);
+}
+
+#[test]
+fn the_key_edges_land_on_the_zones_either_side() {
+    let metrics = AutoSliderMetrics::default();
+    let exposure = negpy_backend::domain::models::ExposureConfig {
+        auto_exposure: false,
+        auto_normalize_contrast: false,
+        ..Default::default()
+    };
+    let mask = LocalMask {
+        key: MaskKey::Highlights,
+        key_zone: 6.0,
+        key_softness: 1.0,
+        ..LocalMask::default()
+    };
+    let (darker, lighter) = key_edges(&mask, &exposure, None, &metrics);
+    assert!((predicted_zone(&exposure, &metrics, darker) - 5.5).abs() < 0.02);
+    assert!((predicted_zone(&exposure, &metrics, lighter) - 6.5).abs() < 0.02);
+}
+
+#[test]
+fn a_shadow_key_swaps_the_highlight_edges() {
+    let metrics = AutoSliderMetrics::default();
+    let exposure = negpy_backend::domain::models::ExposureConfig {
+        auto_exposure: false,
+        auto_normalize_contrast: false,
+        ..Default::default()
+    };
+    let highlight = LocalMask {
+        key: MaskKey::Highlights,
+        key_zone: 4.0,
+        key_softness: 2.0,
+        ..LocalMask::default()
+    };
+    let shadow = LocalMask {
+        key: MaskKey::Shadows,
+        ..highlight.clone()
+    };
+    let (hi0, hi1) = key_edges(&highlight, &exposure, None, &metrics);
+    let (sh0, sh1) = key_edges(&shadow, &exposure, None, &metrics);
+    assert!((hi0 - sh1).abs() < 1e-9);
+    assert!((hi1 - sh0).abs() < 1e-9);
 }
