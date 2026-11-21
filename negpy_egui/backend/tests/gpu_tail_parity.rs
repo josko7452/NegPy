@@ -3,7 +3,6 @@
 use negpy_backend::domain::models::{GeometryConfig, WorkspaceConfig};
 use negpy_backend::features::exposure::processor::{NormalizationSettings, measure_negative};
 use negpy_backend::features::geometry::processor::{GeometryContext, process};
-use negpy_backend::infrastructure::gpu::device::device;
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::PipelineContext;
 use negpy_backend::services::rendering::gpu_engine::GpuEngine;
@@ -32,6 +31,10 @@ fn config() -> WorkspaceConfig {
         ..GeometryConfig::default()
     };
     config.lab.clahe_strength = 1.0;
+    config.lab.sharpen = 0.0;
+    config.lab.chroma_denoise = 0.0;
+    config.toning.shadow_tint_strength = 0.3;
+    config.toning.shadow_tint_hue = 35.0;
     config
 }
 
@@ -88,15 +91,7 @@ fn a_cropped_print_matches_the_cpu_engine() {
         }),
     };
     let mut gpu_context = PipelineContext::new();
-    let gpu_image = render(
-        &mut gpu,
-        &mut negpy_backend::render_engine::DarkroomEngine::new(),
-        &image,
-        &config,
-        "test",
-        &base,
-        &mut gpu_context,
-    );
+    let gpu_image = render(&mut gpu, &image, &config, "test", &base, &mut gpu_context);
 
     let mut cpu_context = PipelineContext::new();
     let cpu_image = negpy_backend::render_engine::DarkroomEngine::new().process(

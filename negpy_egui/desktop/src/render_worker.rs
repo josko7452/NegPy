@@ -315,7 +315,6 @@ impl RenderWorker {
                     };
                     negpy_backend::services::rendering::gpu_render::render(
                         gpu.as_mut().expect("the GPU is open"),
-                        &mut engine,
                         &baked,
                         &config,
                         &source_hash,

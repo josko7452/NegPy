@@ -345,19 +345,20 @@ impl GpuEngine {
         ImageBuffer::from_rgb(width, height, pixels)
     }
 
-    /// The print chain through CLAHE, as linear pixels for the CPU tail.
+    /// The print chain through toning and its crop, as encoded pixels.
     ///
-    /// The full frame is kept: CLAHE's 8x8 grid and the Lab stage both span
-    /// the rotated frame, and the crop follows toning. The chain decodes the
-    /// encoded print so the tail reads the same linear domain as the CPU
-    /// engine, which runs CLAHE on linear pixels.
+    /// The full frame is kept through CLAHE and Lab, whose grids span the
+    /// rotated frame; the toning pass reads the crop window. The finish stage
+    /// reads the cropped, display-encoded frame.
     #[must_use]
-    pub fn run_print_tail_input(
+    pub fn run_tail_input(
         &mut self,
         image: &ImageBuffer,
         config: &WorkspaceConfig,
         run: &BaseRun,
         print: &ExposureRun<'_>,
+        lab: crate::features::lab::lab_shader::LabRun,
+        roi: Option<crate::features::geometry::logic::Roi>,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
         let key = prefix_key(config, run, &self.source_key);
@@ -415,31 +416,67 @@ impl GpuEngine {
         );
 
         let strength = config.lab.clahe_strength as f32;
-        let source = if strength > 0.0 {
-            let remapped =
-                self.textures
-                    .take(&self.gpu.device, out_w as u32, out_h as u32, "clahe");
+        let remapped = if strength > 0.0 {
+            let texture = self
+                .textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "clahe");
             clahe_shader::run(
                 &self.gpu,
                 &self.loaders,
                 &printed,
-                &remapped,
+                &texture,
                 &clahe_shader::ClaheUniforms::for_frame(strength, out_w, out_h),
             );
             self.textures.put(printed);
-            remapped
+            texture
         } else {
             printed
         };
 
-        let rgba = source.readback(&self.gpu);
-        let mut pixels = Vec::with_capacity(out_w * out_h * 3);
+        let labbed = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "lab");
+        let _ = crate::features::lab::lab_shader::run(
+            &self.gpu,
+            &self.loaders,
+            &remapped,
+            &labbed,
+            &config.lab,
+            lab,
+            &self.textures,
+        );
+        self.textures.put(remapped);
+
+        // The alt-process passes are not ported yet, so their frames stay on
+        // the CPU engine (`gpu_eligible` rejects them).
+        let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
+        let (crop_w, crop_h) = ((window.3 - window.2) as u32, (window.1 - window.0) as u32);
+        let toned = self
+            .textures
+            .take(&self.gpu.device, crop_w, crop_h, "toned");
+        crate::features::toning::shader::run(
+            &self.gpu,
+            &self.loaders,
+            &labbed,
+            &toned,
+            &crate::features::toning::shader::ToningUniforms::new(
+                &config.toning,
+                config.lab.saturation,
+                is_mono(&config.process),
+                config.altproc.alt_process,
+                [window.2 as i32, window.0 as i32],
+            ),
+        );
+        self.textures.put(labbed);
+
+        let rgba = toned.readback(&self.gpu);
+        let mut pixels = Vec::with_capacity(crop_w as usize * crop_h as usize * 3);
         for texel in rgba.chunks_exact(4) {
             pixels.extend_from_slice(&texel[..3]);
         }
-        self.textures.put(source);
-        let linear = crate::features::exposure::analysis::working_oetf_decode(&pixels);
-        ImageBuffer::from_rgb(out_w, out_h, linear)
+        let (width, height) = (toned.width as usize, toned.height as usize);
+        self.textures.put(toned);
+        ImageBuffer::from_rgb(width, height, pixels)
     }
 
     fn encode_cropped(

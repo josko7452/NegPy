@@ -2,22 +2,17 @@
 //!
 //! A print frame without local maps, a print LUT or a carrier runs here. The
 //! CPU measures the base and builds the solved print; the GPU runs geometry,
-//! normalization, the print curve, crop, vignette and the display encode. The
-//! still-CPU tail is CLAHE, Lab, alt process and toning.
+//! normalization, the print curve, CLAHE, Lab and toning with the crop. The
+//! finish stage stays on the CPU.
 
 use crate::domain::models::{RenderIntent, WorkspaceConfig};
-use crate::features::altprocess::process as alt_process;
 use crate::features::exposure::exposure_shader::ExposureRun;
 use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::papers::{PrintColor, effective_paper_profile, resolve_print_color};
 use crate::features::finish::processor::{FinishContext, process as finish_process};
-use crate::features::geometry::processor::{
-    GeometryContext, crop_image, process as geometry_process,
-};
-use crate::features::lab::processor::{LabContext, process as lab_process};
+use crate::features::geometry::processor::GeometryContext;
 use crate::features::process::hue::apply_hue_trim;
 use crate::features::process::path::{RenderPath, is_mono, render_path};
-use crate::features::toning::processor::process as toning_process;
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::render_engine::PipelineContext;
 use crate::services::rendering::gpu_engine::{BaseRun, GpuEngine};
@@ -88,11 +83,10 @@ pub fn gpu_eligible(config: &WorkspaceConfig, context: &PipelineContext) -> bool
         && matches!(paper.print_color, PrintColor::Matrix(_))
 }
 
-/// Run the base and exposure stages on the GPU, then the still-CPU tail.
+/// Run the base, exposure, CLAHE, Lab and toning stages on the GPU, then finish.
 #[must_use]
 pub fn render(
     gpu: &mut GpuEngine,
-    engine: &mut crate::render_engine::DarkroomEngine,
     image: &ImageBuffer,
     config: &WorkspaceConfig,
     source_key: &str,
@@ -101,14 +95,14 @@ pub fn render(
 ) -> ImageBuffer {
     base.metrics(context);
     gpu.set_source(source_key);
-    let geometry = geometry_process(
+    let roi = crate::features::geometry::processor::process(
         image,
         &config.geometry,
         GeometryContext {
             scale_factor: image.height.max(image.width) as f64 / 4000.0,
         },
-    );
-    let roi = geometry.active_roi;
+    )
+    .active_roi;
     let run = BaseRun {
         bounds: base.bounds,
         stage: crate::features::transparency::logic::DensityStage {
@@ -138,45 +132,25 @@ pub fn render(
             config.process.process_mode,
         )
     };
-    let exposed = gpu.run_print_tail_input(image, config, &run, &print);
-    let exposed = apply_hue_trim(&exposed, config.process.hue_trim);
-    tail(engine, image, config, exposed, roi, base, context)
+    let toned = gpu.run_tail_input(
+        image,
+        config,
+        &run,
+        &print,
+        crate::features::lab::lab_shader::LabRun {
+            mono: is_mono(&config.process),
+            scale_factor: image.height.max(image.width) as f64 / 4000.0,
+            auto_masking: None,
+        },
+        roi,
+    );
+    let toned = apply_hue_trim(&toned, config.process.hue_trim);
+    finish(config, toned)
 }
 
-fn tail(
-    _engine: &mut crate::render_engine::DarkroomEngine,
-    source: &ImageBuffer,
-    config: &WorkspaceConfig,
-    exposed: ImageBuffer,
-    roi: Option<(i64, i64, i64, i64)>,
-    base: &GpuBase,
-    context: &mut PipelineContext,
-) -> ImageBuffer {
-    // CLAHE runs in the GPU chain, on the same full frame the 8x8 grid spans.
-    let mut image = exposed;
-    let lab = lab_process(
-        &image,
-        &config.lab,
-        is_mono(&config.process),
-        LabContext {
-            scale_factor: source.height.max(source.width) as f64 / 4000.0,
-        },
-    );
-    image = lab.image;
-    let paper = effective_paper_profile(
-        &config.exposure.paper_profile,
-        Some(config.process.process_mode),
-    );
-    image = alt_process(&image, &config.altproc, config.process.process_mode, paper);
-    image = toning_process(
-        &image,
-        &config.toning,
-        config.altproc.alt_process,
-        is_mono(&config.process),
-    );
-    image = crop_image(&image, roi);
-    image = finish_process(
-        &image,
+fn finish(config: &WorkspaceConfig, toned: ImageBuffer) -> ImageBuffer {
+    let image = finish_process(
+        &toned,
         &config.finish,
         FinishContext {
             print_size_cm: 30.0,
@@ -189,6 +163,5 @@ fn tail(
         None,
     );
     let encoded = crate::features::exposure::analysis::working_oetf_encode(&image.pixels);
-    let _ = (source, base, context);
     ImageBuffer::from_rgb(image.width, image.height, encoded)
 }
