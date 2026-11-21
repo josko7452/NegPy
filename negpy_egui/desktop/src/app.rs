@@ -315,6 +315,7 @@ impl NegFeApp {
         self.rail
             .optics
             .set_profile(Some(profile), &self.edit.config.flatfield.profile_id);
+        self.rail.set_profile(Some(profile), &self.edit.config);
         let repo = negpy_backend::infrastructure::storage::repository::StorageRepository::new(
             app.edits_db_path.clone(),
             app.settings_db_path.clone(),
@@ -902,6 +903,7 @@ impl NegFeApp {
         self.rail
             .optics
             .set_profile(profile.as_deref(), &self.edit.config.flatfield.profile_id);
+        self.rail.set_profile(profile.as_deref(), &self.edit.config);
         self.selected = index;
         if let Some(profile) = profile.as_deref() {
             let (rows, prints) = crate::frame_source::stored_history(Some(profile), &path);
@@ -971,6 +973,7 @@ impl NegFeApp {
         self.rail
             .optics
             .set_profile(Some(&profile), &self.edit.config.flatfield.profile_id);
+        self.rail.set_profile(Some(&profile), &self.edit.config);
         self.set_frame(frame);
         self.set_strip(strip);
         self.selected = 0;

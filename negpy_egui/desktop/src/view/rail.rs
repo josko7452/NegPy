@@ -23,6 +23,7 @@ use negpy_backend::domain::models::process::{ProcessMode, scan_setup_values, wit
 use negpy_backend::session::proof::ProofSettings;
 
 pub mod analysis;
+pub mod calibration;
 pub mod export;
 pub mod frame_color;
 pub mod frame_finish;
@@ -94,6 +95,7 @@ pub struct RailState {
     pub raw_decode: raw_decode::RawDecodeState,
     pub optics: optics::OpticsState,
     pub metering: metering::MeteringState,
+    pub calibration: calibration::CalibrationState,
 }
 
 impl RailState {
@@ -169,7 +171,17 @@ impl RailState {
             raw_decode: raw_decode::RawDecodeState::default(),
             optics: optics::OpticsState::default(),
             metering: metering::MeteringState::default(),
+            calibration: calibration::CalibrationState::default(),
         }
+    }
+
+    /// Read the crosstalk gallery for the open profile and frame.
+    pub fn set_profile(
+        &mut self,
+        profile: Option<&std::path::Path>,
+        config: &negpy_backend::domain::models::WorkspaceConfig,
+    ) {
+        self.calibration.set_profile(profile, config);
     }
 
     /// Show the metrics the newest render measured.
@@ -411,7 +423,9 @@ impl RailState {
             edit.mark_dirty();
         }
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.show_collapsed(ui, "Calibration", 3);
+        if self.calibration.show(ui, edit) {
+            edit.mark_dirty();
+        }
         ui.add_space(f32::from(Theme::default().space_lg));
         self.show_collapsed(ui, "Metering", 0);
         ui.add_space(f32::from(Theme::default().space_lg));
@@ -760,15 +774,11 @@ impl RailState {
         let mut section = CollapsibleSection::new(title).with_guide();
         section.modified = modified;
         section.expanded = open;
-        if title == "Calibration" {
-            let _ = section.show(ui, |ui| self.show_calibration_body(ui));
-        } else {
-            let _ = section.show(ui, |ui| {
-                let _ = card(ui, |ui| {
-                    let _ = hint(ui, "This card has no controls yet.");
-                });
+        let _ = section.show(ui, |ui| {
+            let _ = card(ui, |ui| {
+                let _ = hint(ui, "This card has no controls yet.");
             });
-        }
+        });
         self.collapsed_sections
             .insert(title.to_string(), section.expanded);
     }
@@ -886,53 +896,6 @@ impl RailState {
                     edit.mark_dirty();
                 }
             });
-        });
-    }
-
-    fn show_calibration_body(&mut self, ui: &mut Ui) {
-        let theme = Theme::default();
-        let _ = card(ui, |ui| {
-            let _ = section_subheader(ui, "CROSSTALK");
-            ui.add_space(f32::from(theme.space_sm));
-            ui.horizontal(|ui| {
-                let _ = ui.label(
-                    RichText::new("Matrix")
-                        .size(f32::from(theme.font_size_base))
-                        .color(theme.text_secondary),
-                );
-                ui.add_space(f32::from(theme.space_md));
-                let combo = Rect::from_min_size(
-                    egui::pos2(ui.cursor().left(), ui.cursor().top()),
-                    Vec2::new(ui.available_width(), DEFAULT_BUTTON_HEIGHT),
-                );
-                ui.painter().rect_filled(combo, 4.0, theme.bg_input);
-                ui.painter().rect_stroke(
-                    combo,
-                    4.0,
-                    Stroke::new(1.0_f32, theme.border_primary),
-                    egui::StrokeKind::Inside,
-                );
-                ui.painter().text(
-                    combo.left_center() + Vec2::new(f32::from(theme.space_xl), 0.0),
-                    Align2::LEFT_CENTER,
-                    "Kodak Gold 200 (approx)",
-                    FontId::proportional(f32::from(theme.font_size_base)),
-                    theme.text_primary,
-                );
-                ui.painter().text(
-                    combo.right_center() - Vec2::new(f32::from(theme.space_xl), 0.0),
-                    Align2::RIGHT_CENTER,
-                    Icon::ChevronRight.glyph(),
-                    FontId::proportional(f32::from(theme.font_size_small)),
-                    theme.text_secondary,
-                );
-                ui.advance_cursor_after_rect(combo);
-            });
-            ui.add_space(f32::from(theme.space_sm));
-            let mut strength =
-                CompactSlider::new(SliderSpec::new(0.0, 1.0, 0.01, 2).with_default(0.49));
-            strength.set_value(0.49);
-            let _ = strength.show(ui, "Strength");
         });
     }
 }
