@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 20:55 | **Last Commit:** `pending eligibility test`
+**Last Updated:** 2026-11-21 21:10 | **Last Commit:** `pending texture pool`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -29,6 +29,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 9. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: the GPU engine has a size-keyed texture pool and returns the print
+  chain's textures after each frame.
 - `backend`: GPU eligibility is pinned to the frames the current chain covers,
   and a config with a local mask or carrier stays on the CPU.
 - `desktop`: the render worker uses the GPU chain for a print frame that

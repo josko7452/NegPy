@@ -1,5 +1,8 @@
 //! Mirrors `negpy/infrastructure/gpu/resources.py`: the float textures and buffers a pass reads.
 
+use std::sync::Mutex;
+use std::sync::atomic::{AtomicU64, Ordering};
+
 use wgpu::{
     Buffer, BufferUsages, CommandEncoderDescriptor, Device, Extent3d, MapMode, Origin3d, Queue,
     TexelCopyBufferInfo, TexelCopyBufferLayout, TexelCopyTextureInfo, Texture, TextureAspect,
@@ -15,12 +18,46 @@ pub const TEXEL_BYTES: usize = 16;
 /// `copy_texture_to_buffer` requires a 256-byte row stride.
 const ROW_ALIGN: usize = 256;
 
+/// The texture pool: one row per `(width, height)` the chain has used.
+#[derive(Default)]
+pub struct TexturePool {
+    idle: Mutex<Vec<GpuTexture>>,
+    next_id: AtomicU64,
+}
+
+impl TexturePool {
+    /// Take a texture of this size from the pool, or allocate one.
+    #[must_use]
+    pub fn take(&self, device: &Device, width: u32, height: u32, label: &str) -> GpuTexture {
+        let mut idle = self.idle.lock().expect("texture pool poisoned");
+        let index = idle
+            .iter()
+            .position(|texture| texture.width == width && texture.height == height);
+        if let Some(index) = index {
+            return idle.swap_remove(index);
+        }
+        let mut texture = GpuTexture::new(device, width, height, label);
+        texture.pool_id = self.next_id.fetch_add(1, Ordering::Relaxed) + 1;
+        texture
+    }
+
+    /// Return a texture after its pass has finished.
+    pub fn put(&self, texture: GpuTexture) {
+        let mut idle = self.idle.lock().expect("texture pool poisoned");
+        if idle.len() < 16 {
+            idle.push(texture);
+        }
+    }
+}
+
 /// A hardware texture with storage, sampling and copy usage.
 pub struct GpuTexture {
     pub width: u32,
     pub height: u32,
     pub texture: Texture,
     pub view: TextureView,
+    /// The allocation sequence the pool assigned; a reused texture keeps it.
+    pub pool_id: u64,
 }
 
 impl GpuTexture {
@@ -50,6 +87,7 @@ impl GpuTexture {
             height,
             texture,
             view,
+            pool_id: 0,
         }
     }
 

@@ -23,7 +23,7 @@ use crate::features::geometry::shader::{GeometryUniforms, rotated_dims, run as r
 use crate::features::process::path::is_mono;
 use crate::features::transparency::logic::DensityStage;
 use crate::infrastructure::gpu::device::GpuDevice;
-use crate::infrastructure::gpu::resources::GpuTexture;
+use crate::infrastructure::gpu::resources::{GpuTexture, TexturePool};
 use crate::infrastructure::gpu::shader_loader::ShaderLoader;
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 
@@ -58,6 +58,7 @@ impl BaseRun {
 pub struct GpuEngine {
     gpu: Arc<GpuDevice>,
     loaders: ShaderLoader,
+    textures: TexturePool,
 }
 
 impl GpuEngine {
@@ -72,6 +73,7 @@ impl GpuEngine {
         crate::infrastructure::gpu::device::device().map(|gpu| Self {
             gpu,
             loaders: ShaderLoader::default(),
+            textures: TexturePool::default(),
         })
     }
 
@@ -91,19 +93,22 @@ impl GpuEngine {
         run: &BaseRun,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = GpuTexture::new(
+        let source = self.textures.take(
             &self.gpu.device,
             image.width as u32,
             image.height as u32,
             "source",
         );
         source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let geometry = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
         let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
         run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
 
         let normalized =
-            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            self.textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
         let uniforms = NormalizationUniforms::pack(
             NormalizationSetup {
                 stage: &run.stage,
@@ -115,13 +120,19 @@ impl GpuEngine {
         );
         run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &uniforms);
 
-        let encoded = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "encoded");
+        let encoded = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "encoded");
         run_encode(&self.gpu, &self.loaders, &normalized, &encoded);
         let rgba = encoded.readback(&self.gpu);
         let mut pixels = Vec::with_capacity(out_w * out_h * 3);
         for texel in rgba.chunks_exact(4) {
             pixels.extend_from_slice(&texel[..3]);
         }
+        self.textures.put(encoded);
+        self.textures.put(normalized);
+        self.textures.put(geometry);
+        self.textures.put(source);
         ImageBuffer::from_rgb(out_w, out_h, pixels)
     }
 
@@ -134,19 +145,22 @@ impl GpuEngine {
         run: &BaseRun,
     ) -> (ImageBuffer, Vec<f64>) {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = GpuTexture::new(
+        let source = self.textures.take(
             &self.gpu.device,
             image.width as u32,
             image.height as u32,
             "source",
         );
         source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let geometry = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
         let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
         run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
 
         let normalized =
-            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            self.textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
         let uniforms = NormalizationUniforms::pack(
             NormalizationSetup {
                 stage: &run.stage,
@@ -165,7 +179,9 @@ impl GpuEngine {
             &DensityHistogramUniforms::new((0, out_h, 0, out_w), run.bounds),
         );
 
-        let encoded = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "encoded");
+        let encoded = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "encoded");
         run_encode(&self.gpu, &self.loaders, &normalized, &encoded);
         let rgba = encoded.readback(&self.gpu);
         let mut pixels = Vec::with_capacity(out_w * out_h * 3);
@@ -203,19 +219,22 @@ impl GpuEngine {
         encode: bool,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = GpuTexture::new(
+        let source = self.textures.take(
             &self.gpu.device,
             image.width as u32,
             image.height as u32,
             "source",
         );
         source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let geometry = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
         let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
         run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
 
         let normalized =
-            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            self.textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
         let value = NormalizationUniforms::pack(
             NormalizationSetup {
                 stage: &run.stage,
@@ -227,7 +246,9 @@ impl GpuEngine {
         );
         run_normalization(&self.gpu, &self.loaders, &geometry, &normalized, &value);
 
-        let printed = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "printed");
+        let printed = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "printed");
         run_exposure(
             &self.gpu,
             &self.loaders,
@@ -237,8 +258,18 @@ impl GpuEngine {
         );
 
         let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
-        let (cropped, crop_uniforms) =
-            crop_shader::target(&self.gpu, window, out_w, out_h, "cropped");
+        let (cropped, crop_uniforms) = {
+            let (out_w, out_h) = {
+                let (y1, y2, x1, x2) = window;
+                ((x2 - x1) as u32, (y2 - y1) as u32)
+            };
+            let texture = self
+                .textures
+                .take(&self.gpu.device, out_w, out_h, "cropped");
+            let (_, uniforms) =
+                crop_shader::target(&self.gpu, window, out_w as usize, out_h as usize, "cropped");
+            (texture, uniforms)
+        };
         crop_shader::run(&self.gpu, &self.loaders, &printed, &cropped, &crop_uniforms);
         let rgba = cropped.readback(&self.gpu);
         let mut pixels = Vec::with_capacity(cropped.width as usize * cropped.height as usize * 3);
@@ -248,7 +279,13 @@ impl GpuEngine {
         if !encode {
             pixels = crate::features::exposure::analysis::working_oetf_decode(&pixels);
         }
-        ImageBuffer::from_rgb(cropped.width as usize, cropped.height as usize, pixels)
+        let (width, height) = (cropped.width as usize, cropped.height as usize);
+        self.textures.put(cropped);
+        self.textures.put(printed);
+        self.textures.put(normalized);
+        self.textures.put(geometry);
+        self.textures.put(source);
+        ImageBuffer::from_rgb(width, height, pixels)
     }
 
     fn encode_cropped(
@@ -259,8 +296,18 @@ impl GpuEngine {
         out_h: usize,
     ) -> ImageBuffer {
         let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
-        let (cropped, crop_uniforms) =
-            crop_shader::target(&self.gpu, window, out_w, out_h, "cropped");
+        let (cropped, crop_uniforms) = {
+            let (out_w, out_h) = {
+                let (y1, y2, x1, x2) = window;
+                ((x2 - x1) as u32, (y2 - y1) as u32)
+            };
+            let texture = self
+                .textures
+                .take(&self.gpu.device, out_w, out_h, "cropped");
+            let (_, uniforms) =
+                crop_shader::target(&self.gpu, window, out_w as usize, out_h as usize, "cropped");
+            (texture, uniforms)
+        };
         crop_shader::run(&self.gpu, &self.loaders, source, &cropped, &crop_uniforms);
         let encoded = GpuTexture::new(&self.gpu.device, cropped.width, cropped.height, "encoded");
         run_encode(&self.gpu, &self.loaders, &cropped, &encoded);
@@ -282,19 +329,22 @@ impl GpuEngine {
         roi: Option<crate::features::geometry::logic::Roi>,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = GpuTexture::new(
+        let source = self.textures.take(
             &self.gpu.device,
             image.width as u32,
             image.height as u32,
             "source",
         );
         source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let geometry = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
         let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
         run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
 
         let normalized =
-            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            self.textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
         let uniforms = NormalizationUniforms::pack(
             NormalizationSetup {
                 stage: &run.stage,
@@ -318,19 +368,22 @@ impl GpuEngine {
         run: &BaseRun,
     ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
-        let source = GpuTexture::new(
+        let source = self.textures.take(
             &self.gpu.device,
             image.width as u32,
             image.height as u32,
             "source",
         );
         source.upload(&self.gpu.queue, &image.pixels, false);
-        let geometry = GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
+        let geometry = self
+            .textures
+            .take(&self.gpu.device, out_w as u32, out_h as u32, "geometry");
         let uniforms = GeometryUniforms::from_config(&config.geometry, out_w, out_h);
         run_geometry(&self.gpu, &self.loaders, &source, &geometry, &uniforms);
 
         let normalized =
-            GpuTexture::new(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
+            self.textures
+                .take(&self.gpu.device, out_w as u32, out_h as u32, "normalized");
         let uniforms = NormalizationUniforms::pack(
             NormalizationSetup {
                 stage: &run.stage,
