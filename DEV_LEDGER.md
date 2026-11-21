@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 20:45 | **Last Commit:** `pending GPU worker`
+**Last Updated:** 2026-11-21 20:55 | **Last Commit:** `pending eligibility test`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -29,6 +29,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 9. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: GPU eligibility is pinned to the frames the current chain covers,
+  and a config with a local mask or carrier stays on the CPU.
 - `desktop`: the render worker uses the GPU chain for a print frame that
   needs no local map, print LUT or carrier, and keeps the CPU engine otherwise.
 - `backend`: the GPU vignette pass matches the core finish kernel; carrier

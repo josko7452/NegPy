@@ -242,6 +242,32 @@ fn a_cropped_chain_matches_the_cpu_crop() {
 }
 
 #[test]
+fn a_plain_print_is_gpu_eligible() {
+    let settings = WorkspaceConfig::default();
+    let effects = negpy_backend::services::rendering::gpu_render::gpu_eligible(
+        &settings,
+        &negpy_backend::render_engine::PipelineContext::new(),
+    );
+    assert!(effects);
+    let mut local = settings.clone();
+    local.local.masks.push(Default::default());
+    assert!(
+        !negpy_backend::services::rendering::gpu_render::gpu_eligible(
+            &local,
+            &negpy_backend::render_engine::PipelineContext::new(),
+        )
+    );
+    let mut carrier = settings.clone();
+    carrier.finish.carrier_width = 1.0;
+    assert!(
+        !negpy_backend::services::rendering::gpu_render::gpu_eligible(
+            &carrier,
+            &negpy_backend::render_engine::PipelineContext::new(),
+        )
+    );
+}
+
+#[test]
 fn a_print_chain_matches_the_cpu_print() {
     let Some(mut engine) = GpuEngine::new() else {
         return;
