@@ -78,6 +78,7 @@ pub struct RailState {
     pub scan: scan::ScanState,
     pub history: history::HistoryState,
     pub analysis_open: bool,
+    pub analysis_log: bool,
     pub readouts_open: bool,
     pub collapsed_sections: std::collections::BTreeMap<String, bool>,
     pub metrics: analysis::AnalysisMetrics,
@@ -150,6 +151,7 @@ impl RailState {
             scan: scan::ScanState::default(),
             history: history::HistoryState::default(),
             analysis_open: view.analysis_open,
+            analysis_log: view.analysis_log,
             readouts_open: false,
             collapsed_sections: std::collections::BTreeMap::new(),
             metrics: analysis::AnalysisMetrics::default(),
@@ -493,11 +495,24 @@ impl RailState {
                         egui::pos2(tools.right() - 44.0, tools.top()),
                         Vec2::new(44.0, tab_height),
                     );
-                    ui.painter().rect_filled(log, 4.0, theme.bg_checked);
+                    let response = ui.interact(log, ui.id().with("analysis-log"), Sense::click());
+                    let on = self.analysis_log;
+                    ui.painter().rect_filled(
+                        log,
+                        4.0,
+                        if on { theme.bg_checked } else { theme.bg_input },
+                    );
                     ui.painter().rect_stroke(
                         log,
                         4.0,
-                        Stroke::new(1.0_f32, theme.border_checked),
+                        Stroke::new(
+                            1.0_f32,
+                            if on {
+                                theme.border_checked
+                            } else {
+                                theme.border_primary
+                            },
+                        ),
                         egui::StrokeKind::Inside,
                     );
                     ui.painter().text(
@@ -505,8 +520,15 @@ impl RailState {
                         Align2::CENTER_CENTER,
                         "Log",
                         FontId::proportional(13.0),
-                        theme.text_primary,
+                        if on {
+                            theme.text_primary
+                        } else {
+                            theme.text_secondary
+                        },
                     );
+                    if response.clicked() {
+                        self.analysis_log = !self.analysis_log;
+                    }
                 });
                 ui.add_space(f32::from(theme.space_md));
                 ui.horizontal(|ui| {
@@ -523,6 +545,19 @@ impl RailState {
                         egui::StrokeKind::Inside,
                     );
                     let bottom = chart.bottom() - 34.0;
+                    if let Some(bins) = &self.histogram {
+                        let band = Rect::from_min_max(
+                            egui::pos2(chart.left() + 4.0, bottom - 52.0),
+                            egui::pos2(chart.right() - 4.0, bottom),
+                        );
+                        crate::view::widgets::histogram::paint_strip(
+                            ui,
+                            band,
+                            bins,
+                            self.analysis_log,
+                            false,
+                        );
+                    }
                     let points: Vec<egui::Pos2> = self
                         .metrics
                         .curve
@@ -1021,6 +1056,34 @@ mod tests {
             });
         });
         assert_eq!(app.rail.collapsed_sections.get("Analysis"), Some(&false));
+    }
+
+    #[test]
+    fn the_analysis_log_toggle_keeps_its_state() {
+        let fixture = crate::fixture::ReferenceFixture::bundled().unwrap();
+        let mut app = crate::app::NegFeApp::new(&fixture);
+        app.rail.analysis_log = false;
+        assert!(!app.rail.analysis_log);
+        app.rail.analysis_log = !app.rail.analysis_log;
+        assert!(app.rail.analysis_log);
+    }
+
+    #[test]
+    fn the_analysis_chart_takes_the_render_histogram() {
+        let ctx = egui::Context::default();
+        let fixture = crate::fixture::ReferenceFixture::bundled().unwrap();
+        let mut app = crate::app::NegFeApp::new(&fixture);
+        let mut bins = vec![0.0; 4 * 256];
+        bins[3 * 256 + 128] = 10.0;
+        app.rail.set_histogram(Some(bins));
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = app
+                    .rail
+                    .show(ui, ui.max_rect(), &mut app.edit, &mut app.proof);
+            });
+        });
+        assert!(app.rail.histogram.is_some());
     }
 
     #[test]

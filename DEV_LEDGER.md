@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 13:20 | **Last Commit:** `c78b9905` frame: paint heal, line and clone strokes on the canvas
+**Last Updated:** 2026-11-21 13:44 | **Last Commit:** `bbb00212` local: apply masks to the print and the canvas
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -7,11 +7,9 @@ its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
 redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Feed the Analysis chart its histogram and readouts; the card strip has
-   the buffer, the chart itself still reads only the curve.
-2. [ ] Wire the remaining Export controls: input ICC and sidecar scope
+1. [ ] Wire the remaining Export controls: input ICC and sidecar scope
    (`MIGRATION_PLAN.md` §9.5 P3b-14, P3b-15).
-3. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
+2. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
    are still not passed to the print curve.
 
 ## Completed (Recent)
@@ -31,6 +29,7 @@ redrew. Make that render path observable before the remaining tool work.
 - The local stage now reaches the print for stops, grade and flash. A canvas
   mask selects and moves its vertices; the Dodge & Burn card edits the selected
   mask.
+- The Analysis chart paints the render histogram and the Log toggle is live.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
