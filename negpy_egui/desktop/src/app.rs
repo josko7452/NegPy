@@ -381,6 +381,19 @@ impl NegFeApp {
         ctx.request_repaint();
     }
 
+    /// Import the scan output folder the Scan card asked to open as a roll.
+    fn open_scan_folder(&mut self) {
+        let Some(folder) = self.rail.scan.take_folder_as_roll_request() else {
+            return;
+        };
+        if self.rail.library.import(&folder, false) {
+            self.rail.scan.set_status("Folder imported as a roll.");
+            self.open_requested_roll();
+        } else {
+            self.rail.scan.set_status("Could not import that folder.");
+        }
+    }
+
     fn receive_scans(&mut self, ctx: &egui::Context) {
         for report in self.scanner.drain() {
             if let Some(error) = report.error {
@@ -925,6 +938,7 @@ impl NegFeApp {
                     let rail_rect = rail_rect(screen);
                     self.request_export(ctx);
                     self.request_scan(ctx);
+                    self.open_scan_folder();
                     let proof = self.proof.clone();
                     let switched = self
                         .rail
@@ -1056,6 +1070,7 @@ impl NegFeApp {
             self.request_export(ctx);
             self.save_export_preset();
             self.request_scan(ctx);
+            self.open_scan_folder();
             let proof = self.proof.clone();
             let switched = self
                 .rail

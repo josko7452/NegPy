@@ -39,6 +39,8 @@ pub struct ScanState {
     pub output_open: bool,
     pub status: String,
     pub scan_requested: bool,
+    /// The output folder the user asked to import as a roll.
+    pub folder_as_roll_requested: bool,
     pub devices: Vec<negpy_backend::services::scanning::transport::ScannerDevice>,
 }
 
@@ -87,6 +89,7 @@ impl Default for ScanState {
             output_open: true,
             status: String::new(),
             scan_requested: false,
+            folder_as_roll_requested: false,
             devices: Vec::new(),
         }
     }
@@ -173,6 +176,16 @@ impl ScanState {
     /// The one scan request the Scan action asked for.
     pub fn take_scan_request(&mut self) -> bool {
         std::mem::take(&mut self.scan_requested)
+    }
+
+    /// Take the one Folder as Roll request, with its folder.
+    #[must_use]
+    pub fn take_folder_as_roll_request(&mut self) -> Option<std::path::PathBuf> {
+        if !std::mem::take(&mut self.folder_as_roll_requested) {
+            return None;
+        }
+        let folder = self.output_folder.trim();
+        (!folder.is_empty()).then(|| std::path::PathBuf::from(folder))
     }
 
     /// Show the result of the last scan.
@@ -284,8 +297,15 @@ impl ScanState {
             changed |= quality_changed;
             let (framing_open, framing_changed) =
                 scan_card(ui, "Framing", Icon::Crop, self.framing_open, |ui| {
-                    let _ = hint(ui, "Prescan sets a crop for the next scan.");
-                    let _ = labeled_action(ui, "Prescan...", ActionRank::Normal);
+                    let _ = hint(
+                        ui,
+                        "Prescan needs a scanner worker that is not yet ported to Rust.",
+                    );
+                    let _ = ui.add_enabled(
+                        false,
+                        egui::Button::new("Prescan...")
+                            .min_size(Vec2::new(0.0, DEFAULT_BUTTON_HEIGHT)),
+                    );
                     false
                 });
             self.framing_open = framing_open;
@@ -367,14 +387,32 @@ impl ScanState {
         });
         let _ = card(ui, |ui| {
             ui.horizontal(|ui| {
-                changed |= labeled_action(ui, "Scan as Roll", ActionRank::Normal).clicked();
-                changed |= labeled_action(ui, "Folder as Roll", ActionRank::Normal).clicked();
+                let _ = ui.add_enabled(
+                    false,
+                    egui::Button::new("Scan as Roll")
+                        .min_size(Vec2::new(0.0, DEFAULT_BUTTON_HEIGHT)),
+                );
+                if labeled_action(ui, "Folder as Roll", ActionRank::Normal).clicked() {
+                    if self.output_folder.trim().is_empty() {
+                        self.status = "Choose the output folder first.".to_string();
+                    } else {
+                        self.folder_as_roll_requested = true;
+                    }
+                    changed = true;
+                }
             });
             ui.horizontal(|ui| {
                 ui.label("Roll");
                 changed |= ui.text_edit_singleline(&mut self.filename).changed();
-                let _ = labeled_action(ui, "+", ActionRank::Normal);
+                let _ = ui.add_enabled(
+                    false,
+                    egui::Button::new("+").min_size(Vec2::new(0.0, DEFAULT_BUTTON_HEIGHT)),
+                );
             });
+            let _ = hint(
+                ui,
+                "Folder as Roll imports the output folder. Scan as Roll needs a ported strip worker.",
+            );
         });
         changed
     }
@@ -489,6 +527,18 @@ mod tests {
         state.backend = StepCombo::new(vec![Choice::with_id("PIEUSB", "pieusb")]);
         assert!(!state.refresh_devices());
         assert!(state.status.contains("PIEUSB"));
+    }
+
+    #[test]
+    fn folder_as_roll_leaves_one_request_with_its_folder() {
+        let mut state = ScanState::default();
+        state.output_folder = "/tmp/scans".to_string();
+        state.folder_as_roll_requested = true;
+        assert_eq!(
+            state.take_folder_as_roll_request(),
+            Some(std::path::PathBuf::from("/tmp/scans"))
+        );
+        assert!(state.take_folder_as_roll_request().is_none());
     }
 
     #[test]

@@ -1,17 +1,19 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 14:06 | **Last Commit:** `433a1cf5` rail: paint the analysis histogram and toggle log scale
+**Last Updated:** 2026-11-21 14:42 | **Last Commit:** `620593c1` export: write the sidecar the toggle promises
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
-its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
-redrew. Make that render path observable before the remaining tool work.
+Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
+reach the CPU render. Next add the missing GPU engine and finish the dead
+toolbar and card actions from the section 9 audit.
 
 ## Next Steps (Ordered)
-1. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
+1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
+   `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
+2. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
    are still not passed to the print curve.
-2. [ ] Wire the toolbar and the remaining card actions from the section 9
-   audit (Photo/Roll mode, zoom, rotate/flip, Tools, Undo/Redo, Print,
-   Roll Average).
+3. [ ] Wire the dead toolbar and card actions from the section 9 audit
+   (Photo/Roll mode, zoom, rotate/flip, Tools, Undo/Redo, Print, Roll Average,
+   Prescan, Scan as Roll).
 
 ## Completed (Recent)
 - `98d7b11e` frame: keep crop drawing active until confirm.
@@ -33,6 +35,8 @@ redrew. Make that render path observable before the remaining tool work.
 - The Analysis chart paints the render histogram and the Log toggle is live.
 - Export writes a `.negpy` sidecar when its toggle is on. Input and Output ICC
   profiles load from the profile's ICC folder.
+- Folder as Roll imports the Scan card's output folder. Prescan and Scan as Roll
+  are disabled until their worker is ported.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
@@ -73,6 +77,10 @@ redrew. Make that render path observable before the remaining tool work.
   Analysis card still reads only the curve and readouts.
 - Retouch runs on the source proxy and the full-resolution export. Its IR plane
   is oriented and resized with the source.
+- No `wgpu` backend or WGSL shader exists in `negpy_egui/`. The shell draws
+  textures through egui only.
+- The Scan card's Prescan and Scan as Roll are disabled: their workers are not
+  ported.
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
 - The render worker resolves Auto Crop in its own config, then returns a hash
