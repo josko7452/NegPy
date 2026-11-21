@@ -10,6 +10,9 @@ name = "negpy_backend"
 
 [dependencies]
 negpy_core = { path = "../../negpy_core", default-features = false }
+wgpu = "25"
+pollster = "0.4"
+bytemuck = { version = "1.25", features = ["derive"] }
 chrono = "0.4"
 dirs = "6"
 fern = "0.7"
