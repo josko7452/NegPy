@@ -70,6 +70,16 @@ impl Default for MeteringState {
 }
 
 impl MeteringState {
+    /// Turn all three averages on or off for this frame.
+    pub fn set_all_averages(&mut self, on: bool, edit: &mut FrameEdit) {
+        let process = &mut edit.config.process;
+        process.use_luma_average = on;
+        process.use_color_average = on;
+        process.use_cast_average = on;
+        self.measure_alone = !on;
+        edit.mark_dirty();
+    }
+
     /// Replace the controls with the metering values the edit holds.
     pub fn load(&mut self, edit: &FrameEdit) {
         let process = &edit.config.process;
@@ -290,6 +300,20 @@ mod tests {
         assert!(state.store(&mut edit));
         assert!(!edit.config.process.use_luma_average);
         assert!(!edit.config.process.use_color_average);
+    }
+
+    #[test]
+    fn the_toolbar_toggle_sets_every_average_at_once() {
+        let mut edit = FrameEdit::default();
+        let mut state = MeteringState::default();
+        state.set_all_averages(true, &mut edit);
+        assert!(edit.config.process.use_luma_average);
+        assert!(edit.config.process.use_color_average);
+        assert!(edit.config.process.use_cast_average);
+        state.set_all_averages(false, &mut edit);
+        assert!(!edit.config.process.use_luma_average);
+        assert!(!edit.config.process.use_color_average);
+        assert!(!edit.config.process.use_cast_average);
     }
 
     #[test]

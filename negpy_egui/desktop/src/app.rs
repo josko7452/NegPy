@@ -97,6 +97,8 @@ pub struct ShellHits {
     pub transform: Option<usize>,
     /// The zoom percent a toolbar preset selected.
     pub zoom: Option<u32>,
+    /// The Roll Average toggle, taken as its new state.
+    pub roll_average: Option<bool>,
     /// The photo rect the canvas drew, for a zoom preset to read its fit scale.
     pub photo: Option<Rect>,
     pub undo: bool,
@@ -1106,6 +1108,9 @@ impl NegFeApp {
                 retouch_tool,
                 &mut self.retouch_drag,
                 self.zoom,
+                self.edit.config.process.use_luma_average
+                    || self.edit.config.process.use_color_average
+                    || self.edit.config.process.use_cast_average,
             );
             if hits.import {
                 self.rail.library.import_with_picker(false);
@@ -1140,6 +1145,12 @@ impl NegFeApp {
                         .clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
                     ctx.request_repaint();
                 }
+            }
+            if let Some(on) = hits.roll_average {
+                self.rail.metering.set_all_averages(on, &mut self.edit);
+                self.rail.select_view(&self.view);
+                self.request_render(ctx, false);
+                ctx.request_repaint();
             }
             self.apply_canvas_zoom(ctx, hits.photo);
             if let Some(photo) = hits.photo_mode {
@@ -1559,6 +1570,7 @@ fn paint_shell(
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
     zoom: f32,
+    averages_on: bool,
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
@@ -1754,12 +1766,14 @@ fn paint_shell(
         geometry.1.map_or(100, |(width, height)| {
             crate::view::canvas::zoom_percent(photo, width as u32, height as u32)
         }),
+        averages_on,
     );
     hits.previous = navigation.previous;
     hits.next = navigation.next;
     hits.undo = navigation.undo;
     hits.redo = navigation.redo;
     hits.zoom = navigation.zoom;
+    hits.roll_average = navigation.roll_average;
     (rail, hits)
 }
 
@@ -1863,6 +1877,7 @@ fn paint_toolbar(
     frames: usize,
     photo_mode: bool,
     zoom_percent: u32,
+    averages_on: bool,
 ) -> ShellHits {
     use crate::styles::icons::Icon;
     use crate::styles::layout::{
@@ -2124,7 +2139,35 @@ fn paint_toolbar(
 
     let roll_average = Rect::from_min_size(egui::pos2(x, top), Vec2::new(66.0, row_height));
     track(painter, roll_average);
-    flat(painter, roll_average, Icon::Film, theme.text_secondary);
+    if averages_on {
+        painter.rect_filled(roll_average, 4.0, theme.bg_checked);
+        painter.rect_stroke(
+            roll_average,
+            4.0,
+            egui::Stroke::new(1.0_f32, theme.border_checked),
+            egui::StrokeKind::Inside,
+        );
+    }
+    flat(
+        painter,
+        roll_average,
+        Icon::Film,
+        if averages_on {
+            theme.text_primary
+        } else {
+            theme.text_secondary
+        },
+    );
+    if ui
+        .interact(
+            roll_average,
+            ui.id().with("toolbar-roll-average"),
+            Sense::click(),
+        )
+        .clicked()
+    {
+        hits.roll_average = Some(!averages_on);
+    }
     x = roll_average.right() + 6.0;
 
     let trailing = Rect::from_min_size(
@@ -2493,6 +2536,21 @@ mod tests {
         let photo = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(800.0, 400.0));
         app.zoom = 100.0 / crate::view::canvas::zoom_percent(photo, 1600, 800) as f32;
         assert!((app.zoom - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_roll_average_toggle_sets_every_axis() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.process.use_luma_average = false;
+        app.edit.config.process.use_color_average = false;
+        app.edit.config.process.use_cast_average = false;
+        app.rail.metering.set_all_averages(true, &mut app.edit);
+        assert!(app.edit.config.process.use_luma_average);
+        assert!(app.edit.config.process.use_color_average);
+        assert!(app.edit.config.process.use_cast_average);
+        app.rail.metering.set_all_averages(false, &mut app.edit);
+        assert!(!app.edit.config.process.use_luma_average);
     }
 
     #[test]

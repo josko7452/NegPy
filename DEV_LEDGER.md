@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 22:00 | **Last Commit:** `694e16b4` desktop: wire Crop All Frames to a strip worker
+**Last Updated:** 2026-11-21 22:20 | **Last Commit:** `9957d874` desktop: zoom the canvas from presets and the wheel
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,7 +15,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Wire Tools, Print and Roll Average (§9.10 B1-2..B1-3).
+2. [ ] Wire Tools and Print (§9.10 B1-2).
 3. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
 
 ## Completed (Recent)
@@ -23,6 +23,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
   resolved crop and reports saved/kept/failed.
 - Zoom presets, wheel zoom and double-click fit/original reach the canvas; the
   readout prints the true pixel scale.
+- Roll Average applies or clears Luma, Color and Cast on the open frame.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.
