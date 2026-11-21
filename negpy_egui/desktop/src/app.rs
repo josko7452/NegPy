@@ -1019,6 +1019,11 @@ impl NegFeApp {
             self.find.focus = true;
             ctx.request_repaint();
         }
+        if ctx.input(|input| input.key_pressed(egui::Key::Escape)) {
+            self.find.query.clear();
+            self.find.results.clear();
+            self.find.open = false;
+        }
         self.receive_exports(ctx);
         self.receive_render(ctx);
         self.receive_scans(ctx);
@@ -1151,7 +1156,16 @@ impl NegFeApp {
                     screen.top() + 8.0 + crate::view::rail::SEARCH_HEIGHT,
                 ),
             );
-            if let Some(target) = crate::view::find::results(ui, search, &find_results) {
+            let mut active = self.find.active;
+            let nav = crate::view::find::results(
+                ui,
+                search,
+                &find_results,
+                &mut active,
+                self.find.query_settled(),
+            );
+            self.find.active = nav.active;
+            if let Some(target) = nav.picked {
                 self.open_find(target, ctx);
             }
             if hits.import {
@@ -1775,9 +1789,9 @@ fn paint_shell(
             .layout(egui::Layout::top_down(egui::Align::Min)),
     );
     search_ui.set_width(search.width());
-    let (_, results) =
-        crate::view::find::paint(&mut search_ui, search, &mut find.query, &mut find.focus);
-    find.results = results;
+    let paint = crate::view::find::paint(&mut search_ui, search, &mut find.query, &mut find.focus);
+    find.results = paint.results;
+    find.open = paint.open;
     let rail = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),

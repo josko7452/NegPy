@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 00:05 | **Last Commit:** `e40416f6` desktop: dispatch toolbar actions from a shortcut registry
+**Last Updated:** 2026-11-22 00:25 | **Last Commit:** `34fec0dc` desktop: print the frame recipe in the top bar
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,7 +15,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Keep the Find list open on Ctrl+K (§9.10 B1-5).
+2. [ ] Fix the Camera capture entry point (§9.10 B1-8).
 
 ## Completed (Recent)
 - Crop All Frames now runs a strip worker over `batch_autocrop`, applies each
@@ -32,6 +32,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
   Print, Roll Average, Crop All and Tools.
 - The top-bar recipe follows the frame's paper, Print Density and grade, with
   the auto markers.
+- Find keeps its list open, moves with Up/Down and opens the active row on
+  Enter; Escape closes it.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.
