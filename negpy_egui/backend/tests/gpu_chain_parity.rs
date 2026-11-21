@@ -305,12 +305,13 @@ fn a_print_chain_matches_the_cpu_print() {
             settings.process.process_mode,
         )
     };
-    let gpu = engine.run_print(
+    let gpu = engine.run_print_with(
         &image,
         &settings,
         &BaseRun::plain(cpu.metrics.final_bounds),
         &run,
         None,
+        true,
     );
     let mut failures = 0usize;
     for (index, expected) in want.iter().enumerate() {

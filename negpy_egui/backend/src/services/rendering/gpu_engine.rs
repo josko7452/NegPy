@@ -188,6 +188,20 @@ impl GpuEngine {
         print: &ExposureRun<'_>,
         roi: Option<crate::features::geometry::logic::Roi>,
     ) -> ImageBuffer {
+        self.run_print_with(image, config, run, print, roi, true)
+    }
+
+    /// The same chain, encoded only when the CPU tail is not going to run.
+    #[must_use]
+    pub fn run_print_with(
+        &mut self,
+        image: &ImageBuffer,
+        config: &WorkspaceConfig,
+        run: &BaseRun,
+        print: &ExposureRun<'_>,
+        roi: Option<crate::features::geometry::logic::Roi>,
+        encode: bool,
+    ) -> ImageBuffer {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
         let source = GpuTexture::new(
             &self.gpu.device,
@@ -230,6 +244,9 @@ impl GpuEngine {
         let mut pixels = Vec::with_capacity(cropped.width as usize * cropped.height as usize * 3);
         for texel in rgba.chunks_exact(4) {
             pixels.extend_from_slice(&texel[..3]);
+        }
+        if !encode {
+            pixels = crate::features::exposure::analysis::working_oetf_decode(&pixels);
         }
         ImageBuffer::from_rgb(cropped.width as usize, cropped.height as usize, pixels)
     }

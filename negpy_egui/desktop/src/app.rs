@@ -398,6 +398,7 @@ impl NegFeApp {
             source: source.clone(),
             config: self.edit.config.clone(),
             proof: self.proof_request(),
+            gpu_enabled: true,
         };
         let hash = request.config_hash();
         if self.rendered.as_deref() == Some(hash.as_str())

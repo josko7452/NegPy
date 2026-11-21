@@ -4,6 +4,7 @@ pub mod auto_geometry;
 pub mod base_read;
 pub mod display_frame;
 pub mod gpu_engine;
+pub mod gpu_render;
 pub mod import;
 pub mod lens;
 pub mod prefetch_policy;

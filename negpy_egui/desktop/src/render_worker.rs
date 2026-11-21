@@ -94,6 +94,8 @@ pub struct RenderRequest {
     pub source: Arc<SourceFrame>,
     pub config: WorkspaceConfig,
     pub proof: ProofRequest,
+    /// Whether this request may use the GPU chain.
+    pub gpu_enabled: bool,
 }
 
 impl Default for ProofRequest {
@@ -115,7 +117,7 @@ impl RenderRequest {
     #[must_use]
     pub fn config_hash(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             calculate_config_hash(&self.config),
             self.proof.enabled,
             self.proof.icc_path.as_deref().unwrap_or(""),
@@ -124,7 +126,8 @@ impl RenderRequest {
             self.proof.paper_white,
             self.proof.ink_black,
             self.proof.gamut_warning,
-            self.proof.monitor_key()
+            self.proof.monitor_key(),
+            self.gpu_enabled
         )
     }
 }
@@ -219,6 +222,7 @@ impl RenderWorker {
         let worker_slot = Arc::clone(&slot);
         let thread = std::thread::spawn(move || {
             let mut engine = DarkroomEngine::new();
+            let mut gpu = negpy_backend::services::rendering::gpu_engine::GpuEngine::new();
             loop {
                 let request = {
                     let (lock, ready) = &*worker_slot;
@@ -265,7 +269,43 @@ impl RenderWorker {
                 };
                 let mut context = PipelineContext::new();
                 let source_hash = format!("{}{}", request.source.hash, retouch_tokens);
-                let output = engine.process(&baked, &config, &source_hash, &mut context);
+                let use_gpu = request.gpu_enabled
+                    && gpu.is_some()
+                    && negpy_backend::services::rendering::gpu_render::gpu_eligible(
+                        &config, &context,
+                    );
+                let output = if use_gpu {
+                    let measured = negpy_backend::features::exposure::processor::measure_negative(
+                        &baked.pixels,
+                        baked.width,
+                        baked.height,
+                        negpy_backend::features::exposure::processor::NormalizationSettings {
+                            config: &config.process,
+                            mode: config.process.process_mode,
+                            active_roi: None,
+                            base_log: None,
+                        },
+                    );
+                    let base = negpy_backend::services::rendering::gpu_render::GpuBase {
+                        bounds: measured.final_bounds,
+                        norm_density_range: measured.norm_density_range,
+                        textural_range: measured.textural_range,
+                        shadow_point: measured.shadow_point,
+                        highlight_point: measured.highlight_point,
+                        anchor: Some(measured.metered_anchor),
+                        active_roi: None,
+                    };
+                    negpy_backend::services::rendering::gpu_render::render(
+                        gpu.as_mut().expect("the GPU is open"),
+                        &mut engine,
+                        &baked,
+                        &config,
+                        &base,
+                        &mut context,
+                    )
+                } else {
+                    engine.process(&baked, &config, &source_hash, &mut context)
+                };
                 if autocrop.is_some() {
                     context.metrics.insert(
                         "autocrop_resolved".to_string(),
@@ -388,6 +428,7 @@ mod tests {
             source: source(),
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         let hash = request.config_hash();
         worker.submit(request);
@@ -413,6 +454,7 @@ mod tests {
             source: source(),
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         worker.submit(request);
         let output = wait_for(&worker);
@@ -439,6 +481,7 @@ mod tests {
             source: source(),
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         let proofed = RenderRequest {
             generation: 2,
@@ -449,6 +492,7 @@ mod tests {
                 icc_path: Some(icc.display().to_string()),
                 ..ProofRequest::default()
             },
+            gpu_enabled: false,
         };
         worker.submit(plain);
         let first = wait_for(&worker);
@@ -475,6 +519,7 @@ mod tests {
             source: source(),
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         let after = RenderRequest {
             generation: 1,
@@ -485,6 +530,7 @@ mod tests {
                 icc_path: Some("/tmp/paper.icc".to_string()),
                 ..ProofRequest::default()
             },
+            gpu_enabled: false,
         };
         assert_ne!(before.config_hash(), after.config_hash());
     }
@@ -499,6 +545,7 @@ mod tests {
             source: source(),
             config,
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         let mut config = WorkspaceConfig::default();
         config.exposure.density = 1.4;
@@ -507,6 +554,7 @@ mod tests {
             source: source(),
             config,
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         let newest = second.config_hash();
         worker.submit(first);
@@ -535,6 +583,7 @@ mod tests {
             source: source(),
             config,
             proof: ProofRequest::default(),
+            gpu_enabled: false,
         };
         worker.submit(request);
         let output = wait_for(&worker);

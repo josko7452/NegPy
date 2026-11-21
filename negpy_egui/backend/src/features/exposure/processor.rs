@@ -139,6 +139,48 @@ pub fn normalize_negative(
     height: usize,
     settings: NormalizationSettings<'_>,
 ) -> NormalizationResult {
+    let (metrics, log, bounds) = analyze_negative(image, width, height, settings);
+    let mut normalized = vec![0.0; log.len()];
+    normalize_log_image(
+        &log,
+        bounds.floors.map(|value| value as f32),
+        bounds.ceils.map(|value| value as f32),
+        &mut normalized,
+    );
+    NormalizationResult {
+        image: normalized,
+        metrics,
+    }
+}
+
+/// Measure the base without emitting the normalized frame.
+#[must_use]
+pub fn measure_negative(
+    image: &[f32],
+    width: usize,
+    height: usize,
+    settings: NormalizationSettings<'_>,
+) -> NormalizationMetrics {
+    analyze_negative(image, width, height, settings).0
+}
+
+/// The bounds the base measured, before the point offsets, with the normalized log.
+#[must_use]
+pub fn analyze_negative_bounds(
+    image: &[f32],
+    width: usize,
+    height: usize,
+    settings: NormalizationSettings<'_>,
+) -> (NormalizationMetrics, Vec<f32>, LogNegativeBounds) {
+    analyze_negative(image, width, height, settings)
+}
+
+fn analyze_negative(
+    image: &[f32],
+    width: usize,
+    height: usize,
+    settings: NormalizationSettings<'_>,
+) -> (NormalizationMetrics, Vec<f32>, LogNegativeBounds) {
     let config = settings.config;
     let mut log = vec![0.0; image.len()];
     log_density_open(image, &mut log);
@@ -173,14 +215,6 @@ pub fn normalize_negative(
         );
     }
 
-    let mut normalized = vec![0.0; log.len()];
-    normalize_log_image(
-        &log,
-        bounds.floors.map(|value| value as f32),
-        bounds.ceils.map(|value| value as f32),
-        &mut normalized,
-    );
-
     let neutral_axis = if settings.mode == ProcessMode::BW {
         None
     } else {
@@ -208,8 +242,5 @@ pub fn normalize_negative(
         highlight_point: measure_highlight_point(&grid, grid_width, grid_height, anchor_bounds),
         neutral_axis,
     };
-    NormalizationResult {
-        image: normalized,
-        metrics,
-    }
+    (metrics, log, bounds)
 }

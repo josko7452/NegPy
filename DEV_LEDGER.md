@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 20:15 | **Last Commit:** `pending GPU finish`
+**Last Updated:** 2026-11-21 20:45 | **Last Commit:** `pending GPU worker`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -12,26 +12,25 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: run the chain from the desktop render worker when the config
-   allows it, and fall back to the CPU engine (§9.12 G-2).
-2. [ ] GPU: run the vignette pass in the chain for frames without a carrier.
-3. [ ] GPU: add stage caching and a texture pool, then the tiled path
+1. [ ] GPU: add stage caching and a texture pool, then the tiled path
    (§9.12 G-4).
-4. [ ] GPU: pin shader output bits and add per-channel and camera cases
+2. [ ] GPU: pin shader output bits and add per-channel and camera cases
    (§9.12 G-5, G-6).
-5. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
+3. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
    (§9.11 C2-1).
-6. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
+4. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
    then analyze an accepted scene (§9.11 C2-3).
-7. [ ] Metadata Presets: honour a multi-frame selection and card locks
+5. [ ] Metadata Presets: honour a multi-frame selection and card locks
    (§9.11 C2-4).
-8. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
+6. [ ] Contact Sheet: seed left-out from `excluded` marks and make a tile
    clickable (§9.11 C2-5).
-9. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
-10. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
-11. [ ] Camera capture: blocked until a human picks the hardware target.
+7. [ ] Export to Preset: honour the preset `overwrite` flag (§9.11 C2-6).
+8. [ ] Favorites: reorder the chosen sliders (§9.11 C2-7).
+9. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `desktop`: the render worker uses the GPU chain for a print frame that
+  needs no local map, print LUT or carrier, and keeps the CPU engine otherwise.
 - `backend`: the GPU vignette pass matches the core finish kernel; carrier
   frames stay on the CPU.
 - `backend`: the GPU print pass runs the exposure curve and its parity test
