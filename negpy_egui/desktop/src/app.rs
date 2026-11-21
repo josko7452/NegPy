@@ -1385,6 +1385,20 @@ impl NegFeApp {
                     self.rail.exposure.local.card,
                     self.rail.exposure.mask_index,
                 ),
+                (
+                    self.edit
+                        .config
+                        .process
+                        .manual_dmin_at
+                        .as_deref()
+                        .unwrap_or(&[]),
+                    self.edit
+                        .config
+                        .process
+                        .manual_dmax_at
+                        .as_deref()
+                        .unwrap_or(&[]),
+                ),
                 self.photo_mode,
                 &mut self.mask_drag,
                 self.rail.metering.pick != crate::view::rail::metering::MeteringPick::Off,
@@ -2034,6 +2048,7 @@ fn paint_shell(
         bool,
         usize,
     ),
+    bounds_picks: (&[f64], &[f64]),
     photo_mode: bool,
     mask_drag: &mut crate::view::canvas::MaskDrag,
     pick_active: bool,
@@ -2138,6 +2153,11 @@ fn paint_shell(
             crate::view::canvas::local_tool(ui, photo, local.0, local.4, tool, mask_drag);
         hits.mask = mask;
         hits.mask_action = action;
+        crate::view::canvas::paint_picks(
+            ui,
+            photo,
+            &[(bounds_picks.0, "Dmin"), (bounds_picks.1, "Dmax")],
+        );
         hits.pick = crate::view::canvas::pick_tool(ui, photo, pick_active);
         hits.retouch = crate::view::canvas::retouch_tool(ui, photo, retouch_tool, retouch_drag);
     } else {

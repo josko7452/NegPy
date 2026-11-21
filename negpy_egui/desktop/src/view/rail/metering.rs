@@ -5,7 +5,7 @@ use eframe::egui::Ui;
 use crate::edit::FrameEdit;
 use crate::styles::icons::Icon;
 use crate::styles::templates::{
-    ActionRank, action_with_icon, labeled_action, labeled_toggle, section_subheader,
+    ActionRank, action_with_icon, icon_button, labeled_action, labeled_toggle, section_subheader,
 };
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
@@ -28,6 +28,12 @@ pub struct MeteringState {
     pub open: bool,
     pub measure_alone: bool,
     pub pick: MeteringPick,
+    /// Whether the edit holds a hand-set Dmin, shown as its clear button.
+    pub dmin_set: bool,
+    /// Whether the edit holds a hand-set Dmax, shown as its clear button.
+    pub dmax_set: bool,
+    /// A set bound the card asked to clear.
+    pub pending_clear: Option<MeteringPick>,
     /// The result line the card shows after a pick.
     pub status: String,
     pub reset_requested: bool,
@@ -66,6 +72,9 @@ impl Default for MeteringState {
             open: false,
             measure_alone: false,
             pick: MeteringPick::Off,
+            dmin_set: false,
+            dmax_set: false,
+            pending_clear: None,
             status: String::new(),
             reset_requested: false,
         }
@@ -99,6 +108,8 @@ impl MeteringState {
         self.white_point.set_value(process.white_point_offset);
         self.black_point.set_value(process.black_point_offset);
         self.measure_alone = !process.use_luma_average && !process.use_color_average;
+        self.dmin_set = process.manual_dmin.is_some();
+        self.dmax_set = process.manual_dmax.is_some();
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -165,6 +176,26 @@ impl MeteringState {
             self.reset(edit);
             changed = true;
         }
+        if let Some(pick) = self.pending_clear.take() {
+            let process = &mut edit.config.process;
+            match pick {
+                MeteringPick::Dmin => {
+                    process.manual_dmin = None;
+                    process.manual_dmin_at = None;
+                }
+                MeteringPick::Dmax => {
+                    process.manual_dmax = None;
+                    process.manual_dmax_at = None;
+                }
+                MeteringPick::Off => {}
+            }
+            process.local_floors = [0.0; 3];
+            process.local_ceils = [0.0; 3];
+            self.status.clear();
+            self.dmin_set = process.manual_dmin.is_some();
+            self.dmax_set = process.manual_dmax.is_some();
+            changed = true;
+        }
         if changed {
             self.store(edit);
         }
@@ -220,6 +251,17 @@ impl MeteringState {
                     changed = true;
                 }
             });
+            ui.horizontal(|ui| {
+                for (set, pick, tooltip) in [
+                    (self.dmin_set, MeteringPick::Dmin, "Clear Dmin"),
+                    (self.dmax_set, MeteringPick::Dmax, "Clear Dmax"),
+                ] {
+                    if set && icon_button(ui, Icon::Close.glyph(), tooltip).clicked() {
+                        self.pending_clear = Some(pick);
+                        changed = true;
+                    }
+                }
+            });
             let _ = hint(
                 ui,
                 "Click the film base or the deepest shadow, then the brightest highlight.",
@@ -256,6 +298,31 @@ mod tests {
         assert_eq!(state.analysis_buffer.value, 0.05);
         assert_eq!(state.luma_clip.value, 0.0);
         assert_eq!(state.color_clip.value, 0.0);
+    }
+
+    #[test]
+    fn clearing_a_set_bound_drops_it_and_its_point() {
+        let mut edit = FrameEdit::default();
+        edit.config.process.manual_dmin = Some(vec![0.1, 0.2, 0.3]);
+        edit.config.process.manual_dmin_at = Some(vec![0.4, 0.5]);
+        edit.config.process.manual_dmax = Some(vec![0.7, 0.8, 0.9]);
+        let mut state = MeteringState::default();
+        state.load(&edit);
+        assert!(state.dmin_set);
+        assert!(state.dmax_set);
+        state.pending_clear = Some(MeteringPick::Dmin);
+        let mut ui_changed = false;
+        let ctx = eframe::egui::Context::default();
+        let _ = ctx.run(eframe::egui::RawInput::default(), |ctx| {
+            eframe::egui::CentralPanel::default().show(ctx, |ui| {
+                ui_changed = state.show(ui, &mut edit);
+            });
+        });
+        let _ = ui_changed;
+        let _ = state.store(&mut edit);
+        assert!(edit.config.process.manual_dmin.is_none());
+        assert!(edit.config.process.manual_dmin_at.is_none());
+        assert!(edit.config.process.manual_dmax.is_some());
     }
 
     #[test]

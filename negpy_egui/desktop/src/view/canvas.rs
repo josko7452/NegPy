@@ -256,6 +256,34 @@ pub fn pick_tool(ui: &mut egui::Ui, photo: Rect, active: bool) -> PickAction {
     PickAction::None
 }
 
+/// Paint the point each hand-set bound was picked at, while the pick fold is open.
+pub fn paint_picks(ui: &egui::Ui, photo: Rect, picks: &[(&[f64], &str)]) {
+    let theme = Theme::default();
+    for (point, label) in picks {
+        if point.len() < 2 {
+            continue;
+        }
+        let at = egui::pos2(
+            photo.left() + point[0] as f32 * photo.width(),
+            photo.top() + point[1] as f32 * photo.height(),
+        );
+        if !photo.contains(at) {
+            continue;
+        }
+        ui.painter()
+            .circle_filled(at, 4.0, with_alpha(theme.mark_shadow, 200));
+        ui.painter()
+            .circle_stroke(at, 4.0, Stroke::new(1.0_f32, theme.mark_photo));
+        ui.painter().text(
+            at + Vec2::new(8.0, -8.0),
+            egui::Align2::LEFT_BOTTOM,
+            label,
+            egui::FontId::proportional(f32::from(theme.font_size_small)),
+            theme.mark_photo,
+        );
+    }
+}
+
 /// A normalized crop rect that follows `from` to `to` inside `photo`.
 #[must_use]
 pub fn region_rect(photo: Rect, from: egui::Pos2, to: egui::Pos2) -> [f64; 4] {
