@@ -214,8 +214,12 @@ pub struct NegFeApp {
     retouch_drag: crate::view::canvas::RetouchDrag,
     /// The fit-relative canvas zoom.
     pub zoom: f32,
+    /// A true-pixel zoom a shortcut asked for, applied once the canvas is known.
+    pub zoom_percent: Option<u32>,
     /// The Find field state the shell passes to the painter.
     pub find: FindState,
+    /// Whether the Tools menu should open under the pointer.
+    pub tools_open: bool,
 }
 
 impl NegFeApp {
@@ -251,7 +255,9 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            zoom_percent: None,
             find: FindState::default(),
+            tools_open: false,
         }
     }
 
@@ -287,7 +293,9 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            zoom_percent: None,
             find: FindState::default(),
+            tools_open: false,
         }
     }
 
@@ -451,7 +459,8 @@ impl NegFeApp {
     }
 
     /// Submit one Crop All Frames run for the strip.
-    fn request_crop_all(&mut self, ctx: &egui::Context) {
+    /// Ask for one Crop All Frames run on the strip.
+    pub fn request_crop_all(&mut self, ctx: &egui::Context) {
         if !self.rail.geometry.crop_all_request {
             return;
         }
@@ -1005,6 +1014,7 @@ impl NegFeApp {
 
     /// Paint the shell regions for this frame.
     pub fn draw(&mut self, ctx: &egui::Context) {
+        crate::view::shortcuts::dispatch(self, ctx);
         if ctx.input(|input| input.key_pressed(egui::Key::K) && input.modifiers.command) {
             self.find.focus = true;
             ctx.request_repaint();
@@ -1155,15 +1165,15 @@ impl NegFeApp {
                 self.next_frame();
             }
             if hits.undo {
-                self.undo_edit(ctx);
+                self.undo_action(ctx);
             }
             if hits.redo {
-                self.redo_edit(ctx);
+                self.redo_action(ctx);
             }
             if let Some(action) = hits.transform {
-                self.transform_frame(action, ctx);
+                self.transform_action(action, ctx);
             }
-            if hits.tools
+            if (hits.tools || std::mem::take(&mut self.tools_open))
                 && let Some(tool) = crate::view::tools_menu::show_from_pointer(ctx)
             {
                 let mut subtab = self.rail.frame_subtab.current_key().to_string();
@@ -1181,6 +1191,19 @@ impl NegFeApp {
                 ctx.request_repaint();
             }
             if let Some(percent) = hits.zoom {
+                if let (Some(photo), Some(frame)) = (hits.photo, self.frame.as_ref()) {
+                    let fit = crate::view::canvas::zoom_percent(
+                        photo,
+                        frame.width as u32,
+                        frame.height as u32,
+                    )
+                    .max(1) as f32;
+                    self.zoom = (percent as f32 / fit)
+                        .clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
+                    ctx.request_repaint();
+                }
+            }
+            if let Some(percent) = self.zoom_percent.take() {
                 if let (Some(photo), Some(frame)) = (hits.photo, self.frame.as_ref()) {
                     let fit = crate::view::canvas::zoom_percent(
                         photo,
@@ -1299,7 +1322,8 @@ impl NegFeApp {
     }
 
     /// Step the open frame back, then show the earlier config.
-    fn undo_edit(&mut self, ctx: &egui::Context) {
+    /// Step the open frame back.
+    pub fn undo_action(&mut self, ctx: &egui::Context) {
         if self.edit.undo() {
             self.rail.select_view(&self.view);
             self.request_render(ctx, false);
@@ -1308,7 +1332,8 @@ impl NegFeApp {
     }
 
     /// Step the open frame forward, then show the later config.
-    fn redo_edit(&mut self, ctx: &egui::Context) {
+    /// Step the open frame forward.
+    pub fn redo_action(&mut self, ctx: &egui::Context) {
         if self.edit.redo() {
             self.rail.select_view(&self.view);
             self.request_render(ctx, false);
@@ -1317,7 +1342,8 @@ impl NegFeApp {
     }
 
     /// Rotate, flip or toggle the crop lock from the toolbar.
-    fn transform_frame(&mut self, action: usize, ctx: &egui::Context) {
+    /// Rotate, flip or toggle the crop lock from the toolbar.
+    pub fn transform_action(&mut self, action: usize, ctx: &egui::Context) {
         let before = self.edit.config.clone();
         match action {
             0 => {
@@ -1530,6 +1556,36 @@ impl NegFeApp {
             }
         }
         ctx.request_repaint();
+    }
+
+    /// Focus the Find field.
+    pub fn focus_find(&mut self) {
+        self.find.focus = true;
+    }
+
+    /// Set the fit-relative canvas zoom.
+    pub fn set_zoom(&mut self, zoom: f32) {
+        self.zoom = zoom.clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
+    }
+
+    /// Ask for a true-pixel zoom, applied by the next canvas paint.
+    pub fn zoom_to_percent(&mut self, percent: u32) {
+        self.zoom_percent = Some(percent);
+    }
+
+    /// Toggle the Roll Average on every axis.
+    pub fn toggle_roll_average(&mut self, ctx: &egui::Context) {
+        let process = &self.edit.config.process;
+        let on =
+            !(process.use_luma_average || process.use_color_average || process.use_cast_average);
+        self.rail.metering.set_all_averages(on, &mut self.edit);
+        self.rail.select_view(&self.view);
+        self.request_render(ctx, false);
+    }
+
+    /// Open the Tools menu at the pointer.
+    pub fn open_tools(&mut self) {
+        self.tools_open = true;
     }
 
     /// Whether a decoded frame is on the canvas.
@@ -2422,13 +2478,13 @@ mod tests {
         let fixture = ReferenceFixture::bundled().unwrap();
         let mut app = NegFeApp::new(&fixture);
         let ctx = egui::Context::default();
-        app.transform_frame(1, &ctx);
+        app.transform_action(1, &ctx);
         assert_eq!(app.edit.config.geometry.rotation, 1);
-        app.transform_frame(0, &ctx);
+        app.transform_action(0, &ctx);
         assert_eq!(app.edit.config.geometry.rotation, 0);
-        app.transform_frame(2, &ctx);
+        app.transform_action(2, &ctx);
         assert!(app.edit.config.geometry.flip_horizontal);
-        app.transform_frame(3, &ctx);
+        app.transform_action(3, &ctx);
         assert!(app.edit.config.geometry.flip_vertical);
     }
 

@@ -6,5 +6,6 @@ pub mod contact_sheet_dialog;
 pub mod find;
 pub mod light_table;
 pub mod rail;
+pub mod shortcuts;
 pub mod tools_menu;
 pub mod widgets;

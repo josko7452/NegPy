@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 23:20 | **Last Commit:** `50850d3c` desktop: open the Export form from Print
+**Last Updated:** 2026-11-21 23:45 | **Last Commit:** `e747a22c` desktop: open the Find field from Ctrl+K
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,7 +15,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Add the shortcut registry (§9.10 B1-7).
+2. [ ] Keep the Find list open on Ctrl+K, then make the recipe line follow
+   the frame config (§9.10 B1-6).
 
 ## Completed (Recent)
 - Crop All Frames now runs a strip worker over `batch_autocrop`, applies each
@@ -28,6 +29,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - Print opens the Export tab on its file page.
 - Find takes Ctrl+K, filters the shell's cards and actions, and opens a
   result on its tab.
+- A shortcut registry dispatches navigation, rotate/flip, undo/redo, zoom,
+  Print, Roll Average, Crop All and Tools.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.
