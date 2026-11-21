@@ -1,14 +1,14 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 03:40 | **Last Commit:** `WORKING light-table: use the strip bar actions`
+**Last Updated:** 2026-11-22 03:55 | **Last Commit:** `3d1e8645 light-table: use the strip bar actions`
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
-reach the CPU render. Next add the missing GPU engine and finish the dead
-toolbar and card actions in `MIGRATION_PLAN.md` §9.10.
+Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
+preset, culling, crop-guide and export-form gaps. Next add the missing GPU
+engine and finish the dead card actions in `MIGRATION_PLAN.md` §9.11.
 
 ## Batch Protocol
 After commit #10, run the source audit in `MIGRATION_PLAN.md` §8.7. Write its
-findings into §9.10 and this ledger, then run `cargo check --workspace` and
+findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
@@ -21,6 +21,9 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 3. [ ] Pick Dmin and Dmax by hand on the canvas.
 4. [ ] Metadata Presets: apply the stored fields to the selected frames or roll.
 5. [ ] Export presets: run a preset on the selected frames or the roll.
+6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back.
+7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard.
+8. [ ] Frame Favorites: the stored slider list and its editor.
 
 ## Completed (Recent)
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
@@ -90,7 +93,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - Photo/Roll, rotate/flip, Undo/Redo and Square to Film reach the edit. Zoom,
   Tools, Print, Roll Average, Crop All Frames, Find and the recipe line now
   respond (§9.10).
-- The post-batch source audit is §9.10 in `MIGRATION_PLAN.md`.
+- The post-batch source audit is §9.11 in `MIGRATION_PLAN.md`.
 - The mask picker edits the selected mask; ovals select inside their outline and
   cards near their axis.
 - `receive_render` accepts output by generation and request hash, not by the
