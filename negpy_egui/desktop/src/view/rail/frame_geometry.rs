@@ -56,9 +56,15 @@ impl Default for CropState {
                 Choice::with_id("2:3", "2:3"),
             ]),
             guide: StepCombo::new(vec![
-                Choice::new("Thirds"),
-                Choice::new("Golden Ratio"),
-                Choice::new("Diagonals"),
+                Choice::with_id("Thirds", "thirds"),
+                Choice::with_id("Phi Grid", "phi"),
+                Choice::with_id("Diagonals", "diagonals"),
+                Choice::with_id("Golden Triangles", "triangles"),
+                Choice::with_id("Golden Spiral", "spiral"),
+                Choice::with_id("Armature", "armature"),
+                Choice::with_id("Diagonal Method", "diagonal_method"),
+                Choice::with_id("Grid", "grid"),
+                Choice::with_id("Off", "off"),
             ]),
             mode: StepCombo::new(vec![Choice::new("Image only"), Choice::new("Film edge")]),
             offset: CompactSlider::new(
@@ -122,11 +128,15 @@ pub struct GeometryState {
     pub square_request: bool,
     /// A Crop All Frames request from this card, taken by the shell.
     pub crop_all_request: bool,
+    /// A request to measure the film frame's closest standard aspect ratio.
+    pub detect_ratio_request: bool,
     /// The last result the card shows under its run row.
     pub crop_all_status: String,
     pub crop_open: bool,
     pub straighten_open: bool,
     pub transform: Option<i8>,
+    /// The composition guide shown over the crop.
+    pub guide_key: String,
     /// Whether the tab summary collapsed every card.
     pub cards_collapsed: bool,
 }
@@ -138,10 +148,12 @@ impl Default for GeometryState {
             straighten: StraightenState::default(),
             square_request: false,
             crop_all_request: false,
+            detect_ratio_request: false,
             crop_all_status: String::new(),
             crop_open: true,
             straighten_open: true,
             transform: None,
+            guide_key: "thirds".to_string(),
             cards_collapsed: false,
         }
     }
@@ -172,6 +184,7 @@ impl GeometryState {
             .fine_rotation
             .set_value(geometry.fine_rotation);
         self.straighten.crop_empty = !geometry.crop_to_valid;
+        self.crop.guide.pick(&self.guide_key);
     }
 
     /// Write the controls to the edit and return whether any value changed.
@@ -249,6 +262,10 @@ impl GeometryState {
         changed
     }
 
+    fn store_guide(&mut self) {
+        self.guide_key = self.crop.guide.current_value().to_string();
+    }
+
     /// Paint the page. Returns whether a control changed the edit.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
         self.load(edit);
@@ -264,6 +281,7 @@ impl GeometryState {
         ui.add_space(f32::from(Theme::default().space_sm));
         changed |= self.show_straighten(ui);
         if changed {
+            self.store_guide();
             self.store(edit);
         }
         changed
@@ -345,7 +363,9 @@ impl GeometryState {
                     changed |= self.crop.ratio.show(ui);
                 });
                 field_row(ui, columns, "Guide", |ui| {
-                    changed |= self.crop.guide.show(ui);
+                    if self.crop.guide.show(ui) {
+                        changed = true;
+                    }
                 });
                 self.crop.settings.group_header(ui, "Auto Crop Settings");
                 if self.crop.settings.open {
@@ -360,6 +380,15 @@ impl GeometryState {
                 ui.horizontal(|ui| {
                     changed |=
                         labeled_toggle(ui, "Square First", &mut self.crop.square_first).clicked();
+                    if crate::styles::templates::icon_button(
+                        ui,
+                        Icon::Crosshair.glyph(),
+                        "Measure the closest standard ratio from the film frame",
+                    )
+                    .clicked()
+                    {
+                        self.detect_ratio_request = true;
+                    }
                     if labeled_action(ui, "Crop All Frames", ActionRank::Normal).clicked() {
                         self.crop_all_request = true;
                     }
@@ -578,6 +607,32 @@ mod tests {
         let mut state = GeometryState::default();
         state.crop_all_request = true;
         assert!(state.crop_all_request);
+    }
+
+    #[test]
+    fn the_crop_card_keeps_the_chosen_guide() {
+        let mut state = GeometryState::default();
+        state.crop.guide.pick("phi");
+        state.store_guide();
+        assert_eq!(state.guide_key, "phi");
+        let ctx = egui::Context::default();
+        let mut edit = FrameEdit::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit);
+            });
+        });
+        assert_eq!(state.crop.guide.current_value(), "phi");
+    }
+
+    #[test]
+    fn the_ratio_button_raises_one_detect_request() {
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        let ratio = edit.config.geometry.autocrop_ratio;
+        state.detect_ratio_request = true;
+        assert!(state.detect_ratio_request);
+        assert_eq!(edit.config.geometry.autocrop_ratio, ratio);
     }
 
     #[test]

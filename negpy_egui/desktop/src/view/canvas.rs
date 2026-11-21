@@ -15,6 +15,138 @@ pub const CROP_HINT: &str = "Drag a crop. Right-click or Enter keeps it.";
 pub const ZOOM_MIN: f32 = 0.25;
 pub const ZOOM_MAX: f32 = 8.0;
 
+/// One composition guide, in unit fractions of the crop rect.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CropGuide {
+    Thirds,
+    Phi,
+    Diagonals,
+    GoldenTriangles,
+    GoldenSpiral,
+    Armature,
+    DiagonalMethod,
+    Grid,
+    Off,
+}
+
+impl CropGuide {
+    /// The guide for a stored key, defaulting to thirds.
+    #[must_use]
+    pub fn coerce(value: &str) -> Self {
+        match value {
+            "phi" => Self::Phi,
+            "diagonals" => Self::Diagonals,
+            "triangles" => Self::GoldenTriangles,
+            "spiral" => Self::GoldenSpiral,
+            "armature" => Self::Armature,
+            "diagonal_method" => Self::DiagonalMethod,
+            "grid" => Self::Grid,
+            "off" => Self::Off,
+            _ => Self::Thirds,
+        }
+    }
+
+    /// The unit-fraction polylines this guide draws.
+    #[must_use]
+    pub fn lines(self) -> Vec<Vec<[f64; 2]>> {
+        match self {
+            Self::Thirds => fractions(&[1.0 / 3.0, 2.0 / 3.0]),
+            Self::Phi => fractions(&[0.381_966_011_250_105, 0.618_033_988_749_895]),
+            Self::Diagonals => vec![
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[1.0, 0.0], [0.0, 1.0]],
+                vec![[0.5, 0.0], [0.5, 1.0]],
+                vec![[0.0, 0.5], [1.0, 0.5]],
+            ],
+            Self::GoldenTriangles => vec![
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[1.0, 0.0], [0.5, 0.5]],
+                vec![[0.0, 1.0], [0.5, 0.5]],
+            ],
+            Self::GoldenSpiral => spiral(),
+            Self::Armature => vec![
+                vec![[0.0, 0.0], [1.0, 1.0]],
+                vec![[1.0, 0.0], [0.0, 1.0]],
+                vec![[0.0, 0.0], [1.0, 0.5]],
+                vec![[0.0, 0.0], [0.5, 1.0]],
+                vec![[1.0, 0.0], [0.0, 0.5]],
+                vec![[1.0, 0.0], [0.5, 1.0]],
+                vec![[1.0, 1.0], [0.0, 0.5]],
+                vec![[1.0, 1.0], [0.5, 0.0]],
+                vec![[0.0, 1.0], [1.0, 0.5]],
+                vec![[0.0, 1.0], [0.5, 0.0]],
+            ],
+            Self::DiagonalMethod => {
+                vec![vec![[0.0, 0.0], [1.0, 1.0]], vec![[1.0, 0.0], [0.0, 1.0]]]
+            }
+            Self::Grid => {
+                let mut lines = Vec::new();
+                for step in 1..8 {
+                    let at = step as f64 / 8.0;
+                    lines.push(vec![[at, 0.0], [at, 1.0]]);
+                    lines.push(vec![[0.0, at], [1.0, at]]);
+                }
+                lines
+            }
+            Self::Off => Vec::new(),
+        }
+    }
+}
+
+fn fractions(values: &[f64]) -> Vec<Vec<[f64; 2]>> {
+    let mut lines = Vec::new();
+    for value in values {
+        lines.push(vec![[*value, 0.0], [*value, 1.0]]);
+        lines.push(vec![[0.0, *value], [1.0, *value]]);
+    }
+    lines
+}
+
+fn spiral() -> Vec<Vec<[f64; 2]>> {
+    const PHI: f64 = 1.618_033_988_749_895;
+    let mut points = Vec::new();
+    let (mut x, mut y, mut w, mut h) = (0.0, 0.0, 1.0, 1.0 / PHI);
+    let mut angle = std::f64::consts::PI;
+    for index in 0..10 {
+        let (cx, cy, radius);
+        match index % 4 {
+            0 => {
+                radius = h;
+                (cx, cy) = (x + radius, y + radius);
+                x += radius;
+                w -= radius;
+            }
+            1 => {
+                radius = w;
+                (cx, cy) = (x, y + radius);
+                y += radius;
+                h -= radius;
+            }
+            2 => {
+                radius = h;
+                (cx, cy) = (x + w - radius, y);
+                w -= radius;
+            }
+            _ => {
+                radius = w;
+                (cx, cy) = (x + radius, y + h - radius);
+                h -= radius;
+            }
+        }
+        for step in 0..=12 {
+            let t = angle + (std::f64::consts::FRAC_PI_2) * (step as f64 / 12.0);
+            points.push([(cx + radius * t.cos()) * PHI, (cy + radius * t.sin()) * PHI]);
+        }
+        angle += std::f64::consts::FRAC_PI_2;
+    }
+    vec![
+        points
+            .into_iter()
+            .map(|[px, py]| [px.clamp(0.0, 1.0), py.clamp(0.0, 1.0)])
+            .collect(),
+    ]
+}
+
 /// A crop drag in progress, in photo coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CropDrag {
@@ -147,6 +279,7 @@ pub fn crop_tool(
     active: bool,
     show_box: bool,
     drag: &mut Option<CropDrag>,
+    guide: CropGuide,
 ) -> CropAction {
     let theme = Theme::default();
     let response = ui.interact(
@@ -198,14 +331,34 @@ pub fn crop_tool(
             .or_else(|| rect.and_then(|rect| stored_rect(photo, rect)));
         if let Some(bounds) = bounds {
             paint_crop_box(ui, photo, bounds, drag.is_some(), &theme);
+            paint_guide(ui, bounds, guide, &theme);
         }
         paint_crop_hint(ui, photo, &theme);
     } else if show_box {
         if let Some(bounds) = rect.and_then(|rect| stored_rect(photo, rect)) {
             paint_crop_box(ui, photo, bounds, false, &theme);
+            paint_guide(ui, bounds, guide, &theme);
         }
     }
     action
+}
+
+fn paint_guide(ui: &egui::Ui, bounds: Rect, guide: CropGuide, theme: &Theme) {
+    let stroke = Stroke::new(1.0_f32, with_alpha(theme.mark_photo, 150));
+    for line in guide.lines() {
+        let points: Vec<egui::Pos2> = line
+            .iter()
+            .map(|[x, y]| {
+                egui::pos2(
+                    bounds.left() + *x as f32 * bounds.width(),
+                    bounds.top() + *y as f32 * bounds.height(),
+                )
+            })
+            .collect();
+        if points.len() >= 2 {
+            ui.painter().add(egui::Shape::line(points, stroke));
+        }
+    }
 }
 
 /// Whether a text field is focused and has a cursor. A focused button must not block Enter.
@@ -839,6 +992,21 @@ mod tests {
     }
 
     #[test]
+    fn every_guide_key_selects_its_shape() {
+        assert_eq!(CropGuide::coerce("phi"), CropGuide::Phi);
+        assert_eq!(CropGuide::coerce("off"), CropGuide::Off);
+        assert_eq!(CropGuide::coerce("grid"), CropGuide::Grid);
+        assert_eq!(
+            CropGuide::coerce("diagonal_method"),
+            CropGuide::DiagonalMethod
+        );
+        assert_eq!(CropGuide::coerce("unknown"), CropGuide::Thirds);
+        assert!(CropGuide::Off.lines().is_empty());
+        assert!(!CropGuide::Thirds.lines().is_empty());
+        assert!(!CropGuide::GoldenSpiral.lines().is_empty());
+    }
+
+    #[test]
     fn a_retouch_gesture_normalizes_its_points() {
         let photo = photo();
         let action = gesture_action(
@@ -993,7 +1161,15 @@ mod tests {
             },
             |ctx| {
                 egui::CentralPanel::default().show(ctx, |ui| {
-                    action = crop_tool(ui, photo(), Some(&stored), false, true, &mut drag);
+                    action = crop_tool(
+                        ui,
+                        photo(),
+                        Some(&stored),
+                        false,
+                        true,
+                        &mut drag,
+                        CropGuide::Thirds,
+                    );
                 });
             },
         );

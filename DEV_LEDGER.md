@@ -28,6 +28,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - `export`: the Presets page selects, renames, enables and deletes a preset.
 - `light-table`: Keep and Reject write the frame marks the Library search reads,
   the grid paints them, and Export skips a rejected frame.
+- `crop`: the guide choice persists, the crop box paints its composition guide,
+  and the Ratio crosshair measures the film frame's closest standard ratio.
 - `2ff82255` desktop: Crop All keeps a frame edited during the run.
 - `1d7fe335` desktop: Find keeps its list and opens the active row.
 - `34fec0dc` desktop: the recipe follows the frame's paper, density and grade.

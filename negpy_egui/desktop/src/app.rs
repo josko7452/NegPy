@@ -1220,6 +1220,7 @@ impl NegFeApp {
                     self.rail.apply_history_action(&mut self.edit);
                     self.apply_metadata_preset();
                     self.apply_square_request(ctx);
+                    self.apply_detect_ratio(ctx);
                     self.request_crop_all(ctx);
                     self.apply_roll_analysis(ctx);
                     self.open_requested_roll();
@@ -1276,6 +1277,7 @@ impl NegFeApp {
                     self.frame.as_ref().map(|frame| (frame.width, frame.height)),
                 ),
                 self.rail.geometry.crop.draw,
+                crate::view::canvas::CropGuide::coerce(&self.rail.geometry.guide_key),
                 &mut self.crop_drag,
                 (
                     &self.edit.config.local.masks,
@@ -1462,6 +1464,7 @@ impl NegFeApp {
             self.rail.apply_history_action(&mut self.edit);
             self.apply_metadata_preset();
             self.apply_square_request(ctx);
+            self.apply_detect_ratio(ctx);
             self.request_crop_all(ctx);
             self.apply_roll_analysis(ctx);
             if self.rail.export.take_contact_sheet_request() {
@@ -1611,6 +1614,26 @@ impl NegFeApp {
         self.edit.config.geometry = squared;
         self.edit.mark_dirty();
         self.request_render(ctx, false);
+    }
+
+    /// Measure the film frame's closest standard ratio when the Crop card asks.
+    fn apply_detect_ratio(&mut self, ctx: &egui::Context) {
+        if !self.rail.geometry.detect_ratio_request {
+            return;
+        }
+        self.rail.geometry.detect_ratio_request = false;
+        let Some(source) = self.source.as_ref() else {
+            return;
+        };
+        let ratio = negpy_backend::features::geometry::processor::detect_closest_aspect_ratio(
+            &source.image,
+            self.edit.config.geometry.autocrop_ratio,
+        );
+        if ratio != self.edit.config.geometry.autocrop_ratio {
+            self.edit.config.geometry.autocrop_ratio = ratio;
+            self.edit.mark_dirty();
+            self.request_render(ctx, false);
+        }
     }
 
     fn apply_roll_analysis(&mut self, ctx: &egui::Context) {
@@ -1898,6 +1921,7 @@ fn paint_shell(
         Option<(usize, usize)>,
     ),
     crop_draw: bool,
+    crop_guide: crate::view::canvas::CropGuide,
     crop_drag: &mut Option<crate::view::canvas::CropDrag>,
     local: (
         &[negpy_backend::domain::models::LocalMask],
@@ -1993,6 +2017,7 @@ fn paint_shell(
             crop_draw,
             geometry.0.crop_rect.is_some() && !geometry.0.crop_from_auto,
             crop_drag,
+            crop_guide,
         );
         hits.crop = crop;
         let tool = if local.1 {
