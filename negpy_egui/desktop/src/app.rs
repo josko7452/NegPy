@@ -101,6 +101,8 @@ pub struct ShellHits {
     pub zoom: Option<u32>,
     /// The Roll Average toggle, taken as its new state.
     pub roll_average: Option<bool>,
+    /// The Print button, which opens the Export flow.
+    pub print: bool,
     /// The photo rect the canvas drew, for a zoom preset to read its fit scale.
     pub photo: Option<Rect>,
     pub undo: bool,
@@ -1171,6 +1173,13 @@ impl NegFeApp {
                 self.request_render(ctx, false);
                 ctx.request_repaint();
             }
+            if hits.print {
+                self.rail.tab = Tab::Export;
+                self.rail.export.show_subtab("file");
+                self.view.tab = Tab::Export;
+                self.photo_mode = false;
+                ctx.request_repaint();
+            }
             self.apply_canvas_zoom(ctx, hits.photo);
             if let Some(photo) = hits.photo_mode {
                 self.rail.tab = if photo { Tab::Frame } else { Tab::Roll };
@@ -1794,6 +1803,7 @@ fn paint_shell(
     hits.zoom = navigation.zoom;
     hits.roll_average = navigation.roll_average;
     hits.tools = navigation.tools;
+    hits.print = navigation.print;
     (rail, hits)
 }
 
@@ -2159,6 +2169,10 @@ fn paint_toolbar(
         Icon::ChevronDown,
         theme.text_secondary,
     );
+    let print_hit = ui.interact(print, ui.id().with("toolbar-print"), Sense::click());
+    if print_hit.clicked() {
+        hits.print = true;
+    }
     x = print.right() + 6.0;
 
     let roll_average = Rect::from_min_size(egui::pos2(x, top), Vec2::new(66.0, row_height));
@@ -2575,6 +2589,19 @@ mod tests {
         assert!(app.edit.config.process.use_cast_average);
         app.rail.metering.set_all_averages(false, &mut app.edit);
         assert!(!app.edit.config.process.use_luma_average);
+    }
+
+    #[test]
+    fn the_print_button_opens_the_export_form() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.rail.tab = Tab::Frame;
+        app.rail.tab = Tab::Export;
+        app.rail.export.show_subtab("file");
+        app.photo_mode = false;
+        assert_eq!(app.rail.tab, Tab::Export);
+        assert_eq!(app.rail.export.page, 0);
+        assert!(!app.photo_mode);
     }
 
     #[test]
