@@ -359,7 +359,7 @@ impl GpuEngine {
         print: &ExposureRun<'_>,
         lab: crate::features::lab::lab_shader::LabRun,
         roi: Option<crate::features::geometry::logic::Roi>,
-    ) -> ImageBuffer {
+    ) -> (ImageBuffer, crate::features::lab::lab_shader::LabOutput) {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
         let key = prefix_key(config, run, &self.source_key);
         let reuse = self.prefix.as_ref().is_some_and(|prefix| {
@@ -436,7 +436,7 @@ impl GpuEngine {
         let labbed = self
             .textures
             .take(&self.gpu.device, out_w as u32, out_h as u32, "lab");
-        let _ = crate::features::lab::lab_shader::run(
+        let lab_out = crate::features::lab::lab_shader::run(
             &self.gpu,
             &self.loaders,
             &remapped,
@@ -476,7 +476,7 @@ impl GpuEngine {
         }
         let (width, height) = (toned.width as usize, toned.height as usize);
         self.textures.put(toned);
-        ImageBuffer::from_rgb(width, height, pixels)
+        (ImageBuffer::from_rgb(width, height, pixels), lab_out)
     }
 
     fn encode_cropped(

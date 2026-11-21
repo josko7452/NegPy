@@ -39,7 +39,7 @@ fn config() -> WorkspaceConfig {
 }
 
 #[test]
-fn an_alt_process_and_auto_masking_stay_on_the_cpu() {
+fn an_alt_process_stays_on_the_cpu() {
     let mut alt = WorkspaceConfig::default();
     alt.process.process_mode = ProcessMode::BW;
     alt.altproc.alt_process = AltProcess::Cyanotype;
@@ -47,7 +47,7 @@ fn an_alt_process_and_auto_masking_stay_on_the_cpu() {
 
     let mut auto = WorkspaceConfig::default();
     auto.lab.sharpen_auto_masking = true;
-    assert!(!gpu_eligible(&auto, &PipelineContext::new()));
+    assert!(gpu_eligible(&auto, &PipelineContext::new()));
 }
 
 #[test]

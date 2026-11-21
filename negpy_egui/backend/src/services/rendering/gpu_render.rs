@@ -81,9 +81,6 @@ pub fn gpu_eligible(config: &WorkspaceConfig, context: &PipelineContext) -> bool
     {
         return false;
     }
-    if config.lab.sharpen_auto_masking {
-        return false;
-    }
     let paper = effective_paper_profile(
         &config.exposure.paper_profile,
         Some(config.process.process_mode),
@@ -141,7 +138,7 @@ pub fn render(
             config.process.process_mode,
         )
     };
-    let toned = gpu.run_tail_input(
+    let (toned, lab_out) = gpu.run_tail_input(
         image,
         config,
         &run,
@@ -153,8 +150,17 @@ pub fn render(
         },
         roi,
     );
+    to_metrics(context, &lab_out);
     let toned = apply_hue_trim(&toned, config.process.hue_trim);
     finish(config, toned)
+}
+
+fn to_metrics(context: &mut PipelineContext, lab: &crate::features::lab::lab_shader::LabOutput) {
+    if let Some(share) = lab.auto_masking {
+        context
+            .metrics
+            .insert("auto_masking".to_string(), serde_json::json!(share));
+    }
 }
 
 fn finish(config: &WorkspaceConfig, toned: ImageBuffer) -> ImageBuffer {
