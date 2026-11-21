@@ -9,7 +9,7 @@ use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The Retouch card.
 #[derive(Clone, Debug, PartialEq)]
@@ -133,6 +133,8 @@ pub struct FinishState {
     /// The retouch tool the next canvas stroke uses.
     pub tool: RetouchTool,
     pub overlay_choice: usize,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
 }
 
 /// The selected retouch tool.
@@ -153,6 +155,7 @@ impl Default for FinishState {
             finishing: FinishingState::default(),
             tool: RetouchTool::Off,
             overlay_choice: 0,
+            cards_collapsed: false,
         }
     }
 }
@@ -294,13 +297,22 @@ impl FinishState {
     /// Paint the page. Returns whether a control changed the edit.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
         self.load(edit);
-        let mut changed = TabSummary::new(2).show(ui) != Default::default();
+        let summary = TabSummary::new(2)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
+        let show = !self.cards_collapsed;
         let (retouch_open, retouch_changed) =
-            show_card(ui, "Retouch", self.retouch.open, |ui| self.show_retouch(ui));
+            show_card(ui, "Retouch", show && self.retouch.open, |ui| {
+                self.show_retouch(ui)
+            });
         self.retouch.open = retouch_open;
         changed |= retouch_changed;
         let (finishing_open, finishing_changed) =
-            show_card(ui, "Finishing", self.finishing.open, |ui| {
+            show_card(ui, "Finishing", show && self.finishing.open, |ui| {
                 self.show_finishing(ui)
             });
         self.finishing.open = finishing_open;

@@ -93,6 +93,8 @@ pub struct TabSummary {
     pub apply: bool,
     pub reset: bool,
     pub collapse: bool,
+    /// Whether the cards under this summary are collapsed.
+    pub collapsed: bool,
 }
 
 impl TabSummary {
@@ -106,7 +108,15 @@ impl TabSummary {
             apply: true,
             reset: false,
             collapse: true,
+            collapsed: false,
         }
+    }
+
+    /// Draw the chevron for a collapsed page.
+    #[must_use]
+    pub fn with_collapsed(mut self, collapsed: bool) -> Self {
+        self.collapsed = collapsed;
+        self
     }
 
     /// Hide the Apply action on a tab whose settings do not copy to other frames.
@@ -175,8 +185,12 @@ impl TabSummary {
         let mut right = row.right() - f32::from(theme.space_xl);
         let mut action = TabSummaryAction::None;
         if self.collapse {
-            let (next, clicked) =
-                summary_button(ui, right, row.center().y, Icon::ChevronDown, &theme);
+            let icon = if self.collapsed {
+                Icon::ChevronRight
+            } else {
+                Icon::ChevronDown
+            };
+            let (next, clicked) = summary_button(ui, right, row.center().y, icon, &theme);
             if clicked {
                 action = TabSummaryAction::Collapse;
             }

@@ -17,7 +17,7 @@ use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::fold::Fold;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The crop options in the Crop card.
 const TOGGLE_CHIP_HEIGHT: f32 = 40.0;
@@ -121,6 +121,8 @@ pub struct GeometryState {
     pub crop_open: bool,
     pub straighten_open: bool,
     pub transform: Option<i8>,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
 }
 
 impl Default for GeometryState {
@@ -131,6 +133,7 @@ impl Default for GeometryState {
             crop_open: true,
             straighten_open: true,
             transform: None,
+            cards_collapsed: false,
         }
     }
 }
@@ -240,7 +243,13 @@ impl GeometryState {
     /// Paint the page. Returns whether a control changed the edit.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
         self.load(edit);
-        let mut changed = TabSummary::new(2).show(ui) != Default::default();
+        let summary = TabSummary::new(2)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         ui.add_space(f32::from(Theme::default().space_sm));
         changed |= self.show_crop(ui);
         ui.add_space(f32::from(Theme::default().space_sm));
@@ -256,7 +265,7 @@ impl GeometryState {
         let columns = RowColumns::new();
         let mut section = CollapsibleSection::new("Crop").with_guide();
         section.modified = usize::from(self.crop.auto_crop || self.crop.has_crop);
-        section.expanded = self.crop_open;
+        section.expanded = self.crop_open && !self.cards_collapsed;
         let mut changed = false;
         section.show(ui, |ui| {
             let _ = card(ui, |ui| {
@@ -346,14 +355,16 @@ impl GeometryState {
                 });
             });
         });
-        self.crop_open = section.expanded;
+        if !self.cards_collapsed {
+            self.crop_open = section.expanded;
+        }
         changed
     }
 
     fn show_straighten(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
         let mut section = CollapsibleSection::new("Straighten").with_guide();
-        section.expanded = self.straighten_open;
+        section.expanded = self.straighten_open && !self.cards_collapsed;
         section.modified = usize::from(
             !self.straighten.fine_rotation.is_neutral()
                 || !self.straighten.tilt.is_neutral()
@@ -425,7 +436,9 @@ impl GeometryState {
                         .clicked();
             });
         });
-        self.straighten_open = section.expanded;
+        if !self.cards_collapsed {
+            self.straighten_open = section.expanded;
+        }
         changed
     }
 }
@@ -587,5 +600,21 @@ mod tests {
         state.crop.square_first = true;
         state.store(&mut edit);
         assert!(edit.config.geometry.autocrop_square);
+    }
+
+    #[test]
+    fn a_collapsed_geometry_page_keeps_each_card_state() {
+        let ctx = egui::Context::default();
+        let mut state = GeometryState::default();
+        let mut edit = FrameEdit::default();
+        state.crop_open = false;
+        state.cards_collapsed = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit);
+            });
+        });
+        assert!(!state.crop_open);
+        assert!(state.straighten_open);
     }
 }

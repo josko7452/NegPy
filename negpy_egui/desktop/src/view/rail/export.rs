@@ -17,7 +17,7 @@ use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The Export tab's sub-tabs.
 #[must_use]
@@ -58,6 +58,8 @@ pub struct ExportState {
     pub contact_sheet_requested: bool,
     pub save_preset_requested: bool,
     pub status: String,
+    /// Whether the tab summary collapsed the page.
+    pub collapsed: bool,
 }
 
 impl Default for ExportState {
@@ -117,6 +119,7 @@ impl Default for ExportState {
             contact_sheet_requested: false,
             save_preset_requested: false,
             status: String::new(),
+            collapsed: false,
         }
     }
 }
@@ -264,13 +267,32 @@ impl ExportState {
             self.page = picked;
         }
         ui.add_space(f32::from(Theme::default().space_sm));
-        let changed = match page {
-            0 => self.show_file(ui),
-            1 => self.show_proof(ui),
-            2 => self.show_presets(ui),
-            3 => self.show_alongside(ui),
-            _ => false,
+        if !self.collapsed && page == 0 {
+            let summary = TabSummary::new(1).with_collapsed(false).show(ui);
+            if summary == TabSummaryAction::Collapse {
+                self.collapsed = true;
+            }
+        }
+        let changed = if self.collapsed {
+            false
+        } else {
+            match page {
+                0 => self.show_file(ui),
+                1 => self.show_proof(ui),
+                2 => self.show_presets(ui),
+                3 => self.show_alongside(ui),
+                _ => false,
+            }
         };
+        if self.collapsed {
+            let summary = TabSummary::new(0)
+                .without_apply()
+                .with_collapsed(true)
+                .show(ui);
+            if summary == TabSummaryAction::Collapse {
+                self.collapsed = false;
+            }
+        }
         if changed {
             self.store(edit);
         }
@@ -366,10 +388,13 @@ impl ExportState {
     }
 
     fn show_presets(&mut self, ui: &mut Ui) -> bool {
-        let _ = TabSummary::new(0)
+        let summary = TabSummary::new(0)
             .without_apply()
             .titled("Export Presets")
             .show(ui);
+        if summary == TabSummaryAction::Collapse {
+            self.collapsed = true;
+        }
         if self.presets.is_empty() {
             let _ = hint(ui, "No presets yet.");
         } else {
@@ -618,5 +643,19 @@ mod tests {
         assert_eq!(preset.export_fmt, ExportFormat::Tiff);
         assert_eq!(preset.jpeg_quality, 77);
         assert_eq!(preset.output_subfolder, "out");
+    }
+
+    #[test]
+    fn a_collapsed_export_page_hides_its_form() {
+        let ctx = egui::Context::default();
+        let mut state = ExportState::default();
+        let mut edit = FrameEdit::default();
+        state.collapsed = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit);
+            });
+        });
+        assert!(state.collapsed);
     }
 }

@@ -16,7 +16,7 @@ use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::step_combo::{Choice, StepCombo};
 use crate::view::widgets::sub_tabs::SUB_TAB_HEIGHT;
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The four Metadata pages.
 #[must_use]
@@ -63,6 +63,8 @@ pub struct MetadataState {
     pub clear_process: bool,
     pub clear_scanning: bool,
     pub folder_name: String,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
 }
 
 impl Default for MetadataState {
@@ -128,6 +130,7 @@ impl Default for MetadataState {
             clear_process: false,
             clear_scanning: false,
             folder_name: String::new(),
+            cards_collapsed: false,
         }
     }
 }
@@ -314,7 +317,7 @@ impl MetadataState {
         self.load(edit);
         let mut changed = false;
         let mut preview = CollapsibleSection::new("Metadata Preview").with_guide();
-        preview.expanded = self.preview_open;
+        preview.expanded = self.preview_open && !self.cards_collapsed;
         let (_, preview_result) = preview.show(ui, |ui| {
             card(ui, |ui| {
                 let preview_changed =
@@ -342,7 +345,9 @@ impl MetadataState {
                 preview_changed
             })
         });
-        self.preview_open = preview.expanded;
+        if !self.cards_collapsed {
+            self.preview_open = preview.expanded;
+        }
         changed |= preview_result.unwrap_or(false);
         let tabs = metadata_tabs();
         let mut page = self.page;
@@ -366,7 +371,13 @@ impl MetadataState {
     }
 
     fn show_shot(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = TabSummary::new(3).show(ui) != Default::default();
+        let summary = TabSummary::new(3)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let columns = RowColumns::new();
         let (gear_open, gear_changed) =
             metadata_card(ui, "Analog Gear", self.card_open("Analog Gear"), |ui| {
@@ -410,7 +421,7 @@ impl MetadataState {
                 });
                 gear_changed
             });
-        self.cards_open.insert("Analog Gear".to_string(), gear_open);
+        self.record_open("Analog Gear", gear_open);
         changed |= gear_changed;
         let (capture_open, capture_changed) =
             metadata_card(ui, "Capture", self.card_open("Capture"), |ui| {
@@ -433,7 +444,7 @@ impl MetadataState {
                 });
                 capture_changed
             });
-        self.cards_open.insert("Capture".to_string(), capture_open);
+        self.record_open("Capture", capture_open);
         changed |= capture_changed;
         let (exposure_open, exposure_changed) = metadata_card(
             ui,
@@ -459,14 +470,19 @@ impl MetadataState {
                 exposure_changed
             },
         );
-        self.cards_open
-            .insert("Exposure".to_string(), exposure_open);
+        self.record_open("Exposure", exposure_open);
         changed |= exposure_changed;
         changed
     }
 
     fn show_process(&mut self, ui: &mut Ui) -> bool {
-        let mut changed = TabSummary::new(2).show(ui) != Default::default();
+        let summary = TabSummary::new(2)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let (process_open, process_changed) =
             metadata_card(ui, "Process", self.card_open("Process"), |ui| {
                 let mut process_changed = false;
@@ -504,7 +520,7 @@ impl MetadataState {
                 }
                 process_changed
             });
-        self.cards_open.insert("Process".to_string(), process_open);
+        self.record_open("Process", process_open);
         changed |= process_changed;
         let (scan_open, scan_changed) =
             metadata_card(ui, "Scanning", self.card_open("Scanning"), |ui| {
@@ -536,13 +552,18 @@ impl MetadataState {
                 }
                 scan_changed
             });
-        self.cards_open.insert("Scanning".to_string(), scan_open);
+        self.record_open("Scanning", scan_open);
         changed |= scan_changed;
         changed
     }
 
     fn show_presets(&mut self, ui: &mut Ui) -> bool {
-        let _ = TabSummary::new(1).show(ui);
+        let summary = TabSummary::new(1)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let (open, changed) = metadata_card(ui, "Presets", self.card_open("Presets"), |ui| {
             if self.preset_names.is_empty() {
                 let _ = hint(ui, "No presets yet.");
@@ -553,12 +574,17 @@ impl MetadataState {
             }
             false
         });
-        self.cards_open.insert("Presets".to_string(), open);
+        self.record_open("Presets", open);
         changed
     }
 
     fn show_gear(&mut self, ui: &mut Ui) -> bool {
-        let _ = TabSummary::new(1).show(ui);
+        let summary = TabSummary::new(1)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let (open, changed) = metadata_card(ui, "My Gear", self.card_open("My Gear"), |ui| {
             let _ = hint(ui, "The gear that you declared as your own.");
             for item in ["Camera", "Lens", "Film stock", "Process", "Scan setup"] {
@@ -582,12 +608,18 @@ impl MetadataState {
             }
             false
         });
-        self.cards_open.insert("My Gear".to_string(), open);
+        self.record_open("My Gear", open);
         changed
     }
 
     fn card_open(&self, title: &str) -> bool {
-        self.cards_open.get(title).copied().unwrap_or(true)
+        !self.cards_collapsed && self.cards_open.get(title).copied().unwrap_or(true)
+    }
+
+    fn record_open(&mut self, title: &str, open: bool) {
+        if !self.cards_collapsed {
+            self.cards_open.insert(title.to_string(), open);
+        }
     }
 }
 
@@ -809,5 +841,21 @@ mod tests {
                 assert!(!state.show(ui, &mut edit));
             });
         });
+    }
+
+    #[test]
+    fn a_collapsed_metadata_page_keeps_each_card_state() {
+        let ctx = egui::Context::default();
+        let mut state = MetadataState::default();
+        let mut edit = FrameEdit::default();
+        state.cards_open.insert("Capture".to_string(), false);
+        state.cards_collapsed = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit);
+            });
+        });
+        assert_eq!(state.cards_open.get("Capture"), Some(&false));
+        assert!(state.card_open("Analog Gear") == false);
     }
 }

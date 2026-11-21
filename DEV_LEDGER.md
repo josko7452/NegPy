@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 11:02 | **Last Commit:** `fd3d572d` frame: prove auto crop redraws its frozen rect
+**Last Updated:** 2026-11-21 11:26 | **Last Commit:** `ac484e4b` desktop: paint the render histogram on the card headers
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -23,6 +23,8 @@ redrew. Make that render path observable before the remaining tool work.
   painted hash and submits nothing.
 - The render worker returns the `(4, 256)` output histogram of the texture it
   painted; the Filtration and Tone card headers paint it.
+- `TabSummaryAction::Collapse` now toggles a page flag; each page keeps its own
+  card open states across the folded view.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.

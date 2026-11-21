@@ -14,7 +14,7 @@ use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The Filtration card.
 #[derive(Clone, Debug, PartialEq)]
@@ -220,6 +220,8 @@ pub struct ExposureState {
     pub channel: usize,
     /// The masks the canvas lasso has stored for this frame.
     pub mask_count: usize,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
     clear_masks: bool,
 }
 
@@ -235,6 +237,7 @@ impl Default for ExposureState {
             region: 0,
             channel: 0,
             mask_count: 0,
+            cards_collapsed: false,
             clear_masks: false,
         }
     }
@@ -531,7 +534,13 @@ impl ExposureState {
     /// Paint the page. Returns whether a control changed the edit.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit, histogram: Option<&[f64]>) -> bool {
         self.load(edit);
-        let mut changed = TabSummary::new(4).show(ui) != Default::default();
+        let summary = TabSummary::new(4)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let (filtration_open, filtration_changed) = show_card_with(
             ui,
             "Filtration",
@@ -936,17 +945,33 @@ mod tests {
         assert_eq!(state.paper.paper.current_value(), "neutral");
         assert!(!state.store(&mut edit));
     }
-}
 
-#[test]
-fn the_region_and_channel_choices_survive_a_reload() {
-    let mut state = ExposureState::default();
-    let mut edit = FrameEdit::default();
-    state.load(&edit);
-    state.filtration.region.current = 2;
-    state.tone.channel.current = 3;
-    state.store(&mut edit);
-    state.load(&edit);
-    assert_eq!(state.filtration.region.current, 2);
-    assert_eq!(state.tone.channel.current, 3);
+    #[test]
+    fn the_region_and_channel_choices_survive_a_reload() {
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.load(&edit);
+        state.filtration.region.current = 2;
+        state.tone.channel.current = 3;
+        state.store(&mut edit);
+        state.load(&edit);
+        assert_eq!(state.filtration.region.current, 2);
+        assert_eq!(state.tone.channel.current, 3);
+    }
+
+    #[test]
+    fn a_collapsed_tone_page_keeps_each_card_state() {
+        let ctx = egui::Context::default();
+        let mut state = ExposureState::default();
+        let mut edit = FrameEdit::default();
+        state.tone.open = false;
+        state.cards_collapsed = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, &mut edit, None);
+            });
+        });
+        assert!(!state.tone.open);
+        assert!(state.cards_collapsed);
+    }
 }

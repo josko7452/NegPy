@@ -9,7 +9,7 @@ use crate::styles::templates::labeled_action;
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::flat_rows::{FlatRow, paint_fill, paint_pill, two_line_rects};
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// One step in the frame's edit history.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,6 +52,8 @@ pub struct HistoryState {
     pub save_requested: bool,
     pub restore_requested: Option<i64>,
     pub selected_work_print: Option<String>,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
 }
 
 impl Default for HistoryState {
@@ -90,6 +92,7 @@ impl HistoryState {
             save_requested: false,
             restore_requested: None,
             selected_work_print: None,
+            cards_collapsed: false,
         }
     }
 
@@ -113,9 +116,15 @@ impl HistoryState {
     /// Paint the page. Returns whether a control changed the session.
     pub fn show(&mut self, ui: &mut Ui) -> bool {
         let theme = Theme::default();
-        let mut changed = TabSummary::new(2).show(ui) != Default::default();
+        let summary = TabSummary::new(2)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
         let mut work_prints = CollapsibleSection::new("Work Prints").with_guide();
-        work_prints.expanded = self.work_prints_open;
+        work_prints.expanded = self.work_prints_open && !self.cards_collapsed;
         let (_, prints) = work_prints.show(ui, |ui| {
             card(ui, |ui| {
                 let mut changed = false;
@@ -141,10 +150,12 @@ impl HistoryState {
                 changed
             })
         });
-        self.work_prints_open = work_prints.expanded;
+        if !self.cards_collapsed {
+            self.work_prints_open = work_prints.expanded;
+        }
         changed |= prints.unwrap_or(false);
         let mut history = CollapsibleSection::new("Edit History").with_guide();
-        history.expanded = self.history_open;
+        history.expanded = self.history_open && !self.cards_collapsed;
         let (_, steps) = history.show(ui, |ui| {
             card(ui, |ui| {
                 let mut changed = false;
@@ -166,7 +177,9 @@ impl HistoryState {
                 changed
             })
         });
-        self.history_open = history.expanded;
+        if !self.cards_collapsed {
+            self.history_open = history.expanded;
+        }
         changed |= steps.unwrap_or(false);
         ui.add_space(f32::from(theme.space_sm));
         changed
@@ -306,5 +319,20 @@ mod tests {
         assert_eq!(state.steps[0].number, 2);
         assert!(state.steps[1].current);
         assert_eq!(state.work_prints, vec!["First print".to_string()]);
+    }
+
+    #[test]
+    fn a_collapsed_history_page_keeps_each_card_state() {
+        let ctx = egui::Context::default();
+        let mut state = HistoryState::default();
+        state.history_open = false;
+        state.cards_collapsed = true;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui);
+            });
+        });
+        assert!(!state.history_open);
+        assert!(state.work_prints_open);
     }
 }

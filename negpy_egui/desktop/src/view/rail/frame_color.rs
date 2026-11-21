@@ -12,7 +12,7 @@ use crate::view::widgets::collapsible::{CollapsibleSection, card};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::step_combo::{Choice, StepCombo};
-use crate::view::widgets::tab_header::TabSummary;
+use crate::view::widgets::tab_header::{TabSummary, TabSummaryAction};
 
 /// The Lab card: chroma, detail and effects.
 #[derive(Clone, Debug, PartialEq)]
@@ -169,6 +169,8 @@ pub struct LookState {
     pub lab: LabState,
     pub alt: AltProcessState,
     pub toning: ToningState,
+    /// Whether the tab summary collapsed every card.
+    pub cards_collapsed: bool,
 }
 
 impl Default for LookState {
@@ -177,6 +179,7 @@ impl Default for LookState {
             lab: LabState::default(),
             alt: AltProcessState::default(),
             toning: ToningState::default(),
+            cards_collapsed: false,
         }
     }
 }
@@ -338,17 +341,28 @@ impl LookState {
     /// Paint the page. Returns whether a control changed the edit.
     pub fn show(&mut self, ui: &mut Ui, edit: &mut FrameEdit) -> bool {
         self.load(edit);
-        let mut changed = TabSummary::new(3).show(ui) != Default::default();
-        let (lab_open, lab_changed) = show_card(ui, "Lab", self.lab.open, |ui| self.show_lab(ui));
+        let summary = TabSummary::new(3)
+            .with_collapsed(self.cards_collapsed)
+            .show(ui);
+        let mut changed = matches!(summary, TabSummaryAction::Apply | TabSummaryAction::Reset);
+        if summary == TabSummaryAction::Collapse {
+            self.cards_collapsed = !self.cards_collapsed;
+        }
+        let show = !self.cards_collapsed;
+        let (lab_open, lab_changed) =
+            show_card(ui, "Lab", show && self.lab.open, |ui| self.show_lab(ui));
         self.lab.open = lab_open;
         changed |= lab_changed;
-        let (alt_open, alt_changed) = show_card(ui, "Alternative Processes", self.alt.open, |ui| {
-            self.show_alt(ui)
-        });
+        let (alt_open, alt_changed) =
+            show_card(ui, "Alternative Processes", show && self.alt.open, |ui| {
+                self.show_alt(ui)
+            });
         self.alt.open = alt_open;
         changed |= alt_changed;
         let (toning_open, toning_changed) =
-            show_card(ui, "Toning", self.toning.open, |ui| self.show_toning(ui));
+            show_card(ui, "Toning", show && self.toning.open, |ui| {
+                self.show_toning(ui)
+            });
         self.toning.open = toning_open;
         changed |= toning_changed;
         if changed {
