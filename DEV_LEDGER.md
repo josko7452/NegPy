@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 18:10 | **Last Commit:** `<pending>` rail: paint the waveform, parade and vectorscope
+**Last Updated:** 2026-11-21 18:14 | **Last Commit:** `4f2a8bdf` rail: paint the waveform, parade and vectorscope
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -20,14 +20,14 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
    to Film and Drop Empty Corners.
 
 ## Completed (Recent)
-- `<pending>` rail: the worker bins the waveform, parade and vectorscope; the
+- `4f2a8bdf` rail: the worker bins the waveform, parade and vectorscope; the
   Analysis card switches between curve, waveform, parade and vectorscope, and
   the curve also paints the normalized density histogram.
-- `<pending>` local: an oval and a card mask are hit-tested by their outline and
+- `a9836f82` local: an oval and a card mask are hit-tested by their outline and
   axis, not by their control points.
-- `59e23e45` local: the tone-limited mask key, zone and softness reach the print
+- `62a3c939` local: the tone-limited mask key, zone and softness reach the print
   curve; the key edges invert the achromatic curve.
-- `<pending>` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
+- `c5a42cf8` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
 - `98d7b11e` frame: keep crop drawing active until confirm.
 - The render worker returns the request hash and the painted config hash; the
   shell accepts a render only when both generation and request hash match.
