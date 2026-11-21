@@ -138,6 +138,47 @@ fn histogram_of(pixels: &[u8], width: usize, height: usize) -> Option<Vec<f64>> 
     negpy_backend::features::exposure::analysis::output_histogram(&encoded, width, height)
 }
 
+/// The display-encoded frame as float, for the scope bins.
+fn encoded_of(pixels: &[u8]) -> Vec<f32> {
+    pixels
+        .iter()
+        .map(|value| f32::from(*value) / 255.0)
+        .collect()
+}
+
+/// The waveform, parade and vectorscope bins of one display-encoded frame.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ScopeBins {
+    /// Luma counts per frame column and tone.
+    pub waveform: Option<Vec<f64>>,
+    /// Mean color sums per waveform cell.
+    pub waveform_color: Option<Vec<f64>>,
+    /// R, G and B counts side by side.
+    pub parade: Option<Vec<f64>>,
+    /// a*b* counts on the scope plane.
+    pub vectorscope: Option<Vec<f64>>,
+}
+
+impl ScopeBins {
+    fn of(pixels: &[u8], width: usize, height: usize) -> Self {
+        let encoded = encoded_of(pixels);
+        Self {
+            waveform: negpy_backend::features::exposure::analysis::waveform(
+                &encoded, width, height,
+            ),
+            waveform_color: negpy_backend::features::exposure::analysis::waveform_color(
+                &encoded, width, height,
+            ),
+            parade: negpy_backend::features::exposure::analysis::waveform_parade(
+                &encoded, width, height,
+            ),
+            vectorscope: negpy_backend::features::exposure::analysis::vectorscope_histogram(
+                &encoded, width, height,
+            ),
+        }
+    }
+}
+
 /// One finished preview.
 #[derive(Clone, Debug)]
 pub struct RenderOutput {
@@ -149,6 +190,10 @@ pub struct RenderOutput {
     pub frame: DisplayFrame,
     /// The display histogram `(4, 256)` of the frame on the canvas, when it has one.
     pub histogram: Option<Vec<f64>>,
+    /// The scope bins the Analysis view paints.
+    pub scopes: ScopeBins,
+    /// The `(4, 120)` density histogram of the normalized frame, when it has one.
+    pub density_histogram: Option<Vec<f64>>,
     pub metrics: BTreeMap<String, Value>,
 }
 
@@ -244,6 +289,11 @@ impl RenderWorker {
                     }
                 }
                 let histogram = histogram_of(&pixels, output.width, output.height);
+                let scopes = ScopeBins::of(&pixels, output.width, output.height);
+                let density_histogram = context
+                    .metrics
+                    .get("histogram_density")
+                    .and_then(|value| serde_json::from_value(value.clone()).ok());
                 let frame = DisplayFrame::from_rgb(output.width, output.height, pixels);
                 let metrics = context.metrics;
                 if tx
@@ -253,6 +303,8 @@ impl RenderWorker {
                         config_hash,
                         frame,
                         histogram,
+                        scopes,
+                        density_histogram,
                         metrics,
                     })
                     .is_err()
@@ -367,6 +419,11 @@ mod tests {
         let histogram = output.histogram.expect("a display histogram");
         assert_eq!(histogram.len(), 4 * 256);
         assert!(histogram.iter().sum::<f64>() > 0.0);
+        let scopes = output.scopes;
+        assert!(scopes.waveform.is_some());
+        assert!(scopes.parade.is_some());
+        assert!(scopes.vectorscope.is_some());
+        assert!(output.density_histogram.is_some());
     }
 
     #[test]

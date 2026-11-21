@@ -585,6 +585,8 @@ impl NegFeApp {
                     &output.metrics,
                 ));
             self.rail.set_histogram(output.histogram);
+            self.rail.set_scopes(output.scopes);
+            self.rail.set_density_histogram(output.density_histogram);
             self.view.texture_size = Some(Vec2::new(
                 output.frame.width as f32,
                 output.frame.height as f32,
@@ -2077,6 +2079,8 @@ mod tests {
                 vec![0; 3],
             ),
             histogram: None,
+            scopes: crate::render_worker::ScopeBins::default(),
+            density_histogram: None,
             metrics: std::collections::BTreeMap::new(),
         };
         assert!(app.accepts_render(&output(4, "confirmed")));

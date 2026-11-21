@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 17:40 | **Last Commit:** `<pending>` local: select oval and card masks on the canvas
+**Last Updated:** 2026-11-21 18:10 | **Last Commit:** `<pending>` rail: paint the waveform, parade and vectorscope
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -18,10 +18,11 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 2. [ ] Wire the dead toolbar and card actions in §9.9: Photo/Roll mode, zoom,
    rotate/flip, Tools, Undo/Redo, Print, Roll Average, Crop All Frames, Square
    to Film and Drop Empty Corners.
-3. [ ] Add a render output for the density histogram, waveform, parade and
-   vectorscope, then give each a view.
 
 ## Completed (Recent)
+- `<pending>` rail: the worker bins the waveform, parade and vectorscope; the
+  Analysis card switches between curve, waveform, parade and vectorscope, and
+  the curve also paints the normalized density histogram.
 - `<pending>` local: an oval and a card mask are hit-tested by their outline and
   axis, not by their control points.
 - `59e23e45` local: the tone-limited mask key, zone and softness reach the print
@@ -83,9 +84,8 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 - The local mask tool returns before it claims a drag when its mode is `Off`.
 - Retouch bakes are wired ahead of both engines. Unlimited and tone-limited
   local masks reach the print; the card sets the key and the zone rail.
-- The output histogram is binned from the display-encoded frame. The Analysis
-  card paints it with the curve and readouts; the density and scope views are
-  absent (§9.9 A2-3).
+- The scopes and density histogram are binned from the display and normalized
+  frames; the Analysis card paints each view.
 - Retouch runs on the source proxy and the full-resolution export. Its IR plane
   is oriented and resized with the source.
 - No `wgpu` backend or WGSL shader exists in `negpy_egui/`. The shell draws

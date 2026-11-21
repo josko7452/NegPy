@@ -137,6 +137,42 @@ pub fn show(ui: &mut egui::Ui, bins: &[f64], log: bool, channels: bool) {
     }
 }
 
+/// Whether a buffer is a `(4, 120)` density histogram.
+#[must_use]
+pub fn is_density_histogram(bins: &[f64]) -> bool {
+    bins.len() == 4 * 120
+}
+
+/// Paint the density histogram's luma row along the bottom edge of a chart.
+pub fn paint_density(ui: &egui::Ui, area: Rect, bins: &[f64], log: bool) {
+    if !is_density_histogram(bins) {
+        return;
+    }
+    let start = 3 * 120;
+    let counts: Vec<f64> = bins[start..start + 120]
+        .iter()
+        .map(|value| if log { value.ln_1p() } else { *value })
+        .collect();
+    let peak = counts.iter().copied().fold(0.0, f64::max);
+    if peak <= 0.0 {
+        return;
+    }
+    let mut points = Vec::with_capacity(122);
+    points.push(area.left_bottom());
+    for (index, value) in counts.iter().enumerate() {
+        points.push(egui::pos2(
+            area.left() + index as f32 / 119.0 * area.width(),
+            area.bottom() - (value / peak) as f32 * area.height(),
+        ));
+    }
+    points.push(area.right_bottom());
+    ui.painter().add(egui::Shape::convex_polygon(
+        points,
+        with_alpha(Theme::default().text_hint, 70),
+        Stroke::NONE,
+    ));
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

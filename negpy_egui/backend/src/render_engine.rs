@@ -667,9 +667,31 @@ fn run_base(
             metrics,
         }
     };
+    let mut metrics = metrics_to_map(&outcome.metrics);
+    if print {
+        let outcome_roi = geometry.active_roi.map(|(y1, y2, x1, x2)| {
+            (
+                y1.max(0) as usize,
+                y2.max(0) as usize,
+                x1.max(0) as usize,
+                x2.max(0) as usize,
+            )
+        });
+        if let Some(bins) = crate::features::exposure::analysis::density_histogram(
+            &outcome.image,
+            geometry.image.width,
+            geometry.image.height,
+            outcome_roi,
+        ) {
+            metrics.insert(
+                "histogram_density".to_string(),
+                serde_json::to_value(bins).unwrap_or(Value::Null),
+            );
+        }
+    }
     StageOutcome {
         image: ImageBuffer::from_rgb(geometry.image.width, geometry.image.height, outcome.image),
-        metrics: metrics_to_map(&outcome.metrics),
+        metrics,
         active_roi: geometry.active_roi.map(|(y1, y2, x1, x2)| {
             (
                 y1.max(0) as usize,

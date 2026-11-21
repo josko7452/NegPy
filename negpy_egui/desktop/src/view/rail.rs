@@ -79,11 +79,16 @@ pub struct RailState {
     pub history: history::HistoryState,
     pub analysis_open: bool,
     pub analysis_log: bool,
+    /// Which Analysis chart paints: 0 curve, 1 waveform, 2 parade, 3 vectorscope.
+    pub analysis_view: usize,
+    pub scopes: crate::render_worker::ScopeBins,
     pub readouts_open: bool,
     pub collapsed_sections: std::collections::BTreeMap<String, bool>,
     pub metrics: analysis::AnalysisMetrics,
     /// The display histogram `(4, 256)` of the frame on the canvas.
     pub histogram: Option<Vec<f64>>,
+    /// The `(4, 120)` density histogram of the normalized frame.
+    pub density_histogram: Option<Vec<f64>>,
     pub export_status: ExportStatus,
     pub roll_analysis: roll_analysis::RollAnalysisState,
     pub raw_decode: raw_decode::RawDecodeState,
@@ -152,10 +157,13 @@ impl RailState {
             history: history::HistoryState::default(),
             analysis_open: view.analysis_open,
             analysis_log: view.analysis_log,
+            analysis_view: 0,
+            scopes: crate::render_worker::ScopeBins::default(),
             readouts_open: false,
             collapsed_sections: std::collections::BTreeMap::new(),
             metrics: analysis::AnalysisMetrics::default(),
             histogram: None,
+            density_histogram: None,
             export_status: ExportStatus::default(),
             roll_analysis: roll_analysis::RollAnalysisState::default(),
             raw_decode: raw_decode::RawDecodeState::default(),
@@ -172,6 +180,16 @@ impl RailState {
     /// Show the display histogram of the frame on the canvas.
     pub fn set_histogram(&mut self, histogram: Option<Vec<f64>>) {
         self.histogram = histogram;
+    }
+
+    /// Show the scope bins of the frame on the canvas.
+    pub fn set_scopes(&mut self, scopes: crate::render_worker::ScopeBins) {
+        self.scopes = scopes;
+    }
+
+    /// Show the density histogram of the normalized frame.
+    pub fn set_density_histogram(&mut self, bins: Option<Vec<f64>>) {
+        self.density_histogram = bins;
     }
 
     /// Select the tab and page a capture or a launch asks for, keeping every card's state.
@@ -531,6 +549,15 @@ impl RailState {
                     }
                 });
                 ui.add_space(f32::from(theme.space_md));
+                let mut view = SegmentedChoice {
+                    labels: &["Curve", "Waveform", "Parade", "Vectorscope"],
+                    icons: &[],
+                    current: self.analysis_view,
+                };
+                if let Some(index) = view.show(ui) {
+                    self.analysis_view = index;
+                }
+                ui.add_space(f32::from(theme.space_sm));
                 ui.horizontal(|ui| {
                     let height = 150.0;
                     let (chart, _) = ui.allocate_exact_size(
@@ -545,36 +572,66 @@ impl RailState {
                         egui::StrokeKind::Inside,
                     );
                     let bottom = chart.bottom() - 34.0;
-                    if let Some(bins) = &self.histogram {
-                        let band = Rect::from_min_max(
-                            egui::pos2(chart.left() + 4.0, bottom - 52.0),
-                            egui::pos2(chart.right() - 4.0, bottom),
-                        );
-                        crate::view::widgets::histogram::paint_strip(
+                    let band = Rect::from_min_max(
+                        egui::pos2(chart.left() + 4.0, chart.top() + 4.0),
+                        egui::pos2(chart.right() - 4.0, bottom),
+                    );
+                    match self.analysis_view {
+                        1 => crate::view::widgets::scopes::paint_waveform(
                             ui,
                             band,
-                            bins,
+                            self.scopes.waveform.as_deref(),
                             self.analysis_log,
-                            false,
-                        );
-                    }
-                    let points: Vec<egui::Pos2> = self
-                        .metrics
-                        .curve
-                        .iter()
-                        .map(|[x, y]| {
-                            let t = ((*x + 0.1) / 1.2).clamp(0.0, 1.0) as f32;
-                            egui::pos2(
-                                chart.left() + 10.0 + t * (chart.width() - 20.0),
-                                bottom - *y as f32 * (chart.height() - 44.0),
-                            )
-                        })
-                        .collect();
-                    if points.len() >= 2 {
-                        ui.painter().add(egui::Shape::line(
-                            points,
-                            Stroke::new(1.5_f32, theme.text_primary),
-                        ));
+                        ),
+                        2 => crate::view::widgets::scopes::paint_parade(
+                            ui,
+                            band,
+                            self.scopes.parade.as_deref(),
+                            self.analysis_log,
+                        ),
+                        3 => crate::view::widgets::scopes::paint_vectorscope(
+                            ui,
+                            band,
+                            self.scopes.vectorscope.as_deref(),
+                            self.analysis_log,
+                        ),
+                        _ => {
+                            if let Some(density) = &self.density_histogram {
+                                crate::view::widgets::histogram::paint_density(
+                                    ui,
+                                    band,
+                                    density,
+                                    self.analysis_log,
+                                );
+                            }
+                            if let Some(bins) = &self.histogram {
+                                crate::view::widgets::histogram::paint_strip(
+                                    ui,
+                                    band,
+                                    bins,
+                                    self.analysis_log,
+                                    false,
+                                );
+                            }
+                            let points: Vec<egui::Pos2> = self
+                                .metrics
+                                .curve
+                                .iter()
+                                .map(|[x, y]| {
+                                    let t = ((*x + 0.1) / 1.2).clamp(0.0, 1.0) as f32;
+                                    egui::pos2(
+                                        chart.left() + 10.0 + t * (chart.width() - 20.0),
+                                        bottom - *y as f32 * (chart.height() - 44.0),
+                                    )
+                                })
+                                .collect();
+                            if points.len() >= 2 {
+                                ui.painter().add(egui::Shape::line(
+                                    points,
+                                    Stroke::new(1.5_f32, theme.text_primary),
+                                ));
+                            }
+                        }
                     }
                     let wedge = Rect::from_min_size(
                         egui::pos2(chart.left() + 2.0, bottom + 2.0),

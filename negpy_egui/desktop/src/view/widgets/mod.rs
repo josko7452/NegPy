@@ -11,6 +11,7 @@ pub mod histogram;
 pub mod marks;
 pub mod overflow_bar;
 pub mod panel_tab;
+pub mod scopes;
 pub mod segmented_choice;
 pub mod sort_button;
 pub mod split_action;
