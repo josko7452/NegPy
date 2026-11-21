@@ -562,13 +562,16 @@ impl NegFeApp {
     fn request_sheet(&mut self, ctx: &egui::Context, export: bool) {
         self.sheet_request += 1;
         let entries = self.sheet_entries();
-        let library = self.profile.as_ref().map(|profile| {
-            let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
-            negpy_backend::features::metadata::gear::GearLibrary::load(
-                Path::new(&app.gear_dir),
-                &negpy_backend::kernel::system::paths::resource_path("gear"),
-            )
-        });
+        self.sheet.page_count = negpy_backend::services::export::contact_sheet_page::planned_pages(
+            &entries,
+            &self.sheet.settings,
+            &self.sheet_roll_name(),
+            self.sheet_library().as_ref(),
+        );
+        if self.sheet.page >= self.sheet.page_count {
+            self.sheet.page = self.sheet.page_count.saturating_sub(1);
+        }
+        let library = self.sheet_library();
         let output = export.then(|| {
             let folder = if self.rail.export.sidecar_path.trim().is_empty() {
                 self.profile.as_ref().map_or_else(
@@ -585,10 +588,7 @@ impl NegFeApp {
             };
             folder.join(format!("contact_sheet_{}.png", self.sheet.page + 1))
         });
-        let roll_name = self
-            .source
-            .as_ref()
-            .map_or_else(|| "Roll".to_string(), |source| source.name.clone());
+        let roll_name = self.sheet_roll_name();
         self.sheets
             .submit(crate::contact_sheet_worker::SheetRequest {
                 entries,
@@ -600,6 +600,24 @@ impl NegFeApp {
                 request_id: self.sheet_request,
             });
         ctx.request_repaint();
+    }
+
+    /// The roll name a contact sheet labels itself with.
+    fn sheet_roll_name(&self) -> String {
+        self.source
+            .as_ref()
+            .map_or_else(|| "Roll".to_string(), |source| source.name.clone())
+    }
+
+    /// The gear library a contact sheet reads its stock facts from.
+    fn sheet_library(&self) -> Option<negpy_backend::features::metadata::gear::GearLibrary> {
+        self.profile.as_ref().map(|profile| {
+            let app = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+            negpy_backend::features::metadata::gear::GearLibrary::load(
+                Path::new(&app.gear_dir),
+                &negpy_backend::kernel::system::paths::resource_path("gear"),
+            )
+        })
     }
 
     fn receive_sheets(&mut self, ctx: &egui::Context) {

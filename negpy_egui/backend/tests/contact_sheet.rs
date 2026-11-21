@@ -1,7 +1,9 @@
 //! The contact-sheet painter over a planned page.
 
 use negpy_backend::services::export::contact_sheet::{Tile, render_sheet};
+use negpy_backend::services::export::contact_sheet_layout::ContactSheetSettings;
 use negpy_backend::services::export::contact_sheet_layout::{DEFAULT_PAPER, plan_sheets};
+use negpy_backend::services::export::contact_sheet_page::{SheetEntry, planned_pages};
 use negpy_backend::services::export::contact_sheet_roll::SheetLook;
 use negpy_backend::services::film_edge::edge::edge_style;
 use negpy_backend::services::film_edge::geometry::{SheetFormat, film_geometry};
@@ -12,6 +14,23 @@ fn look() -> SheetLook {
         label: "Portra 400".into(),
         ..SheetLook::default()
     }
+}
+
+#[test]
+fn the_planned_page_count_matches_the_renderer() {
+    let entries: Vec<SheetEntry> = (0..400)
+        .map(|index| SheetEntry {
+            name: format!("frame-{index}"),
+            path: format!("/roll/frame-{index}.tif"),
+            config: negpy_backend::domain::models::WorkspaceConfig::default(),
+            tile: Tile::new(80, 54, vec![128u8; 80 * 54 * 3]),
+        })
+        .collect();
+    let pages = planned_pages(&entries, &ContactSheetSettings::default(), "Roll", None);
+    assert!(
+        pages >= 2,
+        "40 frames need more than one sheet, got {pages}"
+    );
 }
 
 #[test]

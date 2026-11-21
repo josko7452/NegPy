@@ -126,7 +126,9 @@ impl ContactSheetDialog {
             Icon::ChevronRight.glyph(),
         );
         if next {
-            self.page = (self.page + 1).min(self.page_count.saturating_sub(1));
+            if self.page + 1 < self.page_count {
+                self.page += 1;
+            }
             self.changed = true;
         }
     }
@@ -274,5 +276,27 @@ mod tests {
         state.page = 0;
         state.changed = true;
         assert!(state.changed);
+    }
+
+    #[test]
+    fn next_advances_until_the_last_page() {
+        let ctx = egui::Context::default();
+        let mut state = ContactSheetDialog::default();
+        state.page_count = 2;
+        state.page = 0;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, ui.max_rect());
+            });
+        });
+        assert_eq!(state.page, 0);
+        state.page = 1;
+        state.changed = false;
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, ui.max_rect());
+            });
+        });
+        assert_eq!(state.page, 1);
     }
 }

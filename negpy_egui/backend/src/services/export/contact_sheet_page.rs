@@ -21,16 +21,20 @@ pub struct SheetEntry {
     pub tile: Tile,
 }
 
-/// Render page `page` of the configured frames. `draft` skips detail for a faster preview.
-#[must_use]
-pub fn render_contact_sheet(
+/// The layout a contact sheet derives from the frames and settings.
+struct SheetLayout {
+    plan: crate::services::export::contact_sheet_layout::SheetPlan,
+    geometry: crate::services::film_edge::geometry::FilmGeometry,
+    dpi: u32,
+    look: crate::services::export::contact_sheet_roll::SheetLook,
+}
+
+fn layout(
     entries: &[SheetEntry],
     settings: &ContactSheetSettings,
     roll_name: &str,
     library: Option<&GearLibrary>,
-    page: usize,
-    draft: bool,
-) -> Canvas {
+) -> (Vec<SheetFrame>, SheetLayout) {
     let frames: Vec<SheetFrame> = entries
         .iter()
         .map(|entry| {
@@ -82,24 +86,63 @@ pub fn render_contact_sheet(
     let dpi = best_dpi(paper_width, paper_height, settings.dpi);
     let mut look = sheet_look(&frames, format, &label, library);
     look.white_paper = settings.white_paper;
+    (
+        frames,
+        SheetLayout {
+            plan,
+            geometry,
+            dpi,
+            look,
+        },
+    )
+}
+
+/// Render page `page` of the configured frames. `draft` skips detail for a faster preview.
+#[must_use]
+pub fn render_contact_sheet(
+    entries: &[SheetEntry],
+    settings: &ContactSheetSettings,
+    roll_name: &str,
+    library: Option<&GearLibrary>,
+    page: usize,
+    draft: bool,
+) -> Canvas {
+    let (frames, layout) = layout(entries, settings, roll_name, library);
     let tiles: Vec<Option<Tile>> = entries
         .iter()
         .map(|entry| Some(entry.tile.clone()))
         .collect();
     let turns: Vec<i64> = frames
         .iter()
-        .map(|frame| turns_for(frame, &geometry, None))
+        .map(|frame| turns_for(frame, &layout.geometry, None))
         .collect();
     render_sheet(
-        &plan,
+        &layout.plan,
         page,
         &tiles,
         &turns,
-        f64::from(dpi) / crate::services::export::contact_sheet_layout::MM_PER_INCH,
-        &look,
+        f64::from(layout.dpi) / crate::services::export::contact_sheet_layout::MM_PER_INCH,
+        &layout.look,
         draft,
         None,
     )
+}
+
+/// The pages the configured frames plan to, from the same layout as
+/// `render_contact_sheet`.
+#[must_use]
+pub fn planned_pages(
+    entries: &[SheetEntry],
+    settings: &ContactSheetSettings,
+    roll_name: &str,
+    library: Option<&GearLibrary>,
+) -> usize {
+    layout(entries, settings, roll_name, library)
+        .1
+        .plan
+        .pages
+        .len()
+        .max(1)
 }
 
 /// Encode a rendered page as an 8-bit PNG.

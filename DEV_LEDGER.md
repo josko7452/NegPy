@@ -29,6 +29,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - `export`: the File page shows and stores the bit depth, TIFF, PNG, JXL and
   WebP encoder fields and the Print size and DPI.
 - `export`: the absolute destination branch shows and stores the export path.
+- `contact-sheet`: the dialog reads its page count from the sheet layout and
+  stops at the last page.
 - `light-table`: Keep and Reject write the frame marks the Library search reads,
   the grid paints them, and Export skips a rejected frame.
 - `crop`: the guide choice persists, the crop box paints its composition guide,
