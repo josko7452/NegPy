@@ -155,3 +155,24 @@ fn the_encoded_prefix_matches_the_cpu_encode() {
     let fraction = violations as f64 / encoded.len() as f64;
     assert!(fraction < 0.01, "{violations} samples differ");
 }
+
+#[test]
+fn the_chain_reports_the_density_histogram() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(32, 24);
+    let bounds = negpy_backend::features::exposure::normalization::LogNegativeBounds::new(
+        [-1.5, -1.5, -1.5],
+        [-0.1, -0.1, -0.1],
+    );
+    let (rendered, histogram) =
+        engine.run_base_with_histogram(&image, &settings, &BaseRun::plain(bounds));
+    assert_eq!(rendered.width, 32);
+    assert_eq!(histogram.len(), 4 * 120);
+    assert!(
+        histogram.iter().sum::<f64>() > 0.0,
+        "the frame must have samples"
+    );
+}
