@@ -12,7 +12,7 @@ use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle, section_subheader};
 use crate::styles::theme::Theme;
-use crate::view::widgets::collapsible::{CollapsibleSection, card};
+use crate::view::widgets::collapsible::{CollapsibleSection, card, hint};
 use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::field_row::{RowColumns, field_row};
 use crate::view::widgets::fold::Fold;
@@ -120,6 +120,10 @@ pub struct GeometryState {
     pub straighten: StraightenState,
     /// A Square to Film request from this frame's card, taken by the shell.
     pub square_request: bool,
+    /// A Crop All Frames request from this card, taken by the shell.
+    pub crop_all_request: bool,
+    /// The last result the card shows under its run row.
+    pub crop_all_status: String,
     pub crop_open: bool,
     pub straighten_open: bool,
     pub transform: Option<i8>,
@@ -133,6 +137,8 @@ impl Default for GeometryState {
             crop: CropState::default(),
             straighten: StraightenState::default(),
             square_request: false,
+            crop_all_request: false,
+            crop_all_status: String::new(),
             crop_open: true,
             straighten_open: true,
             transform: None,
@@ -354,8 +360,13 @@ impl GeometryState {
                 ui.horizontal(|ui| {
                     changed |=
                         labeled_toggle(ui, "Square First", &mut self.crop.square_first).clicked();
-                    let _ = labeled_action(ui, "Crop All Frames", ActionRank::Normal);
+                    if labeled_action(ui, "Crop All Frames", ActionRank::Normal).clicked() {
+                        self.crop_all_request = true;
+                    }
                 });
+                if !self.crop_all_status.is_empty() {
+                    let _ = hint(ui, &self.crop_all_status);
+                }
             });
         });
         if !self.cards_collapsed {
@@ -560,6 +571,20 @@ mod tests {
         state.crop.square_first = true;
         state.store(&mut edit);
         assert!(edit.config.geometry.autocrop_square);
+    }
+
+    #[test]
+    fn crop_all_frames_raises_one_request() {
+        let mut state = GeometryState::default();
+        state.crop_all_request = true;
+        assert!(state.crop_all_request);
+    }
+
+    #[test]
+    fn crop_all_status_reports_the_last_run() {
+        let mut state = GeometryState::default();
+        state.crop_all_status = "Saved 2, kept 1.".to_string();
+        assert_eq!(state.crop_all_status, "Saved 2, kept 1.");
     }
 
     #[test]

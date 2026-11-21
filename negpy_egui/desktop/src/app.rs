@@ -184,6 +184,7 @@ pub struct NegFeApp {
     exporter: ExportWorker,
     scanner: crate::scan_worker::ScanWorker,
     sheets: crate::contact_sheet_worker::SheetWorker,
+    crops: crate::crop_worker::CropWorker,
     sheet: crate::view::contact_sheet_dialog::ContactSheetDialog,
     sheet_request: u64,
     /// The request hash in flight, and the config hash that painted the canvas.
@@ -221,6 +222,7 @@ impl NegFeApp {
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
+            crops: crate::crop_worker::CropWorker::start(),
             sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
             sheet_request: 0,
             requested: None,
@@ -254,6 +256,7 @@ impl NegFeApp {
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
+            crops: crate::crop_worker::CropWorker::start(),
             sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
             sheet_request: 0,
             requested: None,
@@ -424,6 +427,73 @@ impl NegFeApp {
             }
             ctx.request_repaint();
         }
+    }
+
+    /// Submit one Crop All Frames run for the strip.
+    fn request_crop_all(&mut self, ctx: &egui::Context) {
+        if !self.rail.geometry.crop_all_request {
+            return;
+        }
+        self.rail.geometry.crop_all_request = false;
+        let Some(profile) = self.profile.clone() else {
+            self.rail.library.set_status("Open a profile first.");
+            return;
+        };
+        let app = negpy_backend::domain::types::AppConfig::for_user_dir(&profile);
+        let mut frames = Vec::new();
+        for frame in &self.strip {
+            let Some(path) = &frame.path else {
+                continue;
+            };
+            let Ok(hash) =
+                negpy_backend::infrastructure::storage::local_asset_store::file_hash(path)
+            else {
+                continue;
+            };
+            let config = crate::frame_source::stored_config(Some(&profile), path);
+            frames.push(crate::crop_worker::CropFrame {
+                path: path.clone(),
+                hash,
+                config_json: serde_json::Value::Object(config.to_dict()).to_string(),
+            });
+        }
+        if frames.is_empty() {
+            self.rail.library.set_status("No frames to auto-crop.");
+            return;
+        }
+        self.rail.library.set_status(format!(
+            "Auto-cropping {}...",
+            crate::view::rail::count_of(frames.len(), "frame")
+        ));
+        self.crops.submit(crate::crop_worker::CropRequest {
+            frames,
+            edits_db_path: std::path::PathBuf::from(app.edits_db_path),
+            settings_db_path: std::path::PathBuf::from(app.settings_db_path),
+            flatfield_dir: std::path::PathBuf::from(app.flatfield_dir),
+        });
+        ctx.request_repaint();
+    }
+
+    fn receive_crops(&mut self, ctx: &egui::Context) {
+        let Some(report) = self.crops.drain() else {
+            return;
+        };
+        let mut message = format!("Auto Crop: saved {}, kept {}", report.saved, report.kept);
+        if report.failed > 0 {
+            message.push_str(&format!(", failed {}", report.failed));
+        }
+        self.rail.library.set_status(message);
+        self.rail.geometry.crop_all_status =
+            format!("Saved {}, kept {}.", report.saved, report.kept);
+        if report.saved > 0
+            && let Some(path) = self.edit.source().map(|(_, path)| path.to_path_buf())
+        {
+            let config = crate::frame_source::stored_config(self.profile.as_deref(), &path);
+            self.edit.restore(config);
+            self.rail.select_view(&self.view);
+            self.request_render(ctx, false);
+        }
+        ctx.request_repaint();
     }
 
     fn sheet_entries(
@@ -918,6 +988,7 @@ impl NegFeApp {
         self.receive_render(ctx);
         self.receive_scans(ctx);
         self.receive_sheets(ctx);
+        self.receive_crops(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -959,6 +1030,7 @@ impl NegFeApp {
                     self.rail.apply_optics_action(&mut self.edit);
                     self.rail.apply_history_action(&mut self.edit);
                     self.apply_square_request(ctx);
+                    self.request_crop_all(ctx);
                     self.apply_roll_analysis(ctx);
                     self.open_requested_roll();
                     self.view.tab = self.rail.tab;
@@ -1111,6 +1183,7 @@ impl NegFeApp {
             self.rail.apply_optics_action(&mut self.edit);
             self.rail.apply_history_action(&mut self.edit);
             self.apply_square_request(ctx);
+            self.request_crop_all(ctx);
             self.apply_roll_analysis(ctx);
             if self.rail.export.take_contact_sheet_request() {
                 self.view.contact_sheet = true;

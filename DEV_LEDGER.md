@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 20:10 | **Last Commit:** `5b5b11c9` plan: audit the second batch and record its gaps
+**Last Updated:** 2026-11-21 21:10 | **Last Commit:** `2c711b4e` ledger: point at the second-batch audit
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,12 +15,12 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Wire Crop All Frames (§9.10 B1-4): a strip worker over `batch_autocrop`,
-   then persist each frame's resolved crop.
-3. [ ] Wire zoom, Tools, Print and Roll Average (§9.10 B1-1..B1-3).
-4. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
+2. [ ] Wire zoom, Tools, Print and Roll Average (§9.10 B1-1..B1-3).
+3. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
 
 ## Completed (Recent)
+- Crop All Frames now runs a strip worker over `batch_autocrop`, applies each
+  resolved crop and reports saved/kept/failed.
 - `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.

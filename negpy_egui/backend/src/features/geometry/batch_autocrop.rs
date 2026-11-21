@@ -719,6 +719,47 @@ fn edge_fit(image: &crate::infrastructure::loaders::image_buffer::ImageBuffer) -
         .then_some(skew.fine_rotation)
 }
 
+/// The config after one resolved roll crop, or `None` when a hand-drawn crop, a non-Image
+/// mode or an out-of-range resolve must keep the frame as it is.
+#[must_use]
+pub fn apply_resolved_crop(
+    config: &crate::domain::models::WorkspaceConfig,
+    crop: &ResolvedCrop,
+) -> Option<crate::domain::models::WorkspaceConfig> {
+    let geometry = &config.geometry;
+    if crate::features::geometry::logic::has_manual_crop(geometry)
+        || geometry.autocrop_mode != crate::domain::models::AutocropMode::Image
+    {
+        return None;
+    }
+    let [x1, y1, x2, y2] = crop.crop_rect;
+    if !(0.0..1.0).contains(&x1)
+        || !(0.0..1.0).contains(&y1)
+        || !(x1 < x2 && x2 <= 1.0 && y1 < y2 && y2 <= 1.0)
+        || !crop.correction_angle.is_finite()
+    {
+        return None;
+    }
+    let fine_rotation = geometry.fine_rotation + crop.correction_angle;
+    if fine_rotation.abs() > crate::features::geometry::logic::FINE_ROTATION_LIMIT {
+        return None;
+    }
+    let mut updated = config.clone();
+    updated.geometry.fine_rotation = fine_rotation;
+    updated.geometry.crop_rect = Some(crop.crop_rect.to_vec());
+    updated.geometry.crop_from_auto = true;
+    updated.geometry.crop_detect_key =
+        crate::features::geometry::logic::autocrop_detection_key(&updated.geometry);
+    updated.geometry.autocrop_squared = false;
+    let (invalidate, floors, ceils) =
+        crate::domain::models::process::invalidate_local_bounds(&updated.process);
+    if invalidate {
+        updated.process.local_floors = floors;
+        updated.process.local_ceils = ceils;
+    }
+    Some(updated)
+}
+
 fn side_border(lum: &[f32], roi: Roi, (height, width): (usize, usize)) -> Vec<f64> {
     let walked = crate::features::geometry::processor::measure_film_edges(lum, roi, height, width);
     let measured =

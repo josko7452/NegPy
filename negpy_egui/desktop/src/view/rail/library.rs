@@ -187,6 +187,11 @@ impl LibraryState {
         &self.status
     }
 
+    /// Replace the message under the roll list.
+    pub fn set_status(&mut self, message: impl Into<String>) {
+        self.status = message.into();
+    }
+
     /// Order the roll list and save the choice, as Python's Library sort does.
     pub fn set_sort(&mut self, order: &'static str, descending: bool) {
         self.sort.show_order(order, descending);
