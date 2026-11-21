@@ -683,6 +683,50 @@ impl NegFeApp {
         }
     }
 
+    /// Apply the Presets page's rename, enable toggle and delete to the store.
+    fn update_export_presets(&mut self) {
+        let toggle = self.rail.export.take_toggle_preset();
+        let delete = self.rail.export.take_delete_preset_request();
+        let mut presets = self.rail.export.presets.clone();
+        if let Some((index, enabled)) = toggle
+            && let Some(preset) = presets.get_mut(index)
+        {
+            preset.enabled = enabled;
+        }
+        let rename = self
+            .rail
+            .export
+            .selected_preset
+            .filter(|index| {
+                let name = self.rail.export.preset_name.trim();
+                !name.is_empty()
+                    && presets
+                        .get(*index)
+                        .is_some_and(|preset| preset.name != name)
+            })
+            .map(|index| (index, self.rail.export.preset_name.trim().to_string()));
+        if let Some((index, name)) = &rename
+            && let Some(preset) = presets.get_mut(*index)
+        {
+            preset.name = name.clone();
+        }
+        if let Some(index) = delete
+            && index < presets.len()
+        {
+            presets.remove(index);
+            self.rail.export.selected_preset = None;
+        }
+        let Some(repo) = &mut self.settings else {
+            return;
+        };
+        if toggle.is_some() || delete.is_some() || rename.is_some() {
+            match repo.save_export_presets(&presets) {
+                Ok(()) => self.rail.export.set_presets(presets),
+                Err(error) => self.rail.export.set_status(error.to_string()),
+            }
+        }
+    }
+
     /// Replace the Presets page with the store's current names.
     pub fn reload_metadata_presets(&mut self) {
         let Some(profile) = self.profile.clone() else {
@@ -1362,6 +1406,7 @@ impl NegFeApp {
             }
             self.request_render(ctx, false);
             self.request_export(ctx);
+            self.update_export_presets();
             self.save_export_preset();
             self.request_scan(ctx);
             self.open_scan_folder();

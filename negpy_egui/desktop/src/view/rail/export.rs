@@ -56,6 +56,16 @@ pub struct ExportState {
     pub requested: bool,
     pub contact_sheet_requested: bool,
     pub save_preset_requested: bool,
+    /// The preset row the user selected.
+    pub selected_preset: Option<usize>,
+    /// The selected preset's name while the field is edited.
+    pub preset_name: String,
+    /// The selected preset's enabled state while the row is edited.
+    pub preset_enabled: bool,
+    pub delete_preset_requested: bool,
+    pub toggle_preset: Option<(usize, bool)>,
+    /// The selected preset's name when the row was opened, for the rename check.
+    pub preset_original_name: String,
     pub status: String,
     /// Whether the tab summary collapsed the page.
     pub collapsed: bool,
@@ -116,6 +126,12 @@ impl Default for ExportState {
             requested: false,
             contact_sheet_requested: false,
             save_preset_requested: false,
+            selected_preset: None,
+            preset_name: String::new(),
+            preset_enabled: true,
+            delete_preset_requested: false,
+            toggle_preset: None,
+            preset_original_name: String::new(),
             status: String::new(),
             collapsed: false,
         }
@@ -123,6 +139,43 @@ impl Default for ExportState {
 }
 
 impl ExportState {
+    /// Apply the selected preset to the form, for the Presets page's row click.
+    pub fn apply_selected_preset(&mut self) -> bool {
+        let Some(index) = self.selected_preset else {
+            return false;
+        };
+        let Some(preset) = self.presets.get(index).cloned() else {
+            return false;
+        };
+        self.apply_preset(&preset);
+        true
+    }
+
+    /// The export fields the selected preset names, written over the controls.
+    pub fn apply_preset(&mut self, preset: &negpy_backend::domain::models::ExportPreset) {
+        self.format.pick(preset.export_fmt.as_str());
+        self.jpeg_quality.set_value(preset.jpeg_quality as f64);
+        self.progressive = preset.jpeg_progressive;
+        self.resolution.current = match preset.export_resolution_mode {
+            ExportResolutionMode::Print => 1,
+            ExportResolutionMode::TargetPx => 2,
+            ExportResolutionMode::Original => 0,
+        };
+        self.long_edge
+            .set_value(preset.export_target_long_edge_px as f64);
+        self.paper_ratio.pick(&preset.paper_aspect_ratio);
+        self.export_profile.pick(&preset.export_color_space);
+        self.input_icc
+            .pick(preset.icc_input_path.as_deref().unwrap_or(""));
+        self.output_icc
+            .pick(preset.icc_output_path.as_deref().unwrap_or(""));
+        self.destination.pick(preset.output_mode.as_str());
+        self.subfolder = preset.output_subfolder.clone();
+        self.filename = preset.filename_pattern.clone();
+        self.overwrite = preset.overwrite;
+        self.intent.current = usize::from(preset.render_intent == "flat");
+    }
+
     /// Replace the controls with the export values the edit holds.
     pub fn load(&mut self, edit: &FrameEdit) {
         let export = &edit.config.export;
@@ -166,6 +219,18 @@ impl ExportState {
     /// Take the one Save Preset request this frame.
     pub fn take_save_preset_request(&mut self) -> bool {
         std::mem::take(&mut self.save_preset_requested)
+    }
+
+    /// Take the one Delete Preset request for the selected row.
+    pub fn take_delete_preset_request(&mut self) -> Option<usize> {
+        self.delete_preset_requested
+            .then(|| self.selected_preset)
+            .flatten()
+    }
+
+    /// Take the one enable toggle the Presets list asked for.
+    pub fn take_toggle_preset(&mut self) -> Option<(usize, bool)> {
+        self.toggle_preset.take()
     }
 
     /// Show the result of the last preset action.
@@ -393,14 +458,51 @@ impl ExportState {
         if summary == TabSummaryAction::Collapse {
             self.collapsed = true;
         }
+        let mut changed = false;
         if self.presets.is_empty() {
             let _ = hint(ui, "No presets yet.");
         } else {
-            for preset in &self.presets {
-                let _ = hint(
-                    ui,
-                    &negpy_backend::domain::models::preset_display_name(preset),
-                );
+            for (index, preset) in self.presets.clone().iter().enumerate() {
+                let mut enabled = preset.enabled;
+                let label = negpy_backend::domain::models::preset_display_name(preset);
+                let row =
+                    crate::view::widgets::flat_rows::FlatRow::new(label, "").with_icon(Icon::Stack);
+                let response = row.show(ui, 30.0);
+                if response.response.clicked() {
+                    self.selected_preset = Some(index);
+                    self.preset_name = preset.name.clone();
+                    self.preset_original_name = preset.name.clone();
+                    self.preset_enabled = preset.enabled;
+                    self.apply_preset(preset);
+                    changed = true;
+                }
+                if labeled_toggle(ui, "Enabled", &mut enabled).clicked() {
+                    self.toggle_preset = Some((index, enabled));
+                    changed = true;
+                }
+            }
+            if let Some(index) = self.selected_preset
+                && let Some(preset) = self.presets.get(index)
+            {
+                let placeholder = preset.name.clone();
+                ui.horizontal(|ui| {
+                    ui.label("Name");
+                    changed |= ui
+                        .add(
+                            egui::TextEdit::singleline(&mut self.preset_name)
+                                .hint_text(placeholder),
+                        )
+                        .changed();
+                });
+                ui.horizontal(|ui| {
+                    let mut enabled = self.preset_enabled;
+                    changed |= labeled_toggle(ui, "Enabled", &mut enabled).clicked();
+                    self.preset_enabled = enabled;
+                    if labeled_action(ui, "Delete...", ActionRank::Normal).clicked() {
+                        self.delete_preset_requested = true;
+                        changed = true;
+                    }
+                });
             }
         }
         if !self.status.is_empty() {
@@ -408,10 +510,9 @@ impl ExportState {
         }
         if labeled_action(ui, "Save Preset...", ActionRank::Normal).clicked() {
             self.save_preset_requested = true;
-            true
-        } else {
-            false
+            changed = true;
         }
+        changed
     }
 
     fn show_alongside(&mut self, ui: &mut Ui) -> bool {
@@ -584,6 +685,31 @@ mod tests {
             negpy_backend::domain::models::preset_display_name(&state.presets[0]),
             "JPEG"
         );
+    }
+
+    #[test]
+    fn the_preset_toggle_leaves_one_request() {
+        let mut state = ExportState::default();
+        state.toggle_preset = Some((2, false));
+        assert_eq!(state.take_toggle_preset(), Some((2, false)));
+        assert!(state.take_toggle_preset().is_none());
+    }
+
+    #[test]
+    fn a_preset_click_fills_the_form() {
+        let mut state = ExportState::default();
+        state.set_presets(vec![negpy_backend::domain::models::ExportPreset {
+            name: "TIFF".to_string(),
+            export_fmt: ExportFormat::Tiff,
+            jpeg_quality: 70,
+            export_target_long_edge_px: 4000,
+            ..Default::default()
+        }]);
+        state.selected_preset = Some(0);
+        assert!(state.apply_selected_preset());
+        assert_eq!(state.format.current_value(), "TIFF");
+        assert_eq!(state.jpeg_quality.value, 70.0);
+        assert_eq!(state.long_edge.value, 4000.0);
     }
 
     #[test]
