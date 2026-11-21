@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 21:30 | **Last Commit:** `pending prefix cache`
+**Last Updated:** 2026-11-21 21:45 | **Last Commit:** `pending GPU pins`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The sixth batch started the GPU epic:
@@ -12,10 +12,9 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 `cargo test --workspace`. The audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] GPU: add stage caching and a texture pool, then the tiled path
-   (§9.12 G-4).
-2. [ ] GPU: pin shader output bits and add per-channel and camera cases
-   (§9.12 G-5, G-6).
+1. [ ] GPU: add the tiled export path (§9.12 G-4).
+2. [ ] GPU: port the CLAHE, Lab, toning and carrier passes so the chain
+   replaces the rest of the tail (§9.12 G-1, G-3).
 3. [ ] Bounds pick: sample the uncropped pick view, not the cropped frame
    (§9.11 C2-1).
 4. [ ] Detect Scenes: move the strip decode off the UI thread (§9.11 C2-2),
@@ -29,6 +28,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 9. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (Recent)
+- `backend`: the GPU print, per-channel print and vignette passes have pinned
+  output hashes, and a transfer-path camera matrix matches the core.
 - `backend`: the GPU engine keeps the geometry and normalization textures until
   the source or prefix key changes.
 - `backend`: the GPU engine has a size-keyed texture pool and returns the print
