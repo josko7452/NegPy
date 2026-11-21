@@ -20,7 +20,6 @@ use crate::view::widgets::compact_slider::{CompactSlider, SliderSpec};
 use crate::view::widgets::panel_tab::{PanelTab, panel_tab_strip};
 use crate::view::widgets::segmented_choice::SegmentedChoice;
 use crate::view::widgets::sub_tabs::{SUB_TAB_HEIGHT, SubTab, SubTabState};
-use crate::view::widgets::tab_header::TabSummary;
 use negpy_backend::domain::models::process::{ProcessMode, scan_setup_values, with_process_mode};
 use negpy_backend::session::proof::ProofSettings;
 
@@ -436,8 +435,6 @@ impl RailState {
             edit.mark_dirty();
         }
         ui.add_space(f32::from(Theme::default().space_lg));
-        self.show_collapsed(ui, "Metering", 0);
-        ui.add_space(f32::from(Theme::default().space_lg));
         self.show_roll_analysis(ui, edit);
     }
 
@@ -484,17 +481,7 @@ impl RailState {
                     edit.mark_dirty();
                 }
             }
-            key => {
-                let cards = frame_cards(key);
-                if !cards.is_empty() {
-                    let _ = TabSummary::new(cards.len()).show(ui);
-                }
-                ui.add_space(f32::from(Theme::default().space_sm));
-                for title in cards {
-                    self.show_collapsed(ui, title, 0);
-                    ui.add_space(f32::from(Theme::default().space_sm));
-                }
-            }
+            _ => {}
         }
     }
 
@@ -778,23 +765,6 @@ impl RailState {
         section.expanded = self.roll_analysis.open;
         let _ = section.show(ui, |ui| self.show_roll_analysis_body(ui, edit));
         self.roll_analysis.open = section.expanded;
-    }
-
-    fn show_collapsed(&mut self, ui: &mut Ui, title: &str, modified: usize) {
-        let open = *self
-            .collapsed_sections
-            .entry(title.to_string())
-            .or_insert(title == "Calibration");
-        let mut section = CollapsibleSection::new(title).with_guide();
-        section.modified = modified;
-        section.expanded = open;
-        let _ = section.show(ui, |ui| {
-            let _ = card(ui, |ui| {
-                let _ = hint(ui, "This card has no controls yet.");
-            });
-        });
-        self.collapsed_sections
-            .insert(title.to_string(), section.expanded);
     }
 
     fn show_roll_analysis_body(&mut self, ui: &mut Ui, edit: &mut FrameEdit) {

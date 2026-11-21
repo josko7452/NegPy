@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 07:10 | **Last Commit:** `pending frame: give Favorites its own card`
+**Last Updated:** 2026-11-22 07:30 | **Last Commit:** `pending desktop: drop the placeholder cards`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -40,6 +40,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   frames under another light and Accept writes each group as a scene.
 - `favourites`: the Frame tab's Favorites page lists seven Exposure sliders,
   saves the chosen ids under `favourite_sliders` and mirrors their values.
+- `desktop`: the History page shows its two real cards, and the duplicate
+  Metering placeholder is gone from the Roll tab.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and

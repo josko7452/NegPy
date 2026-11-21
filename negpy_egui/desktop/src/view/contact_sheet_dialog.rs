@@ -5,7 +5,7 @@ use negpy_backend::services::export::contact_sheet_layout::{ContactSheetSettings
 
 use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
-use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle};
+use crate::styles::templates::labeled_toggle;
 use crate::styles::theme::Theme;
 use crate::view::widgets::collapsible::hint;
 use crate::view::widgets::field_row::{RowColumns, field_row};
