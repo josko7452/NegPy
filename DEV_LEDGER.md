@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 01:10 | **Last Commit:** `2ff82255` desktop: keep a crop edited during the batch
+**Last Updated:** 2026-11-22 01:15 | **Last Commit:** `13ca4f62` ledger: record the third batch and its blocker
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
