@@ -1,6 +1,6 @@
 //! The GPU print chain through CLAHE matches the CPU engine on a cropped frame.
 
-use negpy_backend::domain::models::{GeometryConfig, WorkspaceConfig};
+use negpy_backend::domain::models::{AltProcess, GeometryConfig, ProcessMode, WorkspaceConfig};
 use negpy_backend::features::exposure::processor::{NormalizationSettings, measure_negative};
 use negpy_backend::features::geometry::processor::{GeometryContext, process};
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -36,6 +36,18 @@ fn config() -> WorkspaceConfig {
     config.toning.shadow_tint_strength = 0.3;
     config.toning.shadow_tint_hue = 35.0;
     config
+}
+
+#[test]
+fn an_alt_process_and_auto_masking_stay_on_the_cpu() {
+    let mut alt = WorkspaceConfig::default();
+    alt.process.process_mode = ProcessMode::BW;
+    alt.altproc.alt_process = AltProcess::Cyanotype;
+    assert!(!gpu_eligible(&alt, &PipelineContext::new()));
+
+    let mut auto = WorkspaceConfig::default();
+    auto.lab.sharpen_auto_masking = true;
+    assert!(!gpu_eligible(&auto, &PipelineContext::new()));
 }
 
 #[test]

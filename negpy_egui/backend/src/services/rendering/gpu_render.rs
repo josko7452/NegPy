@@ -75,6 +75,15 @@ pub fn gpu_eligible(config: &WorkspaceConfig, context: &PipelineContext) -> bool
     if !config.local.masks.is_empty() || config.finish.carrier_width > 0.0 {
         return false;
     }
+    // The alt-process passes and the grain measurement are not on the device yet.
+    if config.altproc.alt_process != crate::domain::models::AltProcess::None
+        && config.process.process_mode == crate::domain::models::ProcessMode::BW
+    {
+        return false;
+    }
+    if config.lab.sharpen_auto_masking {
+        return false;
+    }
     let paper = effective_paper_profile(
         &config.exposure.paper_profile,
         Some(config.process.process_mode),
