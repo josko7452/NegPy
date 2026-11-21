@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 01:15 | **Last Commit:** `13ca4f62` ledger: record the third batch and its blocker
+**Last Updated:** 2026-11-22 03:40 | **Last Commit:** `WORKING light-table: use the strip bar actions`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -19,6 +19,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
    `LightSource` traits, with no gphoto2, Scanlight or simulated desktop
    adapter and no capture worker. A human must choose the hardware target.
 3. [ ] Pick Dmin and Dmax by hand on the canvas.
+4. [ ] Metadata Presets: apply the stored fields to the selected frames or roll.
+5. [ ] Export presets: run a preset on the selected frames or the roll.
 
 ## Completed (Recent)
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
@@ -31,6 +33,8 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - `export`: the absolute destination branch shows and stores the export path.
 - `contact-sheet`: the dialog reads its page count from the sheet layout and
   stops at the last page.
+- `light-table`: Keep, Reject, Auto Crop and Export respond; Keep and Reject mark
+  the open frame.
 - `light-table`: Keep and Reject write the frame marks the Library search reads,
   the grid paints them, and Export skips a rejected frame.
 - `crop`: the guide choice persists, the crop box paints its composition guide,

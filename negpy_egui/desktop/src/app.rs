@@ -982,18 +982,36 @@ impl NegFeApp {
 
     /// Write the triage mark a Light Table button asked for on every frame in the strip.
     fn apply_light_table_action(&mut self, action: crate::view::light_table::LightTableAction) {
+        match action {
+            crate::view::light_table::LightTableAction::Keep => self.mark_selected("keeper"),
+            crate::view::light_table::LightTableAction::Reject => self.mark_selected("excluded"),
+            crate::view::light_table::LightTableAction::AutoCrop => {
+                self.edit.config = negpy_backend::domain::models::geometry::with_auto_crop(
+                    self.edit.config.clone(),
+                    true,
+                );
+                self.edit.mark_dirty();
+                self.rail.geometry.load(&self.edit);
+            }
+            crate::view::light_table::LightTableAction::Export => {
+                self.rail.export.requested = true;
+            }
+        }
+    }
+
+    /// Write one triage mark on the open frame.
+    fn mark_selected(&mut self, mark: &str) {
         let Some(profile) = self.profile.clone() else {
             return;
         };
-        let mark = match action {
-            crate::view::light_table::LightTableAction::Keep => "keeper",
-            crate::view::light_table::LightTableAction::Reject => "excluded",
+        let Some(path) = self
+            .strip
+            .get(self.selected)
+            .and_then(|frame| frame.path.clone())
+        else {
+            return;
         };
-        for frame in &self.strip {
-            if let Some(path) = &frame.path {
-                let _ = crate::frame_source::write_mark(Some(&profile), path, Some(mark));
-            }
-        }
+        let _ = crate::frame_source::write_mark(Some(&profile), &path, Some(mark));
         self.strip_textures.clear();
     }
 
@@ -1227,6 +1245,7 @@ impl NegFeApp {
                         self.apply_light_table_action(action);
                     }
                     let rail_rect = rail_rect(screen);
+                    self.request_render(ctx, false);
                     self.request_export(ctx);
                     self.request_scan(ctx);
                     self.open_scan_folder();

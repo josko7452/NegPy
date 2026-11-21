@@ -19,6 +19,8 @@ pub const CELL_TARGET: f32 = 220.0;
 pub enum LightTableAction {
     Keep,
     Reject,
+    AutoCrop,
+    Export,
 }
 
 /// What a Light Table paint reported.
@@ -208,19 +210,27 @@ fn paint_bar(ui: &mut egui::Ui, bar: Rect, frames: usize) -> Option<LightTableAc
         action = Some(LightTableAction::Reject);
     }
     actions.add_space(f32::from(theme.space_md));
-    let _ = crate::styles::templates::action_with_icon(
+    if crate::styles::templates::action_with_icon(
         &mut actions,
         Icon::Wrench,
         "Auto Crop",
         crate::styles::templates::ActionRank::Normal,
         "Auto Crop the selected frames; crops you drew stay",
-    );
+    )
+    .clicked()
+    {
+        action = Some(LightTableAction::AutoCrop);
+    }
     actions.add_space(f32::from(theme.space_md));
-    let _ = crate::styles::templates::labeled_action(
+    if crate::styles::templates::labeled_action(
         &mut actions,
         "Export",
         crate::styles::templates::ActionRank::Normal,
-    );
+    )
+    .clicked()
+    {
+        action = Some(LightTableAction::Export);
+    }
     action
 }
 
@@ -281,5 +291,11 @@ mod tests {
                 assert!(hit.cell.is_none());
             });
         });
+    }
+
+    #[test]
+    fn the_bar_reports_the_actions_it_owns() {
+        assert_ne!(LightTableAction::Keep, LightTableAction::Reject);
+        assert_ne!(LightTableAction::AutoCrop, LightTableAction::Export);
     }
 }
