@@ -57,9 +57,14 @@ pub struct GpuEngine {
 }
 
 impl GpuEngine {
-    /// Open the process device, or `None` when no adapter is available.
+    /// Open the process device, or `None` when the GPU is disabled or no
+    /// adapter opens. `override.toml`'s CPU backend and Preferences both clear
+    /// `use_gpu`.
     #[must_use]
     pub fn new() -> Option<Self> {
+        if !crate::kernel::system::config::app_config().use_gpu {
+            return None;
+        }
         crate::infrastructure::gpu::device::device().map(|gpu| Self {
             gpu,
             loaders: ShaderLoader::default(),

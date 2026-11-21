@@ -176,3 +176,13 @@ fn the_chain_reports_the_density_histogram() {
         "the frame must have samples"
     );
 }
+
+#[test]
+fn the_cpu_override_stops_the_engine() {
+    // The default app config leaves the GPU on; a machine without an adapter
+    // still returns `None`. Only the disabled case is asserted here, because
+    // toggling the process config would race the other tests.
+    if !negpy_backend::kernel::system::config::app_config().use_gpu {
+        assert!(GpuEngine::new().is_none());
+    }
+}
