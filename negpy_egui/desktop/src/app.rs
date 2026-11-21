@@ -92,6 +92,9 @@ pub struct ShellHits {
     pub next: bool,
     /// The toolbar's Photo and Roll mode: `true` selects Photo.
     pub photo_mode: Option<bool>,
+    /// The toolbar's rotate counter-clockwise, rotate clockwise, flip horizontal and
+    /// flip vertical, by index, when one is clicked.
+    pub transform: Option<usize>,
     pub undo: bool,
     pub redo: bool,
     pub tile: Option<usize>,
@@ -1041,6 +1044,9 @@ impl NegFeApp {
             if hits.redo {
                 self.redo_edit(ctx);
             }
+            if let Some(action) = hits.transform {
+                self.transform_frame(action, ctx);
+            }
             if let Some(photo) = hits.photo_mode {
                 self.rail.tab = if photo { Tab::Frame } else { Tab::Roll };
                 self.photo_mode = photo;
@@ -1147,6 +1153,47 @@ impl NegFeApp {
             self.request_render(ctx, false);
             ctx.request_repaint();
         }
+    }
+
+    /// Rotate, flip or toggle the crop lock from the toolbar.
+    fn transform_frame(&mut self, action: usize, ctx: &egui::Context) {
+        let before = self.edit.config.clone();
+        match action {
+            0 => {
+                let (rotated, _) =
+                    negpy_backend::features::geometry::logic::rotate_geometry_and_analysis(
+                        &self.edit.config.geometry,
+                        None,
+                        -1,
+                    );
+                self.edit.config.geometry = rotated;
+            }
+            1 => {
+                let (rotated, _) =
+                    negpy_backend::features::geometry::logic::rotate_geometry_and_analysis(
+                        &self.edit.config.geometry,
+                        None,
+                        1,
+                    );
+                self.edit.config.geometry = rotated;
+            }
+            2 => {
+                self.edit.config.geometry = negpy_backend::features::geometry::logic::toggle_flip(
+                    &self.edit.config.geometry,
+                    true,
+                )
+            }
+            3 => {
+                self.edit.config.geometry = negpy_backend::features::geometry::logic::toggle_flip(
+                    &self.edit.config.geometry,
+                    false,
+                )
+            }
+            _ => return,
+        }
+        self.edit.checkpoint_before(before);
+        self.request_render(ctx, false);
+        ctx.request_repaint();
     }
 
     /// Square the open frame to its film edges when the Geometry card asks.
@@ -1840,6 +1887,14 @@ fn paint_toolbar(
                 theme.text_secondary
             },
         );
+        let hit = ui.interact(
+            button,
+            ui.id().with(("toolbar-transform", index)),
+            Sense::click(),
+        );
+        if hit.clicked() {
+            hits.transform = Some(index);
+        }
     }
     x = geometry.right() + 8.0;
 
@@ -2044,6 +2099,21 @@ mod tests {
             Tab::Roll
         };
         assert_eq!(app.rail.tab, Tab::Frame);
+    }
+
+    #[test]
+    fn the_toolbar_rotate_turns_the_geometry() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.transform_frame(1, &ctx);
+        assert_eq!(app.edit.config.geometry.rotation, 1);
+        app.transform_frame(0, &ctx);
+        assert_eq!(app.edit.config.geometry.rotation, 0);
+        app.transform_frame(2, &ctx);
+        assert!(app.edit.config.geometry.flip_horizontal);
+        app.transform_frame(3, &ctx);
+        assert!(app.edit.config.geometry.flip_vertical);
     }
 
     #[test]

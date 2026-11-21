@@ -597,8 +597,15 @@ pub fn rotate_geometry_and_analysis(
     analysis_rect: Option<[f64; 4]>,
     direction: i64,
 ) -> (crate::domain::models::GeometryConfig, Option<[f64; 4]>) {
+    // A mirror inverts the pipeline's rotation handedness; the crop and analysis rects are
+    // display space, so they always turn by `direction`.
+    let pipeline_direction = if geometry.flip_horizontal != geometry.flip_vertical {
+        -direction
+    } else {
+        direction
+    };
     let mut new_geometry = geometry.clone();
-    new_geometry.rotation = (geometry.rotation + direction).rem_euclid(4);
+    new_geometry.rotation = (geometry.rotation + pipeline_direction).rem_euclid(4);
     if geometry.converge_v != 0.0 || geometry.converge_h != 0.0 {
         let (mut converge_v, mut converge_h) = (geometry.converge_v, geometry.converge_h);
         for _ in 0..direction.rem_euclid(4) {

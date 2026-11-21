@@ -235,6 +235,16 @@ fn rotating_quarters_the_geometry_and_analysis_rect() {
 }
 
 #[test]
+fn a_flipped_frame_turns_the_opposite_pipeline_way() {
+    let geometry = GeometryConfig {
+        flip_horizontal: true,
+        ..GeometryConfig::default()
+    };
+    let (rotated, _) = rotate_geometry_and_analysis(&geometry, None, 1);
+    assert_eq!(rotated.rotation, 3);
+}
+
+#[test]
 fn straighten_snaps_to_the_nearest_axis() {
     assert!((straighten_delta_degrees(10.0, 1.0) - 5.710_593_178_586_373).abs() < 1e-6);
     assert!((straighten_delta_degrees(1.0, 10.0) + 5.710_593_178_586_373).abs() < 1e-6);

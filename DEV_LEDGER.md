@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 18:40 | **Last Commit:** `<pending>` toolbar: keep an undo stack in the frame edit
+**Last Updated:** 2026-11-21 19:20 | **Last Commit:** `<pending>` toolbar: rotate and flip the open frame
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,12 +15,16 @@ findings into §9.9 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10).
    This is a multi-batch epic, not one commit.
-2. [ ] Wire the remaining dead toolbar and card actions in §9.9: Photo/Roll
-   mode, zoom, rotate/flip, Tools, Print, Roll Average, Crop All Frames and
-   Drop Empty Corners. Square to Film and Undo/Redo are wired.
+2. [ ] Wire the remaining dead toolbar and card actions in §9.9: zoom, Tools,
+   Print, Roll Average, Crop All Frames and Drop Empty Corners. Photo/Roll,
+   rotate/flip, Square to Film and Undo/Redo are wired.
 
 ## Completed (Recent)
-- `<pending>` frame: Square to Film calls `squared_geometry` on the open proxy
+- `a09e3fa1` toolbar: Undo and Redo step a per-frame config stack; Square to Film
+  calls `squared_geometry` on the open proxy and redraws.
+- `24c00efa` toolbar: Photo and Roll select the Frame and Roll tabs.
+- `<pending>` toolbar: the rotate and flip buttons turn the open frame, and a
+  flipped frame turns the pipeline the opposite way, as Python does.
   and redraws.
 - `<pending>` toolbar: Undo and Redo step a per-frame config stack.
 - `4f2a8bdf` rail: the worker bins the waveform, parade and vectorscope; the
