@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 20:00 | **Last Commit:** `0b08c9a1` rail: mark clipping on the curve chart
+**Last Updated:** 2026-11-21 20:10 | **Last Commit:** `5b5b11c9` plan: audit the second batch and record its gaps
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -21,6 +21,7 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 4. [ ] Add the Find field and the shortcut registry (§9.10 B1-5, B1-7).
 
 ## Completed (Recent)
+- `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
 - `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
   white edge bin.
 - `ef09fe41` finish: the dead `Drop Empty Corners` button is retired; Crop
@@ -59,7 +60,6 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
   profiles load from the profile's ICC folder.
 - Folder as Roll imports the Scan card's output folder. Prescan and Scan as Roll
   are disabled until their worker is ported.
-- `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.
 - `35d7c9ae` frame: confirm the crop with Enter or right-click.
