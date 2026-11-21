@@ -228,3 +228,89 @@ pub fn run(
     }
     gpu.queue.submit(Some(encoder.finish()));
 }
+
+/// The display-encode shader: scene-linear to the working space's encoded values.
+pub const ENCODE_SHADER: &str = include_str!("shaders/output_encode.wgsl");
+
+/// Run the display encode over a scene-linear texture.
+pub fn run_encode(
+    gpu: &GpuDevice,
+    loaders: &ShaderLoader,
+    source: &GpuTexture,
+    output: &GpuTexture,
+) {
+    let module = loaders.load(&gpu.device, "exposure.output_encode", ENCODE_SHADER);
+    let bind_layout = gpu
+        .device
+        .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("output_encode"),
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::Texture {
+                        sample_type: TextureSampleType::Float { filterable: false },
+                        view_dimension: TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: WORK_FORMAT,
+                        view_dimension: TextureViewDimension::D2,
+                    },
+                    count: None,
+                },
+            ],
+        });
+    let pipeline_layout = gpu
+        .device
+        .create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("output_encode"),
+            bind_group_layouts: &[&bind_layout],
+            push_constant_ranges: &[],
+        });
+    let pipeline = gpu
+        .device
+        .create_compute_pipeline(&ComputePipelineDescriptor {
+            label: Some("output_encode"),
+            layout: Some(&pipeline_layout),
+            module: &module,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
+    let bind_group = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("output_encode"),
+        layout: &bind_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&source.view),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::TextureView(&output.view),
+            },
+        ],
+    });
+    let mut encoder = gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("output_encode"),
+        });
+    {
+        let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
+            label: Some("output_encode"),
+            timestamp_writes: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.dispatch_workgroups(output.width.div_ceil(8), output.height.div_ceil(8), 1);
+    }
+    gpu.queue.submit(Some(encoder.finish()));
+}
