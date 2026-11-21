@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 00:45 | **Last Commit:** `1d7fe335` desktop: keep the Find list keyboard-navigable
+**Last Updated:** 2026-11-22 01:10 | **Last Commit:** `2ff82255` desktop: keep a crop edited during the batch
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop, retouch and mask paths now
@@ -15,79 +15,31 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 1. [ ] Add the GPU render path: no `wgpu` backend or WGSL shader is present in
    `negpy_egui/`, so every GPU-only stage is missing (`MIGRATION_PLAN.md` D10,
    §9.10 B1-9). This is a multi-batch epic, not one commit.
-2. [ ] Add the GPU render path (`MIGRATION_PLAN.md` D10, §9.10 B1-9). This is
-   a multi-batch epic, not one commit.
+2. [ ] Camera capture is blocked: the Rust backend has only the `Camera` and
+   `LightSource` traits, with no gphoto2, Scanlight or simulated desktop
+   adapter and no capture worker. A human must choose the hardware target.
 
 ## Completed (Recent)
-- Crop All Frames now runs a strip worker over `batch_autocrop`, applies each
-  resolved crop and reports saved/kept/failed.
-- Zoom presets, wheel zoom and double-click fit/original reach the canvas; the
-  readout prints the true pixel scale.
-- Roll Average applies or clears Luma, Color and Cast on the open frame.
-- Tools arms Crop, Draw Region, a local mask or a retouch tool and opens the
-  page that owns it.
-- Print opens the Export tab on its file page.
-- Find takes Ctrl+K, filters the shell's cards and actions, and opens a
-  result on its tab.
-- A shortcut registry dispatches navigation, rotate/flip, undo/redo, zoom,
-  Print, Roll Average, Crop All and Tools.
-- The top-bar recipe follows the frame's paper, Print Density and grade, with
-  the auto markers.
-- Find keeps its list open, moves with Up/Down and opens the active row on
-  Enter; Escape closes it.
-- Crop All snapshots a detection fingerprint and keeps a frame edited during
-  the run.
-- `5b5b11c9` plan: §9.10 closes eight rows and lists nine open ones.
-- `0b08c9a1` rail: the curve chart marks a channel that clips at the black or
-  white edge bin.
-- `ef09fe41` finish: the dead `Drop Empty Corners` button is retired; Crop
-  Empty Corners on Geometry is its control.
-- `a384cfb7` toolbar: the rotate and flip buttons turn the open frame, and a
-  flipped frame turns the pipeline the opposite way, as Python does.
-- `a09e3fa1` toolbar: Undo and Redo step a per-frame config stack; Square to Film
-  calls `squared_geometry` on the open proxy and redraws.
-- `24c00efa` toolbar: Photo and Roll select the Frame and Roll tabs.
-- `a36ecb9f` ledger: records the local and analysis commits.
-- `4f2a8bdf` rail: the worker bins the waveform, parade and vectorscope; the
-  Analysis card switches between curve, waveform, parade and vectorscope, and
-  the curve also paints the normalized density histogram.
-- `a9836f82` local: an oval and a card mask are hit-tested by their outline and
-  axis, not by their control points.
-- `62a3c939` local: the tone-limited mask key, zone and softness reach the print
-  curve; the key edges invert the achromatic curve.
-- `c5a42cf8` local: the Dodge & Burn card sets the selected mask's `MaskKey`.
-- `98d7b11e` frame: keep crop drawing active until confirm.
-- The render worker returns the request hash and the painted config hash; the
-  shell accepts a render only when both generation and request hash match.
-- Auto Crop freezes before the texture is shown; a second request finds the
-  painted hash and submits nothing.
-- The render worker returns the `(4, 256)` output histogram of the texture it
-  painted; the Filtration and Tone card headers paint it.
-- `TabSummaryAction::Collapse` now toggles a page flag; each page keeps its own
-  card open states across the folded view.
-- Preview and export both run the retouch source bakes. The source hash carries
-  the IR, heal, dust, hair and clone tokens.
-- The canvas emits typed Heal, Line and Clone gestures. Heal and Scratch share
-  the heal-stroke path; Clone takes an Alt-click source.
-- The local stage now reaches the print for stops, grade and flash. A canvas
-  mask selects and moves its vertices; the Dodge & Burn card edits the selected
-  mask.
-- Export writes a `.negpy` sidecar when its toggle is on. Input and Output ICC
-  profiles load from the profile's ICC folder.
-- Folder as Roll imports the Scan card's output folder. Prescan and Scan as Roll
-  are disabled until their worker is ported.
-- `0f62b2e9` library: keep the card open state after a reload.
-- `09153197` rail: keep the Analysis card collapsed.
-- `35d7c9ae` frame: confirm the crop with Enter or right-click.
-- `383a26de` frame: draw the crop box while dragging.
-- `6ab4469a` frame: keep a typed crop drag.
-- `3becfc36` local: drag a card gradient mask.
-- `fdbb647e` local: drag an oval mask on the canvas.
-- `fa10239c` local: draw a mask on the canvas.
+- `2ff82255` desktop: Crop All keeps a frame edited during the run.
+- `1d7fe335` desktop: Find keeps its list and opens the active row.
+- `34fec0dc` desktop: the recipe follows the frame's paper, density and grade.
+- `e40416f6` desktop: a shortcut registry dispatches shared toolbar actions.
+- `e747a22c` desktop: Ctrl+K opens Find over the shell's cards and actions.
+- `50850d3c` desktop: Print opens the Export form.
+- `8d463b9f` desktop: Tools arms a canvas tool and opens its page.
+- `805c002b` desktop: Roll Average applies or clears Luma, Color and Cast.
+- `9957d874` desktop: presets, the wheel and double-click zoom the canvas.
+- `694e16b4` desktop: Crop All runs a strip worker and persists each crop.
+- Earlier batches: the analysis scopes, local mask editing, crop confirm,
+  Photo/Roll, rotate/flip and Undo/Redo landed before `694e16b4`.
+- The render worker returns the request and painted hashes; Auto Crop freezes
+  before the texture is shown.
+- Preview and export run the retouch bakes; Export writes a sidecar when its
+  toggle is on.
 
 ## Verification
 - This batch: `cargo test --workspace`, `cargo check --workspace` and
-  `cargo fmt --all --check` passed after the ten commits.
+  `cargo fmt --all --check` pass after the ten commits.
 - Clippy is blocked by existing lints in `negpy-backend` and older desktop
   modules (`manual_is_multiple_of`, `too_many_arguments`). None are new.
 - The golden vv9 layout baseline is below target on Light Table and Contact Sheet.
@@ -108,25 +60,22 @@ findings into §9.10 and this ledger, then run `cargo check --workspace` and
 - `Draw` starts the crop tool; `has_crop` holds the stored rect. Its interaction
   must come from `Draw`, never from a stored rect, or Enter cannot confirm.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
-- Retouch bakes are wired ahead of both engines. Unlimited and tone-limited
-  local masks reach the print; the card sets the key and the zone rail.
-- The scopes and density histogram are binned from the display and normalized
-  frames; the Analysis card paints each view.
-- Retouch runs on the source proxy and the full-resolution export. Its IR plane
-  is oriented and resized with the source.
+- Retouch bakes are wired ahead of both engines; the scopes are binned from the
+  display and normalized frames.
 - No `wgpu` backend or WGSL shader exists in `negpy_egui/`. The shell draws
   textures through egui only.
+- Camera capture has no hardware adapter in the Rust backend. The Scan card's
+  camera controls stay informational.
 - The Scan card's Prescan and Scan as Roll are disabled: their workers are not
   ported.
 - Photo/Roll, rotate/flip, Undo/Redo and Square to Film reach the edit. Zoom,
-  Tools, Print, Roll Average and Crop All Frames are still painted (§9.10).
+  Tools, Print, Roll Average, Crop All Frames, Find and the recipe line now
+  respond (§9.10).
 - The post-batch source audit is §9.10 in `MIGRATION_PLAN.md`.
 - The mask picker edits the selected mask; ovals select inside their outline and
   cards near their axis.
 - `receive_render` accepts output by generation and request hash, not by the
   config hash that painted it.
-- The render worker resolves Auto Crop in its own config, then returns a hash
-  for that resolved config. The shell freezes the rect after it shows the frame.
 - The Light Table capture names one frame; the golden shows the whole roll.
 - Generated captures stay untracked under `tests/gui/actual/`.
 - `negfe` is the manual target; `negfe-capture` is the fixed matrix.
