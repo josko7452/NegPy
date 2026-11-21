@@ -10,6 +10,7 @@ use std::thread::JoinHandle;
 use negpy_backend::domain::models::WorkspaceConfig;
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::DarkroomEngine;
+use negpy_backend::services::assets::sidecar::write_sidecar;
 use negpy_backend::services::export::render::render_export_file;
 use negpy_backend::services::export::service::write_export;
 
@@ -115,19 +116,37 @@ fn export_one(
     engine: &mut DarkroomEngine,
 ) -> Result<PathBuf, String> {
     let render = render_export_file(path, config, Some(color_space), engine)?;
-    write_export(
+    let written = write_export(
         &ImageBuffer::from_rgb(render.image.width, render.image.height, render.image.pixels),
         path,
         &config.export,
         config,
         &render.color_space,
         user_icc_dir,
-    )
+    )?;
+    if config.export.export_sidecars_enabled {
+        write_sidecar(path, config, 0)
+            .map_err(|error| format!("Could not write the sidecar: {error}"))?;
+    }
+    Ok(written)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_sidecar_toggle_writes_the_edit_beside_the_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("frame.orf");
+        std::fs::write(&source, b"frame").unwrap();
+        let mut config = WorkspaceConfig::default();
+        config.export.export_sidecars_enabled = true;
+        write_sidecar(&source, &config, 0).unwrap();
+        assert!(dir.path().join("frame.negpy").exists());
+        let read = negpy_backend::services::assets::sidecar::load_sidecar(&source, 0);
+        assert!(read.is_some());
+    }
 
     #[test]
     fn an_empty_request_writes_nothing() {

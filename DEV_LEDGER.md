@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-21 13:44 | **Last Commit:** `bbb00212` local: apply masks to the print and the canvas
+**Last Updated:** 2026-11-21 14:06 | **Last Commit:** `433a1cf5` rail: paint the analysis histogram and toggle log scale
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The crop canvas accepts Enter and keeps
@@ -7,10 +7,11 @@ its rectangle, but a confirmed crop and an Auto Crop do not yet prove the canvas
 redrew. Make that render path observable before the remaining tool work.
 
 ## Next Steps (Ordered)
-1. [ ] Wire the remaining Export controls: input ICC and sidecar scope
-   (`MIGRATION_PLAN.md` §9.5 P3b-14, P3b-15).
-2. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
+1. [ ] Finish the tone-limited local masks: the keyed alpha and key parameters
    are still not passed to the print curve.
+2. [ ] Wire the toolbar and the remaining card actions from the section 9
+   audit (Photo/Roll mode, zoom, rotate/flip, Tools, Undo/Redo, Print,
+   Roll Average).
 
 ## Completed (Recent)
 - `98d7b11e` frame: keep crop drawing active until confirm.
@@ -30,6 +31,8 @@ redrew. Make that render path observable before the remaining tool work.
   mask selects and moves its vertices; the Dodge & Burn card edits the selected
   mask.
 - The Analysis chart paints the render histogram and the Log toggle is live.
+- Export writes a `.negpy` sidecar when its toggle is on. Input and Output ICC
+  profiles load from the profile's ICC folder.
 - `53efd5c5` scan: keep the Camera card state across modes.
 - `0f62b2e9` library: keep the card open state after a reload.
 - `09153197` rail: keep the Analysis card collapsed.

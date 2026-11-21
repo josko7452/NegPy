@@ -51,7 +51,6 @@ pub struct ExportState {
     pub proof: ProofSettings,
     pub presets: Vec<negpy_backend::domain::models::ExportPreset>,
     pub contact_sheet: bool,
-    pub alongside: bool,
     pub sidecars: bool,
     pub sidecar_path: String,
     pub requested: bool,
@@ -112,7 +111,6 @@ impl Default for ExportState {
             proof: ProofSettings::default(),
             presets: Vec::new(),
             contact_sheet: true,
-            alongside: false,
             sidecars: false,
             sidecar_path: String::new(),
             requested: false,
@@ -417,19 +415,18 @@ impl ExportState {
     }
 
     fn show_alongside(&mut self, ui: &mut Ui) -> bool {
+        let theme = Theme::default();
+        let _ = section_subheader(ui, "EDIT SIDECARS");
         let changed = labeled_toggle(ui, "Save Sidecar on Export", &mut self.sidecars).clicked();
-        entry_row(
-            ui,
-            RowColumns::new(),
-            "Contact sheet folder",
-            &mut self.sidecar_path,
-        );
+        let _ = hint(ui, "Write the edit as a .negpy file next to the source.");
+        ui.add_space(f32::from(theme.space_lg));
+        let _ = section_subheader(ui, "CONTACT SHEET");
+        entry_row(ui, RowColumns::new(), "Folder", &mut self.sidecar_path);
         let _ = hint(
             ui,
             "Leave the folder empty to follow the export destination.",
         );
         changed
-            | labeled_toggle(ui, "Alongside Exports", &mut self.alongside).clicked()
             | labeled_action(ui, "Contact Sheet...", ActionRank::Normal)
                 .clicked()
                 .then(|| self.contact_sheet_requested = true)
@@ -602,18 +599,13 @@ mod tests {
     }
 
     #[test]
-    fn alongside_is_a_session_flag_not_a_frame_field() {
+    fn the_sidecar_scope_has_no_unstored_alongside_flag() {
         let mut state = ExportState::default();
         let mut edit = FrameEdit::default();
         state.load(&edit);
-        state.alongside = true;
+        state.sidecars = true;
         state.store(&mut edit);
-        assert!(
-            !serde_json::to_string(&edit.config.export)
-                .unwrap_or_default()
-                .contains("alongside")
-        );
-        assert!(state.alongside);
+        assert!(edit.config.export.export_sidecars_enabled);
     }
 
     #[test]
