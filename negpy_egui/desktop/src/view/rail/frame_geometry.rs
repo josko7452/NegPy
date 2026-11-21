@@ -118,6 +118,8 @@ impl Default for StraightenState {
 pub struct GeometryState {
     pub crop: CropState,
     pub straighten: StraightenState,
+    /// A Square to Film request from this frame's card, taken by the shell.
+    pub square_request: bool,
     pub crop_open: bool,
     pub straighten_open: bool,
     pub transform: Option<i8>,
@@ -130,6 +132,7 @@ impl Default for GeometryState {
         Self {
             crop: CropState::default(),
             straighten: StraightenState::default(),
+            square_request: false,
             crop_open: true,
             straighten_open: true,
             transform: None,
@@ -420,7 +423,10 @@ impl GeometryState {
                 });
                 ui.horizontal(|ui| {
                     changed |= labeled_toggle(ui, "Level", &mut self.straighten.level).clicked();
-                    let _ = labeled_action(ui, "Square to Film", ActionRank::Normal);
+                    if labeled_action(ui, "Square to Film", ActionRank::Normal).clicked() {
+                        self.square_request = true;
+                        changed = true;
+                    }
                     changed |=
                         labeled_toggle(ui, "Draw Lines", &mut self.straighten.draw_lines).clicked();
                 });

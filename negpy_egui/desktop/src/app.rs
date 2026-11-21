@@ -90,6 +90,8 @@ pub struct ShellHits {
     pub import: bool,
     pub previous: bool,
     pub next: bool,
+    pub undo: bool,
+    pub redo: bool,
     pub tile: Option<usize>,
     pub crop: crate::view::canvas::CropAction,
     pub mask: Option<crate::view::canvas::DrawnMask>,
@@ -947,6 +949,7 @@ impl NegFeApp {
                         .show(ui, rail_rect, &mut self.edit, &mut self.proof);
                     self.rail.apply_optics_action(&mut self.edit);
                     self.rail.apply_history_action(&mut self.edit);
+                    self.apply_square_request(ctx);
                     self.apply_roll_analysis(ctx);
                     self.open_requested_roll();
                     self.view.tab = self.rail.tab;
@@ -1025,6 +1028,12 @@ impl NegFeApp {
             if hits.next {
                 self.next_frame();
             }
+            if hits.undo {
+                self.undo_edit(ctx);
+            }
+            if hits.redo {
+                self.redo_edit(ctx);
+            }
             match hits.crop {
                 crate::view::canvas::CropAction::Pending(rect) => self.store_crop(rect),
                 crate::view::canvas::CropAction::Confirm(rect) => {
@@ -1074,11 +1083,16 @@ impl NegFeApp {
             self.request_scan(ctx);
             self.open_scan_folder();
             let proof = self.proof.clone();
+            let before = self.edit.config.clone();
             let switched = self
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+            if self.edit.config != before {
+                self.edit.checkpoint_before(before);
+            }
             self.rail.apply_optics_action(&mut self.edit);
             self.rail.apply_history_action(&mut self.edit);
+            self.apply_square_request(ctx);
             self.apply_roll_analysis(ctx);
             if self.rail.export.take_contact_sheet_request() {
                 self.view.contact_sheet = true;
@@ -1103,6 +1117,52 @@ impl NegFeApp {
             return;
         };
         let _ = self.proof.save(repo);
+    }
+
+    /// Step the open frame back, then show the earlier config.
+    fn undo_edit(&mut self, ctx: &egui::Context) {
+        if self.edit.undo() {
+            self.rail.select_view(&self.view);
+            self.request_render(ctx, false);
+            ctx.request_repaint();
+        }
+    }
+
+    /// Step the open frame forward, then show the later config.
+    fn redo_edit(&mut self, ctx: &egui::Context) {
+        if self.edit.redo() {
+            self.rail.select_view(&self.view);
+            self.request_render(ctx, false);
+            ctx.request_repaint();
+        }
+    }
+
+    /// Square the open frame to its film edges when the Geometry card asks.
+    fn apply_square_request(&mut self, ctx: &egui::Context) {
+        if !self.rail.geometry.square_request {
+            return;
+        }
+        self.rail.geometry.square_request = false;
+        let Some(source) = self.source.as_ref() else {
+            return;
+        };
+        let Some((squared, _)) = negpy_backend::features::geometry::skew::squared_geometry(
+            &source.image,
+            &self.edit.config.geometry,
+            self.edit.config.process.process_mode,
+        ) else {
+            return;
+        };
+        let current = &self.edit.config.geometry;
+        if (squared.fine_rotation - current.fine_rotation).abs() < 0.05
+            && (squared.converge_v - current.converge_v).abs() < 0.05
+            && (squared.converge_h - current.converge_h).abs() < 0.05
+        {
+            return;
+        }
+        self.edit.config.geometry = squared;
+        self.edit.mark_dirty();
+        self.request_render(ctx, false);
     }
 
     fn apply_roll_analysis(&mut self, ctx: &egui::Context) {
@@ -1490,6 +1550,8 @@ fn paint_shell(
     let navigation = paint_toolbar(ui, &painter, toolbar, selected, thumbnails.len());
     hits.previous = navigation.previous;
     hits.next = navigation.next;
+    hits.undo = navigation.undo;
+    hits.redo = navigation.redo;
     (rail, hits)
 }
 
@@ -1597,6 +1659,7 @@ fn paint_toolbar(
         BAR_BUTTON_HEIGHT, BAR_ICON_SIZE, BAR_TRACK_BUTTON_HEIGHT, BAR_TRACK_PAD,
     };
 
+    let mut hits = ShellHits::default();
     let theme = Theme::default();
     painter.rect_filled(toolbar, 0.0, surface());
     let row_height = BAR_BUTTON_HEIGHT;
@@ -1787,6 +1850,16 @@ fn paint_toolbar(
                 theme.text_muted
             },
         );
+        let hit = ui.interact(
+            button,
+            ui.id().with(("toolbar", icon as u8)),
+            Sense::click(),
+        );
+        if icon == Icon::Undo {
+            hits.undo = hit.clicked();
+        } else {
+            hits.redo = hit.clicked();
+        }
         x = button.right() + 6.0;
     }
 
@@ -1892,11 +1965,9 @@ fn paint_toolbar(
             );
         }
     }
-    ShellHits {
-        previous: previous.clicked(),
-        next: next.clicked(),
-        ..ShellHits::default()
-    }
+    hits.previous = previous.clicked();
+    hits.next = next.clicked();
+    hits
 }
 
 #[cfg(test)]

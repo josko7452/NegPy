@@ -16,6 +16,10 @@ pub struct FrameEdit {
     pub config: WorkspaceConfig,
     source: Option<EditSource>,
     dirty: bool,
+    /// The configs an Undo steps back through, newest last.
+    undo_stack: Vec<WorkspaceConfig>,
+    /// The configs an Undo steps forward through, most recently undone last.
+    redo_stack: Vec<WorkspaceConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,6 +54,8 @@ impl FrameEdit {
                 hash,
             }),
             dirty: false,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -78,6 +84,55 @@ impl FrameEdit {
     /// Mark the config as changed since the last save.
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+
+    /// Remember the current config before a change, so Undo can return to it.
+    pub fn checkpoint(&mut self) {
+        self.undo_stack.push(self.config.clone());
+        self.redo_stack.clear();
+    }
+
+    /// Remember the config that was current before a change.
+    pub fn checkpoint_before(&mut self, previous: WorkspaceConfig) {
+        if previous == self.config {
+            return;
+        }
+        self.undo_stack.push(previous);
+        self.redo_stack.clear();
+    }
+
+    /// Return to the config before the last change. True when one was undone.
+    pub fn undo(&mut self) -> bool {
+        let Some(previous) = self.undo_stack.pop() else {
+            return false;
+        };
+        self.redo_stack
+            .push(std::mem::replace(&mut self.config, previous));
+        self.dirty = true;
+        true
+    }
+
+    /// Return to the config the last Undo left. True when one was redone.
+    pub fn redo(&mut self) -> bool {
+        let Some(next) = self.redo_stack.pop() else {
+            return false;
+        };
+        self.undo_stack
+            .push(std::mem::replace(&mut self.config, next));
+        self.dirty = true;
+        true
+    }
+
+    /// Whether an Undo has a step to return to.
+    #[must_use]
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+
+    /// Whether a Redo has a step to return to.
+    #[must_use]
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
     }
 
     /// The same config with no save target, for a capture.
@@ -176,6 +231,36 @@ mod tests {
         assert!(!edit.is_dirty());
         let reloaded = FrameEdit::load(Some(dir.path()), &photo);
         assert_eq!(reloaded.config.exposure.density, 1.25);
+    }
+
+    #[test]
+    fn an_undo_returns_to_the_config_before_the_change() {
+        let mut edit = FrameEdit::default();
+        edit.config.exposure.density = 1.0;
+        let before = edit.config.clone();
+        edit.config.exposure.density = 1.4;
+        edit.checkpoint_before(before);
+        assert!(edit.can_undo());
+        assert!(edit.undo());
+        assert_eq!(edit.config.exposure.density, 1.0);
+        assert!(edit.can_redo());
+        assert!(edit.redo());
+        assert_eq!(edit.config.exposure.density, 1.4);
+        assert!(!edit.can_redo());
+    }
+
+    #[test]
+    fn a_new_change_drops_the_redo_steps() {
+        let mut edit = FrameEdit::default();
+        let first = edit.config.clone();
+        edit.config.exposure.density = 1.4;
+        edit.checkpoint_before(first);
+        assert!(edit.undo());
+        assert!(edit.can_redo());
+        let before = edit.config.clone();
+        edit.config.exposure.density = 1.9;
+        edit.checkpoint_before(before);
+        assert!(!edit.can_redo());
     }
 
     #[test]
