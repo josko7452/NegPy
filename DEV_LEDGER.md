@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-22 05:50 | **Last Commit:** `pending export: run a saved preset on the strip`
+**Last Updated:** 2026-11-22 06:15 | **Last Commit:** `pending contact-sheet: leave frames off the sheet`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. The fourth batch closed the crosstalk,
@@ -21,7 +21,7 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
 3. [ ] Pick Dmin and Dmax by hand on the canvas (store, clear and marker landed; the Python uncropped pick view is not ported).
 4. [ ] Metadata Presets: apply to the open frame or the whole roll (landed; a multi-frame selection is still not modelled).
 5. [ ] Export presets: run a preset on the strip (landed; the Presets page runs one selected preset).
-6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back.
+6. [ ] Contact Sheet: Pick Frames leaves a frame out or puts it back (landed as a list in the dialog; the sheet tiles are not clickable yet).
 7. [ ] Roll Analysis: Detect groups the strip into scenes for Accept or Discard.
 8. [ ] Frame Favorites: the stored slider list and its editor.
 
@@ -34,6 +34,8 @@ findings into §9.11 and this ledger, then run `cargo check --workspace` and
   the stored fields over every other frame of the roll.
 - `export`: Export to Preset runs the selected preset on every non-rejected
   frame, with the preset's encoder fields and destination.
+- `contact-sheet`: Pick Frames toggles a frame list; a left-out frame leaves the
+  sheet entries, the page plan and the export.
 - `calibration`: the Calibration card lists the crosstalk profiles, bakes the
   selected matrix and process into the edit and clears the stored bounds.
 - `metadata`: the Presets page lists the store's presets and saves, applies and

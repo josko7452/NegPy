@@ -7,6 +7,7 @@ use crate::styles::icons::Icon;
 use crate::styles::layout::DEFAULT_BUTTON_HEIGHT;
 use crate::styles::templates::{ActionRank, labeled_action, labeled_toggle};
 use crate::styles::theme::Theme;
+use crate::view::widgets::collapsible::hint;
 use crate::view::widgets::field_row::{RowColumns, field_row};
 
 const PANEL_WIDTH: f32 = 340.0;
@@ -31,6 +32,12 @@ pub struct ContactSheetDialog {
     pub status: String,
     /// A settings change that needs a new render.
     pub changed: bool,
+    /// Whether the frame picker lists every frame.
+    pub picking: bool,
+    /// The entry indices the user left off the sheet.
+    pub left_out: std::collections::BTreeSet<usize>,
+    /// The frame names the picker lists, filled from the strip.
+    pub frames: Vec<String>,
 }
 
 impl Default for ContactSheetDialog {
@@ -42,6 +49,9 @@ impl Default for ContactSheetDialog {
             preview: None,
             status: String::new(),
             changed: true,
+            picking: false,
+            left_out: std::collections::BTreeSet::new(),
+            frames: Vec::new(),
         }
     }
 }
@@ -59,7 +69,9 @@ impl ContactSheetDialog {
     }
 
     /// Paint the dialog into `screen` and return the buttons it asked for.
-    pub fn show(&mut self, ui: &mut egui::Ui, screen: Rect) -> SheetActions {
+    pub fn show(&mut self, ui: &mut egui::Ui, screen: Rect, frames: &[String]) -> SheetActions {
+        self.frames = frames.to_vec();
+        self.left_out.retain(|index| *index < frames.len());
         let theme = Theme::default();
         let panel = Rect::from_min_size(
             egui::pos2(screen.right() - MARGIN - PANEL_WIDTH, screen.top() + MARGIN),
@@ -175,7 +187,33 @@ impl ContactSheetDialog {
             self.changed = true;
         }
         child.add_space(f32::from(theme.space_md));
-        let _ = labeled_action(&mut child, "Pick Frames...", ActionRank::Normal);
+        if labeled_toggle(&mut child, "Pick Frames", &mut self.picking).clicked() {
+            self.changed = true;
+        }
+        if self.picking {
+            let _ = hint(
+                &mut child,
+                "Clear a frame to leave it off the sheet; select it to put it back.",
+            );
+            for (index, name) in self.frames.clone().iter().enumerate() {
+                let mut included = !self.left_out.contains(&index);
+                if labeled_toggle(&mut child, name, &mut included).clicked() {
+                    if included {
+                        self.left_out.remove(&index);
+                    } else {
+                        self.left_out.insert(index);
+                    }
+                    self.changed = true;
+                }
+            }
+            if !self.left_out.is_empty() {
+                let left_out = format!(
+                    "{} left out",
+                    crate::view::rail::count_of(self.left_out.len(), "frame")
+                );
+                let _ = hint(&mut child, &left_out);
+            }
+        }
         if !self.status.is_empty() {
             child.label(&self.status);
         }
@@ -262,7 +300,7 @@ mod tests {
         let mut state = ContactSheetDialog::default();
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let actions = state.show(ui, ui.max_rect());
+                let actions = state.show(ui, ui.max_rect(), &[]);
                 assert!(!actions.export && !actions.close);
             });
         });
@@ -286,7 +324,7 @@ mod tests {
         state.page = 0;
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let _ = state.show(ui, ui.max_rect());
+                let _ = state.show(ui, ui.max_rect(), &[]);
             });
         });
         assert_eq!(state.page, 0);
@@ -294,9 +332,24 @@ mod tests {
         state.changed = false;
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let _ = state.show(ui, ui.max_rect());
+                let _ = state.show(ui, ui.max_rect(), &[]);
             });
         });
         assert_eq!(state.page, 1);
+    }
+
+    #[test]
+    fn a_left_out_frame_stays_out_of_a_shorter_pick_list() {
+        let mut state = ContactSheetDialog::default();
+        state.left_out.extend([1, 4]);
+        let frames = ["a".to_string(), "b".to_string(), "c".to_string()];
+        let ctx = egui::Context::default();
+        let _ = ctx.run(egui::RawInput::default(), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let _ = state.show(ui, ui.max_rect(), &frames);
+            });
+        });
+        assert!(state.left_out.contains(&1));
+        assert!(!state.left_out.contains(&4));
     }
 }

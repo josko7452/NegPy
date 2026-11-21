@@ -536,13 +536,16 @@ impl NegFeApp {
         ctx.request_repaint();
     }
 
+    /// The contact sheet's frames, without the ones the picker left out.
     fn sheet_entries(
         &self,
     ) -> Vec<negpy_backend::services::export::contact_sheet_page::SheetEntry> {
         let profile = self.profile.clone();
         self.strip
             .iter()
-            .filter_map(|frame| {
+            .enumerate()
+            .filter(|(index, _)| !self.sheet.left_out.contains(index))
+            .filter_map(|(_, frame)| {
                 let path = frame.path.clone()?;
                 let tile = crate::frame_source::load_thumbnail(&path, profile.as_deref(), 480)?;
                 Some(
@@ -1456,7 +1459,9 @@ impl NegFeApp {
                 .frame(Frame::NONE.fill(theme.bg_panel))
                 .show(ctx, |ui| {
                     if self.view.view == "contact_sheet_dialog" {
-                        let actions = self.sheet.show(ui, screen);
+                        let frames: Vec<String> =
+                            self.strip.iter().map(|frame| frame.name.clone()).collect();
+                        let actions = self.sheet.show(ui, screen, &frames);
                         if actions.refresh {
                             self.request_sheet(ctx, false);
                         }
@@ -3056,6 +3061,17 @@ mod tests {
         assert_eq!(other.metadata.camera_model, "Leica M3");
         let untouched = crate::frame_source::stored_config(Some(dir.path()), &photos[0]);
         assert!(untouched.metadata.camera_model.is_empty());
+    }
+
+    #[test]
+    fn a_left_out_frame_leaves_the_sheet_entries() {
+        let mut app = NegFeApp::for_capture("export", "", "alongside", "contact_sheet_dialog", 0.0);
+        app.strip = vec![
+            crate::frame_source::FrameImage::empty().with_path(std::path::Path::new("/roll/a.tif")),
+            crate::frame_source::FrameImage::empty().with_path(std::path::Path::new("/roll/b.tif")),
+        ];
+        app.sheet.left_out.insert(0);
+        assert!(app.sheet_entries().is_empty());
     }
 
     #[test]
