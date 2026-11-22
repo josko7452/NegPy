@@ -142,17 +142,22 @@ impl CaptureApp {
         if self.wrote_manifest {
             return;
         }
+        let folder = self
+            .manifest
+            .frame_folder()
+            .map_or_else(String::new, |path| path.display().to_string());
+        let profile = self.manifest.profile_dir().map_or_else(
+            || self.output.display().to_string(),
+            |path| path.display().to_string(),
+        );
         let written = GoldenManifest {
-            profile: self.output.display().to_string(),
-            folder: self.reference.fixture.frame.clone(),
+            profile,
+            folder: folder.clone(),
             frame: self.reference.fixture.frame.clone(),
             width: self.manifest.width,
             height: self.manifest.height,
             captures: self.manifest.captures.clone(),
-            source_folder: self
-                .manifest
-                .frame_folder()
-                .map_or_else(String::new, |path| path.display().to_string()),
+            source_folder: folder,
             source_profile: self
                 .manifest
                 .profile_dir()
