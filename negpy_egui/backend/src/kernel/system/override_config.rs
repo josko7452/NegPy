@@ -299,6 +299,24 @@ const QT_RHI: &[(&str, &str)] = &[
 ];
 const QT_PLATFORM: &[(&str, &str)] = &[("xcb", "xcb"), ("wayland", "wayland")];
 
+/// Read `override.toml` and the saved `gpu_enabled` preference into `app_config` at startup.
+///
+/// The file keeps the last word: a `cpu` backend pins the CPU, and any other explicit
+/// backend pins the GPU on. An `auto` backend follows the saved preference.
+pub fn load_startup(
+    path: &Path,
+    app_config: &mut AppConfig,
+    get_setting: impl Fn(&str) -> Option<bool>,
+) {
+    let cfg = load_or_create(path);
+    apply(&cfg, app_config);
+    if cfg.backend == "auto"
+        && let Some(enabled) = get_setting("gpu_enabled")
+    {
+        app_config.use_gpu = enabled;
+    }
+}
+
 /// Set the environment variables and update `app_config` from the override settings.
 pub fn apply(cfg: &OverrideConfig, app_config: &mut AppConfig) {
     if cfg.backend == "cpu" {
@@ -453,5 +471,42 @@ pub fn apply_stored(
             },
             _ => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_cpu_override_pins_the_cpu_against_a_saved_gpu_preference() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("override.toml");
+        std::fs::write(&path, "[rendering]\nbackend = \"cpu\"\n").unwrap();
+        let mut config = AppConfig::with_defaults();
+        load_startup(&path, &mut config, |_| Some(true));
+        assert!(!config.use_gpu);
+    }
+
+    #[test]
+    fn an_auto_override_reads_the_saved_gpu_preference() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("override.toml");
+        std::fs::write(&path, "[rendering]\nbackend = \"auto\"\n").unwrap();
+        let mut config = AppConfig::with_defaults();
+        load_startup(&path, &mut config, |key| {
+            (key == "gpu_enabled").then_some(false)
+        });
+        assert!(!config.use_gpu);
+    }
+
+    #[test]
+    fn an_explicit_gpu_backend_keeps_the_gpu_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("override.toml");
+        std::fs::write(&path, "[rendering]\nbackend = \"vulkan\"\n").unwrap();
+        let mut config = AppConfig::with_defaults();
+        load_startup(&path, &mut config, |_| Some(false));
+        assert!(config.use_gpu);
     }
 }

@@ -252,6 +252,8 @@ pub struct NegFeApp {
     pub sticky_zoom: bool,
     /// A true-pixel zoom a shortcut asked for, applied once the canvas is known.
     pub zoom_percent: Option<u32>,
+    /// Whether preview renders may use the GPU chain. Startup applies `override.toml`.
+    pub gpu_enabled: bool,
     /// The Find field state the shell passes to the painter.
     pub find: FindState,
     /// Whether the Tools menu should open under the pointer.
@@ -295,6 +297,7 @@ impl NegFeApp {
             zoom: 1.0,
             sticky_zoom: false,
             zoom_percent: None,
+            gpu_enabled: true,
             find: FindState::default(),
             tools_open: false,
         }
@@ -336,6 +339,7 @@ impl NegFeApp {
             zoom: 1.0,
             sticky_zoom: false,
             zoom_percent: None,
+            gpu_enabled: true,
             find: FindState::default(),
             tools_open: false,
         }
@@ -369,6 +373,25 @@ impl NegFeApp {
             .ok()
             .flatten()
             .is_some_and(|value| value.as_bool().unwrap_or(false));
+        self.gpu_enabled = repo
+            .global_setting("gpu_enabled")
+            .ok()
+            .flatten()
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        let mut app_config = negpy_backend::domain::types::AppConfig::for_user_dir(profile);
+        let override_path = std::path::PathBuf::from(&app_config.override_toml_path);
+        negpy_backend::kernel::system::override_config::load_startup(
+            &override_path,
+            &mut app_config,
+            |key| {
+                repo.global_setting(key)
+                    .ok()
+                    .flatten()
+                    .and_then(|value| value.as_bool())
+            },
+        );
+        self.gpu_enabled = app_config.use_gpu;
         let presets = repo.load_export_presets();
         self.rail.export.set_presets(presets);
         let profiles = negpy_backend::infrastructure::display::color_mgmt::available_profiles(
@@ -436,7 +459,7 @@ impl NegFeApp {
             source: source.clone(),
             config: self.edit.config.clone(),
             proof: self.proof_request(),
-            gpu_enabled: true,
+            gpu_enabled: self.gpu_enabled,
             crop_preview_full: self.rail.geometry.crop.draw,
         };
         let hash = request.config_hash();
