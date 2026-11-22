@@ -32,6 +32,7 @@ pub enum Action {
     RollAverage,
     CropAll,
     Tools,
+    StickyZoom,
 }
 
 /// Every binding the shell owns. A key with no entry is not a shortcut.
@@ -141,6 +142,13 @@ pub const REGISTRY: &[Binding] = &[
         description: "Open the Tools menu",
         category: "Tools",
     },
+    Binding {
+        action: Action::StickyZoom,
+        key: Key::Y,
+        shift: true,
+        description: "Keep the zoom when switching frames",
+        category: "View",
+    },
 ];
 
 /// The binding that matches this key press, if any.
@@ -200,6 +208,7 @@ pub fn run(app: &mut NegFeApp, action: Action, ctx: &egui::Context) {
         Action::RollAverage => app.toggle_roll_average(ctx),
         Action::CropAll => app.request_crop_all(ctx),
         Action::Tools => app.open_tools(),
+        Action::StickyZoom => app.set_sticky_zoom(!app.sticky_zoom),
     }
     ctx.request_repaint();
 }
@@ -255,6 +264,7 @@ mod tests {
             Action::RollAverage,
             Action::CropAll,
             Action::Tools,
+            Action::StickyZoom,
         ] {
             assert!(
                 REGISTRY.iter().any(|binding| binding.action == action),

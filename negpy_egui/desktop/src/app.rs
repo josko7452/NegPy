@@ -109,6 +109,8 @@ pub struct ShellHits {
     pub find: Option<crate::view::find::FindTarget>,
     /// The zoom percent a toolbar preset selected.
     pub zoom: Option<u32>,
+    /// The Sticky Zoom toggle, taken as its new state.
+    pub sticky_zoom: Option<bool>,
     /// The Roll Average toggle, taken as its new state.
     pub roll_average: Option<bool>,
     /// The Print button, which opens the Export flow.
@@ -223,6 +225,8 @@ pub struct NegFeApp {
     retouch_drag: crate::view::canvas::RetouchDrag,
     /// The fit-relative canvas zoom.
     pub zoom: f32,
+    /// Whether a frame switch keeps the current zoom instead of fitting the frame.
+    pub sticky_zoom: bool,
     /// A true-pixel zoom a shortcut asked for, applied once the canvas is known.
     pub zoom_percent: Option<u32>,
     /// The Find field state the shell passes to the painter.
@@ -264,6 +268,7 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            sticky_zoom: false,
             zoom_percent: None,
             find: FindState::default(),
             tools_open: false,
@@ -302,6 +307,7 @@ impl NegFeApp {
             mask_drag: crate::view::canvas::MaskDrag::default(),
             retouch_drag: crate::view::canvas::RetouchDrag::default(),
             zoom: 1.0,
+            sticky_zoom: false,
             zoom_percent: None,
             find: FindState::default(),
             tools_open: false,
@@ -331,6 +337,11 @@ impl NegFeApp {
         );
         self.proof = ProofSettings::load(&repo);
         self.settings = Some(repo.clone());
+        self.sticky_zoom = repo
+            .global_setting("sticky_zoom")
+            .ok()
+            .flatten()
+            .is_some_and(|value| value.as_bool().unwrap_or(false));
         let presets = repo.load_export_presets();
         self.rail.export.set_presets(presets);
         let profiles = negpy_backend::infrastructure::display::color_mgmt::available_profiles(
@@ -1306,6 +1317,10 @@ impl NegFeApp {
             .optics
             .set_profile(profile.as_deref(), &self.edit.config.flatfield.profile_id);
         self.rail.set_profile(profile.as_deref(), &self.edit.config);
+        if !self.sticky_zoom {
+            self.zoom = 1.0;
+            self.zoom_percent = None;
+        }
         self.selected = index;
         if let Some(profile) = profile.as_deref() {
             let (rows, prints) = crate::frame_source::stored_history(Some(profile), &path);
@@ -1587,6 +1602,7 @@ impl NegFeApp {
                 retouch_tool,
                 &mut self.retouch_drag,
                 self.zoom,
+                self.sticky_zoom,
                 self.edit.config.process.use_luma_average
                     || self.edit.config.process.use_color_average
                     || self.edit.config.process.use_cast_average,
@@ -1666,6 +1682,10 @@ impl NegFeApp {
                         .clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
                     ctx.request_repaint();
                 }
+            }
+            if let Some(on) = hits.sticky_zoom {
+                self.set_sticky_zoom(on);
+                ctx.request_repaint();
             }
             if let Some(percent) = self.zoom_percent.take() {
                 if let (Some(photo), Some(frame)) = (hits.photo, self.frame.as_ref()) {
@@ -2177,6 +2197,20 @@ impl NegFeApp {
         self.zoom = zoom.clamp(crate::view::canvas::ZOOM_MIN, crate::view::canvas::ZOOM_MAX);
     }
 
+    /// Keep or reset the zoom on every frame switch, and save the choice.
+    pub fn set_sticky_zoom(&mut self, enabled: bool) {
+        if self.sticky_zoom == enabled {
+            return;
+        }
+        self.sticky_zoom = enabled;
+        let Some(repo) = &mut self.settings else {
+            return;
+        };
+        let mut settings = serde_json::Map::new();
+        settings.insert("sticky_zoom".to_string(), serde_json::json!(enabled));
+        let _ = repo.save_global_settings(&settings);
+    }
+
     /// Ask for a true-pixel zoom, applied by the next canvas paint.
     pub fn zoom_to_percent(&mut self, percent: u32) {
         self.zoom_percent = Some(percent);
@@ -2355,6 +2389,7 @@ fn paint_shell(
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
     zoom: f32,
+    sticky_zoom: bool,
     averages_on: bool,
     find: &mut FindState,
     recipe: &str,
@@ -2561,6 +2596,7 @@ fn paint_shell(
         geometry.1.map_or(100, |(width, height)| {
             crate::view::canvas::zoom_percent(photo, width as u32, height as u32)
         }),
+        sticky_zoom,
         averages_on,
     );
     hits.previous = navigation.previous;
@@ -2568,6 +2604,7 @@ fn paint_shell(
     hits.undo = navigation.undo;
     hits.redo = navigation.redo;
     hits.zoom = navigation.zoom;
+    hits.sticky_zoom = navigation.sticky_zoom;
     hits.roll_average = navigation.roll_average;
     hits.tools = navigation.tools;
     hits.print = navigation.print;
@@ -2679,6 +2716,7 @@ fn paint_toolbar(
     frames: usize,
     photo_mode: bool,
     zoom_percent: u32,
+    sticky_zoom: bool,
     averages_on: bool,
 ) -> ShellHits {
     use crate::styles::icons::Icon;
@@ -2809,8 +2847,11 @@ fn paint_toolbar(
         theme.text_secondary,
     );
     let zoom_hit = ui.interact(zoom, ui.id().with("toolbar-zoom"), Sense::click());
-    if let Some(percent) = zoom_menu(zoom_hit) {
-        hits.zoom = Some(percent);
+    if let Some(picked) = zoom_menu(zoom_hit, sticky_zoom) {
+        match picked {
+            ZoomPick::Percent(percent) => hits.zoom = Some(percent),
+            ZoomPick::StickyZoom(on) => hits.sticky_zoom = Some(on),
+        }
     }
     x = zoom.right() + 8.0;
 
@@ -3056,16 +3097,32 @@ fn paint_toolbar(
     hits
 }
 
-/// The zoom presets a click on the toolbar readout opens.
-fn zoom_menu(response: egui::Response) -> Option<u32> {
+/// What a click on the toolbar zoom readout selected.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ZoomPick {
+    Percent(u32),
+    StickyZoom(bool),
+}
+
+/// The zoom presets and Sticky Zoom toggle the toolbar readout opens.
+fn zoom_menu(response: egui::Response, sticky: bool) -> Option<ZoomPick> {
     egui::Popup::menu(&response)
         .show(|ui| {
             ui.set_min_width(120.0);
             let mut picked = None;
             for percent in [25, 50, 100, 200, 400] {
                 if ui.button(format!("{percent}%")).clicked() {
-                    picked = Some(percent);
+                    picked = Some(ZoomPick::Percent(percent));
                 }
+            }
+            ui.separator();
+            let mark = if sticky {
+                "✓ Sticky Zoom"
+            } else {
+                "Sticky Zoom"
+            };
+            if ui.button(mark).clicked() {
+                picked = Some(ZoomPick::StickyZoom(!sticky));
             }
             picked
         })
@@ -3550,6 +3607,42 @@ mod tests {
         let photo = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(800.0, 400.0));
         app.zoom = 100.0 / crate::view::canvas::zoom_percent(photo, 1600, 800) as f32;
         assert!((app.zoom - 2.0).abs() < 1e-6);
+    }
+
+    fn two_frame_strip(dir: &std::path::Path) -> Vec<FrameImage> {
+        ["a.tif", "b.tif"]
+            .iter()
+            .map(|name| {
+                let path = dir.join(name);
+                let mut encoder =
+                    tiff::encoder::TiffEncoder::new(std::fs::File::create(&path).unwrap()).unwrap();
+                let samples: Vec<u8> = (0..8 * 6 * 3).map(|value| (value % 32) as u8 * 8).collect();
+                encoder
+                    .write_image::<tiff::encoder::colortype::RGB8>(8, 6, &samples)
+                    .unwrap();
+                FrameImage {
+                    name: (*name).to_string(),
+                    path: Some(path),
+                    width: 8,
+                    height: 6,
+                    pixels: vec![128; 8 * 6 * 3],
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_frame_switch_fits_the_frame_unless_sticky_zoom_is_on() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = NegFeApp::for_capture("roll", "", "geometry", "canvas", 0.0);
+        app.set_strip(two_frame_strip(dir.path()));
+        app.zoom = 2.5;
+        assert!(app.select_frame(1));
+        assert!((app.zoom - 1.0).abs() < 1e-6);
+        app.set_sticky_zoom(true);
+        app.zoom = 2.5;
+        assert!(app.select_frame(0));
+        assert!((app.zoom - 2.5).abs() < 1e-6);
     }
 
     #[test]
