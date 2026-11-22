@@ -9,6 +9,8 @@ use crate::styles::theme::Theme;
 
 /// The smallest crop a drag can make, as a fraction of the photo.
 pub const MIN_CROP: f64 = 0.02;
+/// How close a press must be to a box corner to move it, in screen points.
+const CROP_CORNER_GRAB: f32 = 12.0;
 /// The crop hint, shown while Draw is on.
 pub const CROP_HINT: &str = "Drag a crop. Right-click or Enter keeps it.";
 /// The bounds-pick hint, shown while Dmin or Dmax is armed.
@@ -154,6 +156,41 @@ fn spiral() -> Vec<Vec<[f64; 2]>> {
 pub struct CropDrag {
     pub start: egui::Pos2,
     pub pending: [f64; 4],
+    pub mode: CropDragMode,
+}
+
+/// What a crop press does: draw a new box, move it, or move one corner.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CropDragMode {
+    Draw,
+    Move {
+        origin: [f64; 2],
+        rect: [f64; 4],
+    },
+    Corner {
+        corner: CropCorner,
+        anchor: [f64; 2],
+    },
+}
+
+/// The crop box corner a drag moves.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CropCorner {
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
+}
+
+impl CropCorner {
+    fn opposite(self, rect: [f64; 4]) -> [f64; 2] {
+        match self {
+            Self::TopLeft => [rect[2], rect[3]],
+            Self::TopRight => [rect[0], rect[3]],
+            Self::BottomLeft => [rect[2], rect[1]],
+            Self::BottomRight => [rect[0], rect[1]],
+        }
+    }
 }
 
 /// What the crop tool did this frame.
@@ -173,13 +210,77 @@ impl CropDrag {
         Self {
             start,
             pending: region_rect(photo, start, start),
+            mode: CropDragMode::Draw,
+        }
+    }
+
+    /// Start a gesture on an existing crop box inside `photo`.
+    #[must_use]
+    pub fn on_box(photo: Rect, start: egui::Pos2, rect: [f64; 4]) -> Self {
+        let start = clamp_point(photo, start);
+        let corner = crop_corner_hit(photo, &rect, start);
+        let mode = if !crop_hit(photo, None, Some(&rect), start) {
+            CropDragMode::Draw
+        } else if let Some(corner) = corner {
+            CropDragMode::Corner {
+                corner,
+                anchor: corner.opposite(rect),
+            }
+        } else {
+            CropDragMode::Move {
+                origin: normalize_point(photo, start),
+                rect,
+            }
+        };
+        Self {
+            start,
+            pending: rect,
+            mode,
         }
     }
 
     /// Move the drag to `current` and keep the ordered normalized rect.
     pub fn update(&mut self, photo: Rect, current: egui::Pos2) {
-        self.pending = region_rect(photo, self.start, current);
+        self.pending = match self.mode {
+            CropDragMode::Draw => region_rect(photo, self.start, current),
+            CropDragMode::Move { origin, rect } => {
+                let point = normalize_point(photo, clamp_point(photo, current));
+                move_rect(rect, point[0] - origin[0], point[1] - origin[1])
+            }
+            CropDragMode::Corner { anchor, .. } => {
+                let point = normalize_point(photo, clamp_point(photo, current));
+                let [x1, y1] = anchor;
+                [
+                    x1.min(point[0]),
+                    y1.min(point[1]),
+                    x1.max(point[0]),
+                    y1.max(point[1]),
+                ]
+            }
+        };
     }
+}
+
+fn crop_corner_hit(photo: Rect, rect: &[f64; 4], point: egui::Pos2) -> Option<CropCorner> {
+    let bounds = stored_rect(photo, rect)?;
+    let radius = CROP_CORNER_GRAB;
+    [
+        (CropCorner::TopLeft, bounds.left_top()),
+        (CropCorner::TopRight, bounds.right_top()),
+        (CropCorner::BottomLeft, bounds.left_bottom()),
+        (CropCorner::BottomRight, bounds.right_bottom()),
+    ]
+    .into_iter()
+    .find(|(_, corner)| corner.distance(point) <= radius)
+    .map(|(corner, _)| corner)
+}
+
+fn move_rect(rect: [f64; 4], dx: f64, dy: f64) -> [f64; 4] {
+    let width = rect[2] - rect[0];
+    let height = rect[3] - rect[1];
+    let x1 = (rect[0] + dx).clamp(0.0, 1.0 - width);
+    let y1 = (rect[1] + dy).clamp(0.0, 1.0 - height);
+    [x1, y1, x1 + width, y1 + height]
 }
 
 /// The fitted photo rect inside the canvas area.
@@ -353,11 +454,16 @@ pub fn crop_tool(
     );
     let mut action = CropAction::None;
     if active {
-        response.clone().on_hover_cursor(CursorIcon::Crosshair);
         if response.drag_started()
             && let Some(start) = response.interact_pointer_pos()
         {
-            *drag = Some(CropDrag::new(photo, start));
+            let boxed = rect.and_then(|rect| <[f64; 4]>::try_from(rect).ok());
+            *drag = Some(match boxed {
+                Some(rect) if crop_hit(photo, None, Some(&rect), start) => {
+                    CropDrag::on_box(photo, start, rect)
+                }
+                _ => CropDrag::new(photo, start),
+            });
         }
         if let (Some(active), Some(current)) = (*drag, response.interact_pointer_pos()) {
             if response.dragged() {
@@ -397,6 +503,23 @@ pub fn crop_tool(
         if let Some(bounds) = bounds {
             paint_crop_box(ui, photo, bounds, drag.is_some(), &theme);
             paint_guide(ui, bounds, guide, &theme);
+        }
+        if let Some(corner) = response.hover_pos().and_then(|point| {
+            rect.and_then(|rect| <[f64; 4]>::try_from(rect).ok())
+                .and_then(|rect| crop_corner_hit(photo, &rect, point))
+        }) {
+            let icon = match corner {
+                CropCorner::TopLeft | CropCorner::BottomRight => CursorIcon::ResizeNwSe,
+                CropCorner::TopRight | CropCorner::BottomLeft => CursorIcon::ResizeNeSw,
+            };
+            response.clone().on_hover_cursor(icon);
+        } else if response
+            .hover_pos()
+            .is_some_and(|point| crop_hit(photo, *drag, rect, point))
+        {
+            response.clone().on_hover_cursor(CursorIcon::Grab);
+        } else {
+            response.clone().on_hover_cursor(CursorIcon::Crosshair);
         }
         paint_crop_hint(ui, photo, &theme);
     }
@@ -1033,6 +1156,77 @@ mod tests {
         assert!((drag.pending[1] - 0.2).abs() < 1e-6);
         assert!((drag.pending[2] - 1.0).abs() < 1e-6);
         assert!((drag.pending[3] - 0.85).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_press_on_a_corner_moves_only_that_corner() {
+        let photo = photo();
+        let rect = [0.25, 0.25, 0.75, 0.75];
+        let corner = egui::pos2(
+            photo.left() + 0.75 * photo.width(),
+            photo.top() + 0.25 * photo.height(),
+        );
+        let mut drag = CropDrag::on_box(photo, corner, rect);
+        assert_eq!(
+            drag.mode,
+            CropDragMode::Corner {
+                corner: CropCorner::TopRight,
+                anchor: [0.25, 0.75],
+            }
+        );
+        drag.update(photo, egui::pos2(corner.x + 40.0, corner.y - 20.0));
+        assert!((drag.pending[0] - 0.25).abs() < 1e-6);
+        assert!(drag.pending[1] < 0.25);
+        assert!(drag.pending[2] > 0.75);
+        assert!((drag.pending[3] - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_press_inside_the_box_translates_the_whole_box() {
+        let photo = photo();
+        let rect = [0.25, 0.25, 0.75, 0.75];
+        let inside = egui::pos2(
+            photo.left() + 0.5 * photo.width(),
+            photo.top() + 0.5 * photo.height(),
+        );
+        let mut drag = CropDrag::on_box(photo, inside, rect);
+        assert!(matches!(drag.mode, CropDragMode::Move { .. }));
+        drag.update(photo, egui::pos2(inside.x + 40.0, inside.y + 20.0));
+        assert!((drag.pending[2] - drag.pending[0] - 0.5).abs() < 1e-6);
+        assert!((drag.pending[3] - drag.pending[1] - 0.5).abs() < 1e-6);
+        assert!(drag.pending[0] > 0.25);
+        assert!(drag.pending[1] > 0.25);
+    }
+
+    #[test]
+    fn a_move_keeps_the_box_inside_the_photo() {
+        let photo = photo();
+        let rect = [0.5, 0.5, 0.9, 0.9];
+        let inside = egui::pos2(
+            photo.left() + 0.7 * photo.width(),
+            photo.top() + 0.7 * photo.height(),
+        );
+        let mut drag = CropDrag::on_box(photo, inside, rect);
+        drag.update(photo, egui::pos2(inside.x + 400.0, inside.y + 200.0));
+        assert!((drag.pending[2] - 1.0).abs() < 1e-6);
+        assert!((drag.pending[3] - 1.0).abs() < 1e-6);
+        assert!((drag.pending[2] - drag.pending[0] - 0.4).abs() < 1e-6);
+        assert!((drag.pending[3] - drag.pending[1] - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_press_outside_the_box_starts_a_new_crop() {
+        let photo = photo();
+        let rect = [0.25, 0.25, 0.75, 0.75];
+        let outside = egui::pos2(
+            photo.left() + 0.05 * photo.width(),
+            photo.top() + 0.05 * photo.height(),
+        );
+        let mut drag = CropDrag::on_box(photo, outside, rect);
+        assert_eq!(drag.mode, CropDragMode::Draw);
+        drag.update(photo, egui::pos2(outside.x + 20.0, outside.y + 20.0));
+        assert!(drag.pending[0] < 0.1);
+        assert!(drag.pending[1] < 0.1);
     }
 
     #[test]

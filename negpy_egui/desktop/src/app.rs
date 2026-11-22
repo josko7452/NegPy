@@ -3963,6 +3963,7 @@ mod tests {
         app.crop_drag = Some(crate::view::canvas::CropDrag {
             start: egui::Pos2::ZERO,
             pending: [0.1, 0.2, 0.8, 0.9],
+            mode: crate::view::canvas::CropDragMode::Draw,
         });
         app.settle_crop_tool(true, &ctx);
         assert_eq!(
@@ -4039,6 +4040,7 @@ mod tests {
         app.crop_drag = Some(crate::view::canvas::CropDrag {
             start: egui::Pos2::ZERO,
             pending: [0.1, 0.2, 0.8, 0.9],
+            mode: crate::view::canvas::CropDragMode::Draw,
         });
         app.rail.geometry.crop.draw = true;
         app.rail.exposure.local.draw = true;
