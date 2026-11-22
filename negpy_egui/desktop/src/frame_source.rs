@@ -180,13 +180,23 @@ pub fn load_display_frame(
     profile: Option<&Path>,
     max_edge: usize,
 ) -> Result<FrameImage, String> {
+    load_frame_with_source(path, profile, max_edge).map(|(frame, _)| frame)
+}
+
+/// Decode `path` once and return both its display frame and its linear source.
+pub fn load_frame_with_source(
+    path: &Path,
+    profile: Option<&Path>,
+    max_edge: usize,
+) -> Result<(FrameImage, crate::render_worker::SourceFrame), String> {
     let (source, config) = load_linear_source(path, profile, max_edge)?;
     let mut engine = DarkroomEngine::new();
     let frame = render_display(&mut engine, &source.image, &config, &source.hash);
     if !frame.is_rgb() {
         return Err("The decoded frame is not an RGB buffer.".to_string());
     }
-    Ok(FrameImage::from_display(source.name, frame).with_path(path))
+    let frame = FrameImage::from_display(source.name.clone(), frame).with_path(path);
+    Ok((frame, source))
 }
 
 /// Decode `path` at a bounded proxy size and keep the linear source for a re-render.

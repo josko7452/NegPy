@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use crate::edit::FrameEdit;
 use crate::fixture::{GoldenManifest, ReferenceFixture};
-use crate::frame_source::{FrameImage, frame_path, load_display_frame, load_strip, stored_history};
+use crate::frame_source::{
+    FrameImage, frame_path, load_display_frame, load_frame_with_source, load_strip, stored_history,
+};
 use negpy_backend::kernel::system::paths::default_user_dir;
 use negpy_backend::session::startup::prepare_user_directory_with_probe;
 
@@ -126,6 +128,7 @@ pub fn load_manual_state(
     reference: &ReferenceFixture,
 ) -> (
     FrameImage,
+    Option<crate::render_worker::SourceFrame>,
     Vec<FrameImage>,
     Vec<negpy_backend::session::workspace::HistoryRow>,
     Vec<String>,
@@ -134,6 +137,7 @@ pub fn load_manual_state(
     let Some(folder) = options.frame_folder() else {
         return (
             FrameImage::empty(),
+            None,
             Vec::new(),
             Vec::new(),
             Vec::new(),
@@ -141,10 +145,12 @@ pub fn load_manual_state(
         );
     };
     let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
-    let frame = current
+    let (frame, source) = current
         .as_deref()
-        .and_then(|path| load_display_frame(path, profile, 1600).ok())
-        .unwrap_or_else(FrameImage::empty);
+        .and_then(|path| load_frame_with_source(path, profile, 1600).ok())
+        .map_or((FrameImage::empty(), None), |(frame, source)| {
+            (frame, Some(source))
+        });
     let strip = load_strip(&folder, current.as_deref(), profile, 320, 12);
     let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
@@ -154,7 +160,7 @@ pub fn load_manual_state(
         crate::view::rail::roll_analysis::RollAnalysisState::default,
         |path| crate::view::rail::roll_analysis::RollAnalysisState::load(profile, path, None),
     );
-    (frame, strip, history.0, history.1, roll_analysis)
+    (frame, source, strip, history.0, history.1, roll_analysis)
 }
 
 /// The edit of the frame a manual launch shows.
@@ -275,9 +281,50 @@ mod tests {
             profile: None,
             folder: Some(PathBuf::from("/missing/folder")),
         };
-        let (frame, strip, _, _, _) = load_manual_state(&options, None, &fixture);
+        let (frame, source, strip, _, _, _) = load_manual_state(&options, None, &fixture);
         assert!(!frame.is_rgb());
+        assert!(source.is_none());
         assert!(strip.is_empty());
+    }
+
+    #[test]
+    fn a_launched_frame_keeps_its_linear_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("frame.tif");
+        let mut encoder =
+            tiff::encoder::TiffEncoder::new(std::fs::File::create(&path).unwrap()).unwrap();
+        let samples: Vec<u8> = (0..8 * 6 * 3).map(|value| (value % 32) as u8 * 8).collect();
+        encoder
+            .write_image::<tiff::encoder::colortype::RGB8>(8, 6, &samples)
+            .unwrap();
+        let fixture = ReferenceFixture {
+            name: "reference".to_string(),
+            window: crate::fixture::ReferenceWindow {
+                width: 1920,
+                height: 1600,
+                scale: 1.0,
+            },
+            fixture: crate::fixture::ReferenceState {
+                frame: "frame.tif".to_string(),
+                tab: "roll".to_string(),
+                analysis: crate::fixture::ReferenceAnalysis {
+                    open: true,
+                    log: true,
+                },
+                strip: crate::fixture::ReferenceStrip {
+                    open: true,
+                    height: 248,
+                },
+                canvas: crate::fixture::ReferenceCanvas { fit: true },
+            },
+        };
+        let options = LaunchOptions {
+            profile: None,
+            folder: Some(dir.path().to_path_buf()),
+        };
+        let (frame, source, ..) = load_manual_state(&options, None, &fixture);
+        assert!(frame.is_rgb());
+        assert!(source.is_some());
     }
 
     #[test]

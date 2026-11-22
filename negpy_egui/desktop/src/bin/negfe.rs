@@ -18,12 +18,13 @@ fn main() -> eframe::Result {
         std::process::exit(2);
     });
     let profile = launch::startup_profile(&options);
-    let (frame, strip, history, prints, roll_analysis) =
+    let (frame, source, strip, history, prints, roll_analysis) =
         launch::load_manual_state(&options, profile.as_deref(), &reference);
     let edit = launch::load_manual_edit(&options, profile.as_deref(), &reference);
     let mut app = NegFeApp::new(&reference);
     app.set_profile(profile.as_deref());
     app.set_frame(frame);
+    app.set_source(source);
     app.set_edit(edit);
     app.set_strip(strip);
     app.set_history(&history, &prints);
