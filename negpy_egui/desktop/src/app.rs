@@ -2410,7 +2410,6 @@ fn paint_shell(
             photo,
             geometry.0.crop_rect.as_deref(),
             crop_draw,
-            geometry.0.crop_rect.is_some() && !geometry.0.crop_from_auto,
             crop_drag,
             crop_guide,
         );

@@ -338,7 +338,6 @@ pub fn crop_tool(
     photo: Rect,
     rect: Option<&[f64]>,
     active: bool,
-    show_box: bool,
     drag: &mut Option<CropDrag>,
     guide: CropGuide,
 ) -> CropAction {
@@ -395,11 +394,6 @@ pub fn crop_tool(
             paint_guide(ui, bounds, guide, &theme);
         }
         paint_crop_hint(ui, photo, &theme);
-    } else if show_box {
-        if let Some(bounds) = rect.and_then(|rect| stored_rect(photo, rect)) {
-            paint_crop_box(ui, photo, bounds, false, &theme);
-            paint_guide(ui, bounds, guide, &theme);
-        }
     }
     action
 }
@@ -1209,11 +1203,26 @@ mod tests {
     }
 
     #[test]
-    fn an_inactive_crop_box_stays_painted_and_does_not_start_a_drag() {
+    fn an_inactive_crop_box_paints_nothing_and_does_not_start_a_drag() {
         let ctx = egui::Context::default();
         let mut drag = None;
         let mut action = CropAction::None;
         let stored = [0.25, 0.25, 0.75, 0.75];
+        fn shapes(ctx: &egui::Context, rect: Option<&[f64]>) -> Vec<egui::epaint::ClippedShape> {
+            let _ = ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut drag = None;
+                    let _ = crop_tool(ui, photo(), rect, false, &mut drag, CropGuide::Thirds);
+                });
+            });
+            ctx.run(egui::RawInput::default(), |ctx| {
+                egui::CentralPanel::default().show(ctx, |ui| {
+                    let mut drag = None;
+                    let _ = crop_tool(ui, photo(), rect, false, &mut drag, CropGuide::Thirds);
+                });
+            })
+            .shapes
+        }
         let _ = ctx.run(
             egui::RawInput {
                 events: vec![egui::Event::PointerButton {
@@ -1231,7 +1240,6 @@ mod tests {
                         photo(),
                         Some(&stored),
                         false,
-                        true,
                         &mut drag,
                         CropGuide::Thirds,
                     );
@@ -1240,6 +1248,7 @@ mod tests {
         );
         assert_eq!(action, CropAction::None);
         assert!(drag.is_none());
+        assert_eq!(shapes(&ctx, Some(&stored)), shapes(&ctx, None));
     }
 
     #[test]
