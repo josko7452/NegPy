@@ -8,6 +8,7 @@ pub mod edit;
 pub mod export_worker;
 pub mod fixture;
 pub mod frame_source;
+pub mod frame_worker;
 pub mod launch;
 pub mod render_worker;
 pub mod scan_worker;

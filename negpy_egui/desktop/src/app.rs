@@ -205,6 +205,9 @@ pub struct NegFeApp {
     /// The open frame's linear proxy, held until the frame changes.
     source: Option<std::sync::Arc<crate::render_worker::SourceFrame>>,
     renderer: crate::render_worker::RenderWorker,
+    frame_worker: crate::frame_worker::FrameWorker,
+    /// The newest frame selection the worker has not answered yet.
+    frame_generation: u64,
     exporter: ExportWorker,
     scanner: crate::scan_worker::ScanWorker,
     sheets: crate::contact_sheet_worker::SheetWorker,
@@ -253,6 +256,8 @@ impl NegFeApp {
             photo_mode: false,
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
+            frame_worker: crate::frame_worker::FrameWorker::start(),
+            frame_generation: 0,
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
@@ -292,6 +297,8 @@ impl NegFeApp {
             photo_mode: tab == "frame",
             source: None,
             renderer: crate::render_worker::RenderWorker::start(),
+            frame_worker: crate::frame_worker::FrameWorker::start(),
+            frame_generation: 0,
             exporter: ExportWorker::start(),
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
@@ -1283,28 +1290,33 @@ impl NegFeApp {
         self.selected = 0;
     }
 
-    /// Open the strip frame at `index` and bind its edit. Saves the old edit first.
+    /// Queue the strip frame at `index` for the frame worker. Saves the old edit first.
+    ///
+    /// The decode and the history read run on the worker; a newer click replaces an
+    /// unanswered one so only the last selection reaches the canvas.
     pub fn select_frame(&mut self, index: usize) -> bool {
         let Some(path) = self.strip.get(index).and_then(|frame| frame.path.clone()) else {
             return false;
         };
-        let profile = self.profile.clone();
         let _ = self.edit.save();
-        let Ok(frame) = crate::frame_source::load_display_frame(&path, profile.as_deref(), 1600)
-        else {
-            return false;
-        };
-        let edit = FrameEdit::load_in_roll(
-            profile.as_deref(),
-            &path,
-            self.rail.roll_analysis.roll_id.as_deref(),
-        );
-        let config = edit.config.clone();
-        if let Ok((source, _)) =
-            crate::frame_source::load_linear_source(&path, profile.as_deref(), 1600)
-        {
-            self.set_source(Some(source));
-        }
+        self.frame_generation += 1;
+        self.frame_worker
+            .submit(crate::frame_worker::FrameOpenRequest {
+                generation: self.frame_generation,
+                index,
+                path,
+                profile: self.profile.clone(),
+                roll_id: self.rail.roll_analysis.roll_id.clone(),
+                max_edge: 1600,
+            });
+        true
+    }
+
+    /// Bind a decoded frame and bring the panels it owns up to date.
+    fn show_frame(&mut self, report: crate::frame_worker::FrameOpenReport) {
+        let profile = self.profile.clone();
+        let path = report.frame.path.clone();
+        self.set_source(Some(report.source));
         self.crop_drag = None;
         self.mask_drag = crate::view::canvas::MaskDrag::default();
         self.retouch_drag = crate::view::canvas::RetouchDrag::default();
@@ -1314,14 +1326,16 @@ impl NegFeApp {
         self.rail.exposure.local.oval = false;
         self.rail.exposure.local.card = false;
         self.rail.finish.tool = crate::view::rail::frame_finish::RetouchTool::Off;
-        self.set_frame(frame);
-        self.set_edit(edit);
-        self.rail.metadata.set_folder_name(
-            path.parent()
-                .and_then(|parent| parent.file_name())
-                .and_then(|name| name.to_str())
-                .unwrap_or_default(),
-        );
+        self.set_frame(report.frame);
+        self.set_edit(report.edit);
+        if let Some(path) = path.as_deref() {
+            self.rail.metadata.set_folder_name(
+                path.parent()
+                    .and_then(|parent| parent.file_name())
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_default(),
+            );
+        }
         self.rail
             .optics
             .set_profile(profile.as_deref(), &self.edit.config.flatfield.profile_id);
@@ -1330,17 +1344,24 @@ impl NegFeApp {
             self.zoom = 1.0;
             self.zoom_percent = None;
         }
-        self.selected = index;
-        if let Some(profile) = profile.as_deref() {
-            let (rows, prints) = crate::frame_source::stored_history(Some(profile), &path);
-            self.set_history(&rows, &prints);
-            self.set_roll_analysis(crate::view::rail::roll_analysis::RollAnalysisState::load(
-                Some(profile),
-                &path,
-                Some(&config),
-            ));
+        self.selected = report.index;
+        self.set_history(&report.history, &report.prints);
+        self.set_roll_analysis(report.roll_analysis);
+    }
+
+    /// Show the newest finished frame open, dropping a superseded one.
+    fn receive_frame(&mut self, ctx: &egui::Context) {
+        for report in self.frame_worker.drain() {
+            let Ok(report) = report else {
+                self.rail.library.set_status("Could not open the frame.");
+                continue;
+            };
+            if report.generation != self.frame_generation {
+                continue;
+            }
+            self.show_frame(report);
+            ctx.request_repaint();
         }
-        true
     }
 
     /// Move to the previous strip frame.
@@ -1457,6 +1478,7 @@ impl NegFeApp {
             self.find.open = false;
         }
         self.receive_exports(ctx);
+        self.receive_frame(ctx);
         self.receive_render(ctx);
         self.receive_scans(ctx);
         self.receive_sheets(ctx);
@@ -3645,17 +3667,31 @@ mod tests {
             .collect()
     }
 
+    fn wait_for_frame(app: &mut NegFeApp) {
+        let ctx = egui::Context::default();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.frame.is_none() {
+            app.receive_frame(&ctx);
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     #[test]
-    fn a_frame_switch_fits_the_frame_unless_sticky_zoom_is_on() {
+    fn a_frame_switch_queues_the_decode_and_fits_the_frame() {
         let dir = tempfile::tempdir().unwrap();
         let mut app = NegFeApp::for_capture("roll", "", "geometry", "canvas", 0.0);
         app.set_strip(two_frame_strip(dir.path()));
         app.zoom = 2.5;
         assert!(app.select_frame(1));
+        assert!(app.frame.is_none(), "the click must not decode inline");
+        wait_for_frame(&mut app);
         assert!((app.zoom - 1.0).abs() < 1e-6);
         app.set_sticky_zoom(true);
         app.zoom = 2.5;
+        app.frame = None;
         assert!(app.select_frame(0));
+        wait_for_frame(&mut app);
         assert!((app.zoom - 2.5).abs() < 1e-6);
     }
 
@@ -3671,6 +3707,7 @@ mod tests {
         app.rail.geometry.crop.draw = true;
         app.rail.exposure.local.draw = true;
         assert!(app.select_frame(1));
+        wait_for_frame(&mut app);
         assert!(app.crop_drag.is_none());
         assert!(!app.rail.geometry.crop.draw);
         assert!(!app.rail.exposure.local.draw);
