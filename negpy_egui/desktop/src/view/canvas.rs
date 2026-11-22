@@ -376,10 +376,15 @@ pub fn crop_tool(
         }
         let enter = ui.input(|input| input.key_pressed(egui::Key::Enter));
         let editing = text_has_cursor(ui);
+        let double_click = response.double_clicked()
+            && response
+                .interact_pointer_pos()
+                .is_some_and(|point| crop_hit(photo, *drag, rect, point));
         if let Some(rect) = confirmed_crop(
             drag.map(|active| active.pending),
             rect,
             enter,
+            double_click,
             editing,
             response.secondary_clicked(),
         ) {
@@ -430,15 +435,29 @@ fn confirmed_crop(
     pending: Option<[f64; 4]>,
     stored: Option<&[f64]>,
     enter: bool,
+    double_click: bool,
     editing_text: bool,
     secondary_click: bool,
 ) -> Option<[f64; 4]> {
-    if !(enter && !editing_text) && !secondary_click {
+    if !(enter && !editing_text) && !double_click && !secondary_click {
         return None;
     }
     pending
         .filter(|rect| rect[2] - rect[0] >= MIN_CROP && rect[3] - rect[1] >= MIN_CROP)
         .or_else(|| stored.and_then(|rect| <[f64; 4]>::try_from(rect).ok()))
+}
+
+/// Whether `point` lies in the crop box a drag or the stored rect defines.
+fn crop_hit(
+    photo: Rect,
+    drag: Option<CropDrag>,
+    stored: Option<&[f64]>,
+    point: egui::Pos2,
+) -> bool {
+    drag.map(|active| active.pending)
+        .or_else(|| stored.and_then(|rect| <[f64; 4]>::try_from(rect).ok()))
+        .and_then(|rect| stored_rect(photo, &rect))
+        .is_some_and(|bounds| bounds.contains(point))
 }
 
 fn paint_crop_box(ui: &egui::Ui, photo: Rect, bounds: Rect, dragging: bool, theme: &Theme) {
@@ -1029,10 +1048,26 @@ mod tests {
     fn enter_confirms_the_pending_crop_once() {
         let pending = [0.2, 0.3, 0.8, 0.7];
         assert_eq!(
-            confirmed_crop(Some(pending), None, true, false, false),
+            confirmed_crop(Some(pending), None, true, false, false, false),
             Some(pending)
         );
-        assert_eq!(confirmed_crop(Some(pending), None, true, true, false), None);
+        assert_eq!(
+            confirmed_crop(Some(pending), None, true, false, true, false),
+            None
+        );
+    }
+
+    #[test]
+    fn a_double_click_inside_the_box_confirms_it() {
+        let pending = [0.2, 0.3, 0.8, 0.7];
+        assert_eq!(
+            confirmed_crop(Some(pending), None, false, true, false, false),
+            Some(pending)
+        );
+        assert_eq!(
+            confirmed_crop(None, Some(&pending), false, true, false, false),
+            Some(pending)
+        );
     }
 
     #[test]
@@ -1042,6 +1077,7 @@ mod tests {
             confirmed_crop(
                 Some([0.2, 0.2, 0.21, 0.21]),
                 Some(&stored),
+                false,
                 false,
                 false,
                 true
