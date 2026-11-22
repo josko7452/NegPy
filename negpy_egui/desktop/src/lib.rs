@@ -4,6 +4,7 @@ pub mod app;
 pub mod capture;
 pub mod contact_sheet_worker;
 pub mod crop_worker;
+pub mod detect_worker;
 pub mod edit;
 pub mod export_worker;
 pub mod fixture;

@@ -232,6 +232,7 @@ pub struct NegFeApp {
     scanner: crate::scan_worker::ScanWorker,
     sheets: crate::contact_sheet_worker::SheetWorker,
     crops: crate::crop_worker::CropWorker,
+    detect: crate::detect_worker::DetectWorker,
     sheet: crate::view::contact_sheet_dialog::ContactSheetDialog,
     sheet_request: u64,
     /// The request hash in flight, and the config hash that painted the canvas.
@@ -284,6 +285,7 @@ impl NegFeApp {
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
             crops: crate::crop_worker::CropWorker::start(),
+            detect: crate::detect_worker::DetectWorker::start(),
             sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
             sheet_request: 0,
             requested: None,
@@ -326,6 +328,7 @@ impl NegFeApp {
             scanner: crate::scan_worker::ScanWorker::start(),
             sheets: crate::contact_sheet_worker::SheetWorker::start(),
             crops: crate::crop_worker::CropWorker::start(),
+            detect: crate::detect_worker::DetectWorker::start(),
             sheet: crate::view::contact_sheet_dialog::ContactSheetDialog::default(),
             sheet_request: 0,
             requested: None,
@@ -1532,6 +1535,7 @@ impl NegFeApp {
         self.receive_scans(ctx);
         self.receive_sheets(ctx);
         self.receive_crops(ctx);
+        self.receive_detect(ctx);
         let theme = Theme::default();
         let mut style = (*ctx.style()).clone();
         style.visuals.panel_fill = theme.bg_panel;
@@ -2129,71 +2133,26 @@ impl NegFeApp {
         ctx.request_repaint();
     }
 
-    /// Group the strip by light for Roll Analysis Detect.
+    /// Queue the strip for Roll Analysis Detect. The decode runs on its worker.
     fn detect_scenes(&mut self) {
         let Some(profile) = self.profile.clone() else {
             return;
         };
-        let mut axes = Vec::with_capacity(self.strip.len());
-        for frame in &self.strip {
-            let Some(path) = frame.path.as_deref() else {
-                axes.push(None);
-                continue;
-            };
-            let Ok((source, config)) =
-                crate::frame_source::load_linear_source(path, Some(&profile), 1600)
-            else {
-                axes.push(None);
-                continue;
-            };
-            let processed = negpy_backend::features::geometry::processor::process(
-                &source.image,
-                &config.geometry,
-                negpy_backend::features::geometry::processor::GeometryContext {
-                    scale_factor: source.image.height.max(source.image.width) as f64 / 4000.0,
-                },
-            );
-            let width = processed.image.width;
-            let height = processed.image.height;
-            let (grid, grid_width, grid_height) =
-                negpy_backend::features::exposure::metering::analysis_grid(
-                    &processed.image.pixels,
-                    width,
-                    height,
-                    None,
-                    config.process.analysis_buffer,
-                );
-            let unmix = negpy_backend::features::exposure::metering::effective_crosstalk_matrix(
-                &config.process,
-                Some(config.process.process_mode),
-            );
-            let grid = negpy_backend::features::exposure::metering::unmix_log_image(&grid, unmix);
-            let bounds =
-                negpy_backend::features::exposure::normalization::analyze_log_exposure_bounds(
-                    &grid,
-                    config.process.luma_range_clip,
-                    config.process.color_range_clip,
-                );
-            axes.push(
-                negpy_backend::features::exposure::metering::measure_neutral_axis(
-                    &grid,
-                    grid_width,
-                    grid_height,
-                    bounds,
-                    true,
-                )
-                .map(|axis| {
-                    negpy_backend::features::exposure::normalization::SceneAxis {
-                        mid: axis.mid,
-                        shadow: axis.shadow,
-                        confidence: axis.confidence,
-                    }
-                }),
-            );
-        }
+        self.detect.submit(crate::detect_worker::DetectRequest {
+            paths: self.strip.iter().map(|frame| frame.path.clone()).collect(),
+            profile,
+        });
+    }
+
+    /// Group the measured axes once the Detect worker reports.
+    fn receive_detect(&mut self, ctx: &egui::Context) {
+        let Some(report) = self.detect.drain() else {
+            return;
+        };
         self.rail.roll_analysis.found =
-            negpy_backend::features::exposure::normalization::detect_light_groups(&axes);
+            negpy_backend::features::exposure::normalization::detect_light_groups(&report.axes);
         self.rail.roll_analysis.open = true;
+        ctx.request_repaint();
     }
 
     /// Write each found group as a scene of the open roll.
