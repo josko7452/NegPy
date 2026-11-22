@@ -12,7 +12,6 @@ use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::DarkroomEngine;
 use negpy_backend::services::assets::sidecar::write_sidecar;
 use negpy_backend::services::export::render::render_export_file;
-use negpy_backend::services::export::service::write_export;
 
 /// One roll export: every source path with the edit it prints with.
 #[derive(Clone, Debug, PartialEq)]
@@ -95,6 +94,7 @@ impl Drop for ExportWorker {
 #[must_use]
 pub fn run_export(request: &ExportRequest, engine: &mut DarkroomEngine) -> ExportReport {
     let mut report = ExportReport::default();
+    let mut written = std::collections::HashSet::new();
     for (index, (path, config)) in request.paths.iter().zip(&request.configs).enumerate() {
         let preset = request.preset_exports.get(index).and_then(Option::as_ref);
         match export_one(
@@ -104,6 +104,7 @@ pub fn run_export(request: &ExportRequest, engine: &mut DarkroomEngine) -> Expor
             &request.color_space,
             &request.user_icc_dir,
             engine,
+            &mut written,
         ) {
             Ok(written) => report.written.push(written),
             Err(error) => report.failed.push(error),
@@ -119,19 +120,21 @@ fn export_one(
     color_space: &str,
     user_icc_dir: &Path,
     engine: &mut DarkroomEngine,
+    written: &mut std::collections::HashSet<PathBuf>,
 ) -> Result<PathBuf, String> {
     let mut frame = config.clone();
     if let Some(preset) = preset {
         frame.export = preset.clone();
     }
     let render = render_export_file(path, &frame, Some(color_space), engine)?;
-    let written = write_export(
+    let written = negpy_backend::services::export::service::write_export_with_names(
         &ImageBuffer::from_rgb(render.image.width, render.image.height, render.image.pixels),
         path,
         &frame.export,
         &frame,
         &render.color_space,
         user_icc_dir,
+        written,
     )?;
     if config.export.export_sidecars_enabled {
         write_sidecar(path, config, 0)

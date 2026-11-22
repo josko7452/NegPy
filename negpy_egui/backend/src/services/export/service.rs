@@ -1,5 +1,6 @@
 //! One frame through the export path: layout, pixels, container and disk.
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use crate::domain::models::{
@@ -99,6 +100,27 @@ pub fn write_export(
     color_space: &str,
     user_icc_dir: &Path,
 ) -> Result<PathBuf, String> {
+    write_export_with_names(
+        buffer,
+        source_path,
+        config,
+        workspace,
+        color_space,
+        user_icc_dir,
+        &mut HashSet::new(),
+    )
+}
+
+/// The same write, with the batch's names shared so two frames never take one path.
+pub fn write_export_with_names(
+    buffer: &ImageBuffer,
+    source_path: &Path,
+    config: &ExportConfig,
+    workspace: &WorkspaceConfig,
+    color_space: &str,
+    user_icc_dir: &Path,
+    written: &mut HashSet<PathBuf>,
+) -> Result<PathBuf, String> {
     let rendered = render_export(
         buffer,
         config,
@@ -118,7 +140,14 @@ pub fn write_export(
     let directory = resolve_export_dir(source_path, config);
     std::fs::create_dir_all(&directory)
         .map_err(|error| format!("Could not create {}: {error}", directory.display()))?;
-    let path = directory.join(format!("{stem}.{}", rendered.extension));
+    let path = unique_path(
+        &directory,
+        &stem,
+        rendered.extension,
+        config.overwrite,
+        written,
+    );
+    written.insert(path.clone());
     let encoded = encode_export(&rendered.pixels, config)?;
     let resolution = Some(crate::features::metadata::resolution::Resolution::from_dpi(
         crate::services::export::print::effective_dpi(config) as f64,
@@ -145,6 +174,29 @@ pub fn write_export(
     replace_file(&temporary, &path)
         .map_err(|error| format!("Could not write {}: {error}", path.display()))?;
     Ok(path)
+}
+
+/// The file name to write: `stem.ext`, or `stem_2.ext` and up when an earlier file
+/// exists and the config does not allow overwriting.
+#[must_use]
+pub fn unique_path(
+    directory: &Path,
+    stem: &str,
+    extension: &str,
+    overwrite: bool,
+    written: &mut HashSet<PathBuf>,
+) -> PathBuf {
+    let first = directory.join(format!("{stem}.{extension}"));
+    if !written.contains(&first) && (overwrite || !first.exists()) {
+        return first;
+    }
+    for counter in 2.. {
+        let path = directory.join(format!("{stem}_{counter}.{extension}"));
+        if !written.contains(&path) && (overwrite || !path.exists()) {
+            return path;
+        }
+    }
+    unreachable!("the counter loop returns")
 }
 
 #[cfg(test)]
@@ -183,6 +235,24 @@ mod tests {
                 &preset(ExportPresetOutputMode::Absolute, "", "/elsewhere")
             ),
             PathBuf::from("/elsewhere")
+        );
+    }
+
+    #[test]
+    fn a_second_export_gets_a_new_name_without_overwrite() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("frame.tiff"), b"old").unwrap();
+        let path = unique_path(dir.path(), "frame", "tiff", false, &mut HashSet::new());
+        assert_eq!(path.file_name().unwrap(), "frame_2.tiff");
+    }
+
+    #[test]
+    fn overwrite_keeps_the_first_name() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("frame.tiff"), b"old").unwrap();
+        assert_eq!(
+            unique_path(dir.path(), "frame", "tiff", true, &mut HashSet::new()),
+            dir.path().join("frame.tiff")
         );
     }
 
