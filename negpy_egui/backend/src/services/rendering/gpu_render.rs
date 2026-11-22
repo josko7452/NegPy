@@ -66,27 +66,64 @@ impl GpuBase {
 /// Whether this config can run the current GPU path without dropping a stage.
 #[must_use]
 pub fn gpu_eligible(config: &WorkspaceConfig, context: &PipelineContext) -> bool {
+    gpu_rejection(config, context).is_none()
+}
+
+/// Why the GPU chain cannot paint this frame, or `None` when it can.
+#[must_use]
+pub fn gpu_rejection(config: &WorkspaceConfig, context: &PipelineContext) -> Option<&'static str> {
     if render_path(&config.process) != RenderPath::Print
         || config.exposure.render_intent != RenderIntent::Print
-        || context.crop_preview_full
     {
-        return false;
+        return Some("not a print frame");
+    }
+    if context.crop_preview_full {
+        return Some("full-frame crop preview");
     }
     if config.finish.carrier_width > 0.0 {
-        return false;
+        return Some("carrier");
     }
     // The alt-process passes and the grain measurement are not on the device yet.
     if config.altproc.alt_process != crate::domain::models::AltProcess::None
         && config.process.process_mode == crate::domain::models::ProcessMode::BW
     {
-        return false;
+        return Some("alt process");
     }
     let paper = effective_paper_profile(
         &config.exposure.paper_profile,
         Some(config.process.process_mode),
     );
-    matches!(resolve_print_color(Some(paper)), (None, None))
-        && matches!(paper.print_color, PrintColor::Matrix(_))
+    if !matches!(resolve_print_color(Some(paper)), (None, None))
+        || !matches!(paper.print_color, PrintColor::Matrix(_))
+    {
+        return Some("print LUT");
+    }
+    None
+}
+
+#[cfg(test)]
+mod rejection_tests {
+    use super::*;
+
+    #[test]
+    fn a_carrier_frame_reports_the_carrier() {
+        let mut config = WorkspaceConfig::default();
+        config.finish.carrier_width = 1.0;
+        assert_eq!(
+            gpu_rejection(&config, &PipelineContext::new()),
+            Some("carrier")
+        );
+    }
+
+    #[test]
+    fn a_full_frame_preview_reports_the_preview() {
+        let mut context = PipelineContext::new();
+        context.crop_preview_full = true;
+        assert_eq!(
+            gpu_rejection(&WorkspaceConfig::default(), &context),
+            Some("full-frame crop preview")
+        );
+    }
 }
 
 /// Run the base, exposure, CLAHE, Lab and toning stages on the GPU, then finish.

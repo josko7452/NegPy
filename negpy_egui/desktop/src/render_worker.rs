@@ -269,11 +269,14 @@ impl RenderWorker {
                 let mut context = PipelineContext::new();
                 context.crop_preview_full = request.crop_preview_full;
                 let source_hash = format!("{}{}", request.source.hash, retouch_tokens);
-                let use_gpu = request.gpu_enabled
-                    && gpu.is_some()
-                    && negpy_backend::services::rendering::gpu_render::gpu_eligible(
-                        &config, &context,
-                    );
+                let rejection = if !request.gpu_enabled {
+                    Some("GPU off in Preferences or override.toml")
+                } else if gpu.is_none() {
+                    Some("no GPU device")
+                } else {
+                    negpy_backend::services::rendering::gpu_render::gpu_rejection(&config, &context)
+                };
+                let use_gpu = rejection.is_none();
                 let output = if use_gpu {
                     // The CPU engine meters the crop window; the GPU chain must
                     // read the same bounds or the print drifts on a cropped frame.
@@ -324,6 +327,16 @@ impl RenderWorker {
                 } else {
                     engine.process(&baked, &config, &source_hash, &mut context)
                 };
+                context.metrics.insert(
+                    "engine".to_string(),
+                    Value::String(if use_gpu { "GPU" } else { "CPU" }.to_string()),
+                );
+                if let Some(reason) = rejection {
+                    context.metrics.insert(
+                        "engine_reason".to_string(),
+                        Value::String(reason.to_string()),
+                    );
+                }
                 if autocrop.is_some() {
                     context.metrics.insert(
                         "autocrop_resolved".to_string(),

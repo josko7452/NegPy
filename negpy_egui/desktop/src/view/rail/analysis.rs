@@ -82,9 +82,25 @@ impl AnalysisMetrics {
                 .and_then(Value::as_str)
                 .unwrap_or(""),
         );
+        let mut rows: Vec<AnalysisRow> = rows.iter().map(row_from_stat).collect();
+        if let Some(engine) = values.get("engine").and_then(Value::as_str) {
+            let reason = values
+                .get("engine_reason")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            rows.push(AnalysisRow {
+                name: "Engine".to_string(),
+                value: if reason.is_empty() {
+                    engine.to_string()
+                } else {
+                    format!("{engine} ({reason})")
+                },
+                warn: false,
+            });
+        }
         Self {
             curve: sample_curve(&settings, CHART_MIN, CHART_MAX, CURVE_SAMPLES),
-            rows: rows.iter().map(row_from_stat).collect(),
+            rows,
         }
     }
 }
@@ -126,6 +142,18 @@ mod tests {
         assert_eq!(metrics.curve.len(), CURVE_SAMPLES);
         assert_eq!(metrics.rows.len(), 6);
         assert_eq!(metrics.rows[2].value, "—");
+    }
+
+    #[test]
+    fn the_readouts_name_the_engine_and_its_fallback() {
+        let mut values = BTreeMap::new();
+        values.insert("engine".to_string(), serde_json::json!("CPU"));
+        values.insert("engine_reason".to_string(), serde_json::json!("carrier"));
+        let metrics = AnalysisMetrics::from_values(&WorkspaceConfig::default(), &values);
+        let row = metrics.rows.last().expect("the engine row is last");
+        assert_eq!(row.name, "Engine");
+        assert_eq!(row.value, "CPU (carrier)");
+        assert!(!row.warn);
     }
 
     #[test]
