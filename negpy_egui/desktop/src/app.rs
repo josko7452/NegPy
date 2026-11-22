@@ -1621,7 +1621,7 @@ impl NegFeApp {
             let find_results = self.find.results.clone();
             let search = Rect::from_min_max(
                 egui::pos2(
-                    screen.right() - RAIL_WIDTH.min((screen.width() * 0.27).max(420.0)) - 8.0,
+                    screen.right() - rail_width(screen.width()) - 8.0,
                     screen.top() + 8.0,
                 ),
                 egui::pos2(
@@ -2308,16 +2308,26 @@ impl NegFeApp {
 pub fn rail_rect(screen: Rect) -> Rect {
     let margin = 8.0;
     let body_top = screen.top() + TOP_ROW_HEIGHT + 8.0;
-    let rail_width = if screen.width() >= 1800.0 {
-        RAIL_WIDTH
-    } else {
-        RAIL_WIDTH.min((screen.width() * 0.27).max(420.0))
-    };
+    let rail_width = rail_width(screen.width());
     Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, body_top),
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
     )
 }
+
+/// The right rail's width for a window width: a 27% share, and never less than the
+/// canvas needs beside it.
+fn rail_width(screen_width: f32) -> f32 {
+    RAIL_WIDTH
+        .min((screen_width * 0.27).max(MIN_RAIL_WIDTH))
+        .min((screen_width - MIN_CANVAS_WIDTH).max(MIN_RAIL_WIDTH))
+}
+
+/// The narrowest rail a panel still reads in.
+const MIN_RAIL_WIDTH: f32 = 320.0;
+
+/// The canvas width the toolbar and a fit preview need at a narrow window.
+const MIN_CANVAS_WIDTH: f32 = 120.0;
 
 impl eframe::App for NegFeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
@@ -2408,12 +2418,7 @@ fn paint_shell(
     paint_top_bar_with(&painter, screen, label, recipe);
 
     let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
-    let rail_width = RAIL_WIDTH.min((screen.width() * 0.27).max(420.0));
-    let rail_width = if screen.width() >= 1800.0 {
-        RAIL_WIDTH
-    } else {
-        rail_width
-    };
+    let rail_width = rail_width(screen.width());
     let search = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, screen.top() + margin),
         egui::pos2(
@@ -3669,6 +3674,15 @@ mod tests {
         assert!(app.crop_drag.is_none());
         assert!(!app.rail.geometry.crop.draw);
         assert!(!app.rail.exposure.local.draw);
+    }
+
+    #[test]
+    fn a_narrow_window_keeps_canvas_room_beside_the_rail() {
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(700.0, 900.0));
+        let rail = rail_rect(screen);
+        let canvas_width = rail.left() - 8.0 - (screen.left() + 8.0);
+        assert!(canvas_width >= MIN_CANVAS_WIDTH, "{canvas_width}");
+        assert!(rail.width() >= MIN_RAIL_WIDTH, "{}", rail.width());
     }
 
     #[test]
