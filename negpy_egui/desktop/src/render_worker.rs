@@ -96,6 +96,8 @@ pub struct RenderRequest {
     pub proof: ProofRequest,
     /// Whether this request may use the GPU chain.
     pub gpu_enabled: bool,
+    /// Show the whole frame, as Python does while an uncropped-preview tool is open.
+    pub crop_preview_full: bool,
 }
 
 impl Default for ProofRequest {
@@ -117,7 +119,7 @@ impl RenderRequest {
     #[must_use]
     pub fn config_hash(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             calculate_config_hash(&self.config),
             self.proof.enabled,
             self.proof.icc_path.as_deref().unwrap_or(""),
@@ -127,7 +129,8 @@ impl RenderRequest {
             self.proof.ink_black,
             self.proof.gamut_warning,
             self.proof.monitor_key(),
-            self.gpu_enabled
+            self.gpu_enabled,
+            self.crop_preview_full
         )
     }
 }
@@ -268,6 +271,7 @@ impl RenderWorker {
                     request_hash.clone()
                 };
                 let mut context = PipelineContext::new();
+                context.crop_preview_full = request.crop_preview_full;
                 let source_hash = format!("{}{}", request.source.hash, retouch_tokens);
                 let use_gpu = request.gpu_enabled
                     && gpu.is_some()
@@ -447,6 +451,7 @@ mod tests {
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         let hash = request.config_hash();
         worker.submit(request);
@@ -473,6 +478,7 @@ mod tests {
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         worker.submit(request);
         let output = wait_for(&worker);
@@ -500,6 +506,7 @@ mod tests {
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         let proofed = RenderRequest {
             generation: 2,
@@ -511,6 +518,7 @@ mod tests {
                 ..ProofRequest::default()
             },
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         worker.submit(plain);
         let first = wait_for(&worker);
@@ -538,6 +546,7 @@ mod tests {
             config: WorkspaceConfig::default(),
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         let after = RenderRequest {
             generation: 1,
@@ -549,6 +558,7 @@ mod tests {
                 ..ProofRequest::default()
             },
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         assert_ne!(before.config_hash(), after.config_hash());
     }
@@ -564,6 +574,7 @@ mod tests {
             config,
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         let mut config = WorkspaceConfig::default();
         config.exposure.density = 1.4;
@@ -573,6 +584,7 @@ mod tests {
             config,
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         let newest = second.config_hash();
         worker.submit(first);
@@ -602,6 +614,7 @@ mod tests {
             config,
             proof: ProofRequest::default(),
             gpu_enabled: false,
+            crop_preview_full: false,
         };
         worker.submit(request);
         let output = wait_for(&worker);
@@ -611,5 +624,39 @@ mod tests {
             .and_then(|value| serde_json::from_value(value.clone()).ok());
         assert!(resolved.is_some());
         assert_ne!(output.request_hash, output.config_hash);
+    }
+
+    #[test]
+    fn an_uncropped_preview_skips_the_stored_crop() {
+        let worker = RenderWorker::start();
+        let mut config = WorkspaceConfig::default();
+        config.geometry.crop_rect = Some(vec![0.2, 0.2, 0.8, 0.8]);
+        let plain = RenderRequest {
+            generation: 1,
+            source: source(),
+            config: config.clone(),
+            proof: ProofRequest::default(),
+            gpu_enabled: false,
+            crop_preview_full: false,
+        };
+        let full = RenderRequest {
+            generation: 2,
+            source: source(),
+            config,
+            proof: ProofRequest::default(),
+            gpu_enabled: false,
+            crop_preview_full: true,
+        };
+        assert_ne!(plain.config_hash(), full.config_hash());
+        worker.submit(plain);
+        let cropped = wait_for(&worker);
+        worker.submit(full);
+        let uncropped = wait_for(&worker);
+        assert!(
+            uncropped.frame.width >= cropped.frame.width,
+            "{} < {}",
+            uncropped.frame.width,
+            cropped.frame.width
+        );
     }
 }

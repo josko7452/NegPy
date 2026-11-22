@@ -399,6 +399,7 @@ impl NegFeApp {
             config: self.edit.config.clone(),
             proof: self.proof_request(),
             gpu_enabled: true,
+            crop_preview_full: self.rail.geometry.crop.draw,
         };
         let hash = request.config_hash();
         if self.rendered.as_deref() == Some(hash.as_str())
