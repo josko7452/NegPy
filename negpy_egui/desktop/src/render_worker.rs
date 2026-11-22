@@ -135,13 +135,9 @@ impl RenderRequest {
     }
 }
 
-/// The output histogram of a display-encoded frame.
-fn histogram_of(pixels: &[u8], width: usize, height: usize) -> Option<Vec<f64>> {
-    let encoded: Vec<f32> = pixels
-        .iter()
-        .map(|value| f32::from(*value) / 255.0)
-        .collect();
-    negpy_backend::features::exposure::analysis::output_histogram(&encoded, width, height)
+/// The output histogram of the float pipeline output, before proof and 8-bit conversion.
+fn histogram_of(pixels: &[f32], width: usize, height: usize) -> Option<Vec<f64>> {
+    negpy_backend::features::exposure::analysis::output_histogram(pixels, width, height)
 }
 
 /// The display-encoded frame as float, for the scope bins.
@@ -334,6 +330,7 @@ impl RenderWorker {
                         serde_json::to_value(&autocrop).unwrap_or(Value::Null),
                     );
                 }
+                let histogram = histogram_of(&output.pixels, output.width, output.height);
                 let mut pixels = float_to_uint8(&output.pixels);
                 if let Some(condition) = request.proof.condition() {
                     let working = profile_bytes(WORKING_COLOR_SPACE, Path::new("/nonexistent"))
@@ -350,7 +347,6 @@ impl RenderWorker {
                         }
                     }
                 }
-                let histogram = histogram_of(&pixels, output.width, output.height);
                 let scopes = ScopeBins::of(&pixels, output.width, output.height);
                 let density_histogram = context
                     .metrics
@@ -490,6 +486,34 @@ mod tests {
         assert!(scopes.parade.is_some());
         assert!(scopes.vectorscope.is_some());
         assert!(output.density_histogram.is_some());
+    }
+
+    #[test]
+    fn a_proofed_preview_keeps_the_unproofed_histogram() {
+        let dir = tempfile::tempdir().unwrap();
+        let icc = dir.path().join("paper.icc");
+        let source_icc =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../icc/sRGB-v4.icc");
+        std::fs::copy(source_icc, &icc).unwrap();
+        let evidence = |proof: ProofRequest| {
+            let worker = RenderWorker::start();
+            worker.submit(RenderRequest {
+                generation: 1,
+                source: source(),
+                config: WorkspaceConfig::default(),
+                proof,
+                gpu_enabled: false,
+                crop_preview_full: false,
+            });
+            wait_for(&worker).histogram.expect("a display histogram")
+        };
+        let plain = evidence(ProofRequest::default());
+        let proofed = evidence(ProofRequest {
+            enabled: true,
+            icc_path: Some(icc.display().to_string()),
+            ..ProofRequest::default()
+        });
+        assert_eq!(plain, proofed);
     }
 
     #[test]

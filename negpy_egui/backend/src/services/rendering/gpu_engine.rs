@@ -359,7 +359,11 @@ impl GpuEngine {
         print: &ExposureRun<'_>,
         lab: crate::features::lab::lab_shader::LabRun,
         roi: Option<crate::features::geometry::logic::Roi>,
-    ) -> (ImageBuffer, crate::features::lab::lab_shader::LabOutput) {
+    ) -> (
+        ImageBuffer,
+        crate::features::lab::lab_shader::LabOutput,
+        Vec<f64>,
+    ) {
         let (out_w, out_h) = rotated_dims(image.width, image.height, config.geometry.rotation);
         let key = prefix_key(config, run, &self.source_key);
         let reuse = self.prefix.as_ref().is_some_and(|prefix| {
@@ -413,6 +417,13 @@ impl GpuEngine {
             normalized,
             &printed,
             &ExposureUniforms::pack(print),
+        );
+        let density_histogram = run_density_histogram(
+            &self.gpu,
+            &self.loaders,
+            normalized,
+            &printed,
+            &DensityHistogramUniforms::new((0, out_h, 0, out_w), run.bounds),
         );
 
         let strength = config.lab.clahe_strength as f32;
@@ -476,7 +487,11 @@ impl GpuEngine {
         }
         let (width, height) = (toned.width as usize, toned.height as usize);
         self.textures.put(toned);
-        (ImageBuffer::from_rgb(width, height, pixels), lab_out)
+        (
+            ImageBuffer::from_rgb(width, height, pixels),
+            lab_out,
+            density_histogram,
+        )
     }
 
     fn encode_cropped(

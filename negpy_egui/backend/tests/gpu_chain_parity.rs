@@ -178,6 +178,44 @@ fn the_chain_reports_the_density_histogram() {
 }
 
 #[test]
+fn the_tail_reports_the_density_histogram() {
+    let Some(mut engine) = GpuEngine::new() else {
+        return;
+    };
+    let settings = WorkspaceConfig::default();
+    let image = frame(32, 24);
+    let bounds = negpy_backend::features::exposure::normalization::LogNegativeBounds::new(
+        [-1.5, -1.5, -1.5],
+        [-0.1, -0.1, -0.1],
+    );
+    let base = negpy_backend::services::rendering::gpu_render::GpuBase {
+        bounds,
+        norm_density_range: 1.4,
+        textural_range: 1.0,
+        shadow_point: -1.3,
+        highlight_point: -0.2,
+        anchor: Some(-1.0),
+        active_roi: None,
+    };
+    let mut context = negpy_backend::render_engine::PipelineContext::new();
+    let _ = negpy_backend::services::rendering::gpu_render::render(
+        &mut engine,
+        &image,
+        &settings,
+        "density-test",
+        &base,
+        &mut context,
+    );
+    let bins = context
+        .metrics
+        .get("histogram_density")
+        .and_then(|value| serde_json::from_value::<Vec<f64>>(value.clone()).ok())
+        .expect("the GPU tail emits the density histogram");
+    assert_eq!(bins.len(), 4 * 120);
+    assert!(bins.iter().sum::<f64>() > 0.0);
+}
+
+#[test]
 fn the_cpu_override_stops_the_engine() {
     // The default app config leaves the GPU on; a machine without an adapter
     // still returns `None`. Only the disabled case is asserted here, because

@@ -138,7 +138,7 @@ pub fn render(
             config.process.process_mode,
         )
     };
-    let (toned, lab_out) = gpu.run_tail_input(
+    let (toned, lab_out, density_histogram) = gpu.run_tail_input(
         image,
         config,
         &run,
@@ -151,6 +151,10 @@ pub fn render(
         roi,
     );
     to_metrics(context, &lab_out);
+    context.metrics.insert(
+        "histogram_density".to_string(),
+        serde_json::to_value(density_histogram).unwrap_or(serde_json::Value::Null),
+    );
     let toned = apply_hue_trim(&toned, config.process.hue_trim);
     finish(config, toned)
 }
