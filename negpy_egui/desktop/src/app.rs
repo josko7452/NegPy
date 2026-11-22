@@ -1105,6 +1105,32 @@ impl NegFeApp {
         self.rail.geometry.crop.has_crop = true;
     }
 
+    /// Apply what the crop tool did. A pending rect lives in `crop_drag` until confirm.
+    fn apply_crop_action(&mut self, action: crate::view::canvas::CropAction, ctx: &egui::Context) {
+        match action {
+            crate::view::canvas::CropAction::Pending(_) => ctx.request_repaint(),
+            crate::view::canvas::CropAction::Confirm(rect) => {
+                self.confirm_crop(rect);
+                self.crop_drag = None;
+                self.request_render(ctx, false);
+            }
+            crate::view::canvas::CropAction::None => {}
+        }
+    }
+
+    /// Commit a pending crop when Draw closes, and drop a stale drag when it opens.
+    fn settle_crop_tool(&mut self, was_drawing: bool, ctx: &egui::Context) {
+        let drawing = self.rail.geometry.crop.draw;
+        if was_drawing && !drawing {
+            if let Some(drag) = self.crop_drag.take() {
+                self.confirm_crop(drag.pending);
+                self.request_render(ctx, false);
+            }
+        } else if !was_drawing && drawing {
+            self.crop_drag = None;
+        }
+    }
+
     /// Write a crop rect and clear the Auto Crop state it replaces.
     fn store_crop(&mut self, rect: [f64; 4]) {
         let geometry = &mut self.edit.config.geometry;
@@ -1669,14 +1695,7 @@ impl NegFeApp {
                 self.photo_mode = photo;
                 ctx.request_repaint();
             }
-            match hits.crop {
-                crate::view::canvas::CropAction::Pending(rect) => self.store_crop(rect),
-                crate::view::canvas::CropAction::Confirm(rect) => {
-                    self.confirm_crop(rect);
-                    self.request_render(ctx, false);
-                }
-                crate::view::canvas::CropAction::None => {}
-            }
+            self.apply_crop_action(hits.crop, ctx);
             self.apply_retouch(hits.retouch);
             if let crate::view::canvas::PickAction::At(point) = hits.pick {
                 self.store_bounds_pick(point);
@@ -1726,9 +1745,11 @@ impl NegFeApp {
             let proof = self.proof.clone();
             let before = self.edit.config.clone();
             let before_favourites = self.rail.favourites.chosen.clone();
+            let was_drawing = self.rail.geometry.crop.draw;
             let switched = self
                 .rail
                 .show(ui, rail_rect, &mut self.edit, &mut self.proof);
+            self.settle_crop_tool(was_drawing, ctx);
             if self.edit.config != before {
                 self.edit.checkpoint_before(before);
             }
@@ -3475,6 +3496,36 @@ mod tests {
         assert!(!app.rail.geometry.crop.draw);
         assert!(app.rail.geometry.crop.has_crop);
         assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_pending_crop_stays_out_of_the_edit() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.apply_crop_action(
+            crate::view::canvas::CropAction::Pending([0.1, 0.2, 0.8, 0.9]),
+            &ctx,
+        );
+        assert!(app.edit.config.geometry.crop_rect.is_none());
+        assert!(!app.edit.is_dirty());
+    }
+
+    #[test]
+    fn closing_draw_commits_the_pending_rect() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        let ctx = egui::Context::default();
+        app.crop_drag = Some(crate::view::canvas::CropDrag {
+            start: egui::Pos2::ZERO,
+            pending: [0.1, 0.2, 0.8, 0.9],
+        });
+        app.settle_crop_tool(true, &ctx);
+        assert_eq!(
+            app.edit.config.geometry.crop_rect.as_deref(),
+            Some(&[0.1, 0.2, 0.8, 0.9][..])
+        );
+        assert!(app.crop_drag.is_none());
     }
 
     #[test]
