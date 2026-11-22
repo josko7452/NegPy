@@ -188,7 +188,10 @@ def palette_distance(a: Image.Image, b: Image.Image, colors: int = 8) -> float:
     left, right = quantized(a), quantized(b)
     if len(left) == 0 or len(right) == 0:
         return 0.0
-    distances = np.atleast_2d(_ciede2000(_lab(left), _lab(right)))
+    lab_a, lab_b = _lab(left), _lab(right)
+    distances = np.empty((len(lab_a), len(lab_b)))
+    for row, color in enumerate(lab_a):
+        distances[row] = _ciede2000(np.broadcast_to(color, lab_b.shape), lab_b)
     return float(np.mean(np.min(distances, axis=1)))
 
 
