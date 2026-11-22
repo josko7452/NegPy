@@ -1305,6 +1305,15 @@ impl NegFeApp {
         {
             self.set_source(Some(source));
         }
+        self.crop_drag = None;
+        self.mask_drag = crate::view::canvas::MaskDrag::default();
+        self.retouch_drag = crate::view::canvas::RetouchDrag::default();
+        self.rail.geometry.crop.draw = false;
+        self.rail.metering.pick = crate::view::rail::metering::MeteringPick::Off;
+        self.rail.exposure.local.draw = false;
+        self.rail.exposure.local.oval = false;
+        self.rail.exposure.local.card = false;
+        self.rail.finish.tool = crate::view::rail::frame_finish::RetouchTool::Off;
         self.set_frame(frame);
         self.set_edit(edit);
         self.rail.metadata.set_folder_name(
@@ -3643,6 +3652,23 @@ mod tests {
         app.zoom = 2.5;
         assert!(app.select_frame(0));
         assert!((app.zoom - 2.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_frame_switch_drops_transient_canvas_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = NegFeApp::for_capture("roll", "", "geometry", "canvas", 0.0);
+        app.set_strip(two_frame_strip(dir.path()));
+        app.crop_drag = Some(crate::view::canvas::CropDrag {
+            start: egui::Pos2::ZERO,
+            pending: [0.1, 0.2, 0.8, 0.9],
+        });
+        app.rail.geometry.crop.draw = true;
+        app.rail.exposure.local.draw = true;
+        assert!(app.select_frame(1));
+        assert!(app.crop_drag.is_none());
+        assert!(!app.rail.geometry.crop.draw);
+        assert!(!app.rail.exposure.local.draw);
     }
 
     #[test]
