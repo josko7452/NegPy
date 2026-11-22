@@ -1139,6 +1139,9 @@ impl NegFeApp {
         geometry.crop_from_auto = false;
         geometry.crop_detect_key.clear();
         geometry.autocrop_squared = false;
+        let process = &mut self.edit.config.process;
+        process.local_floors = [0.0; 3];
+        process.local_ceils = [0.0; 3];
         self.edit.mark_dirty();
     }
 
@@ -3497,6 +3500,17 @@ mod tests {
         assert!(!app.rail.geometry.crop.draw);
         assert!(app.rail.geometry.crop.has_crop);
         assert!(app.edit.is_dirty());
+    }
+
+    #[test]
+    fn a_confirmed_crop_clears_the_measured_bounds() {
+        let fixture = ReferenceFixture::bundled().unwrap();
+        let mut app = NegFeApp::new(&fixture);
+        app.edit.config.process.local_floors = [0.2, 0.2, 0.2];
+        app.edit.config.process.local_ceils = [0.9, 0.9, 0.9];
+        app.confirm_crop([0.1, 0.2, 0.8, 0.9]);
+        assert_eq!(app.edit.config.process.local_floors, [0.0; 3]);
+        assert_eq!(app.edit.config.process.local_ceils, [0.0; 3]);
     }
 
     #[test]
