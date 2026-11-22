@@ -24,6 +24,26 @@ pub struct ExportRender {
     pub color_space: String,
     /// The picture's `(x, y, width, height)` inside the paper.
     pub content_rect: (usize, usize, usize, usize),
+    /// The engine that rendered the picture.
+    pub engine: ExportEngine,
+}
+
+/// Which engine painted an export, or why the GPU did not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ExportEngine {
+    Gpu,
+    Cpu(String),
+}
+
+impl ExportEngine {
+    /// The label a report or a log writes.
+    #[must_use]
+    pub fn label(&self) -> String {
+        match self {
+            Self::Gpu => "GPU".to_string(),
+            Self::Cpu(reason) => format!("CPU ({reason})"),
+        }
+    }
 }
 
 /// The source corrections that change before the pipeline reads the frame.
@@ -34,6 +54,15 @@ pub struct ExportBakes {
 
 /// Decode, bake and render one file at full resolution.
 pub fn render_export_file(
+    path: &Path,
+    config: &WorkspaceConfig,
+    color_space: Option<&str>,
+    engine: &mut DarkroomEngine,
+) -> Result<ExportRender, String> {
+    render_export_file_with(path, config, color_space, engine)
+}
+
+fn render_export_file_with(
     path: &Path,
     config: &WorkspaceConfig,
     color_space: Option<&str>,
@@ -89,6 +118,7 @@ pub fn render_export_file(
                 crate::infrastructure::display::color_mgmt::WORKING_COLOR_SPACE.to_string()
             }),
         content_rect,
+        engine: ExportEngine::Cpu("full-resolution export".to_string()),
     })
 }
 

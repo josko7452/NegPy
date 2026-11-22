@@ -484,8 +484,13 @@ impl NegFeApp {
             self.rail.export_status.running = false;
             if report.failed.is_empty() {
                 self.rail.export_status.failed = false;
+                let engine = report
+                    .engines
+                    .first()
+                    .map(negpy_backend::services::export::render::ExportEngine::label)
+                    .unwrap_or_else(|| "CPU".to_string());
                 self.rail.export_status.message = format!(
-                    "Wrote {}.",
+                    "Wrote {} on the {engine}.",
                     crate::view::rail::count_of(report.written.len(), "file")
                 );
             } else {

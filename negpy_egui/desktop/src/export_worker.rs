@@ -11,7 +11,7 @@ use negpy_backend::domain::models::WorkspaceConfig;
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
 use negpy_backend::render_engine::DarkroomEngine;
 use negpy_backend::services::assets::sidecar::write_sidecar;
-use negpy_backend::services::export::render::render_export_file;
+use negpy_backend::services::export::render::{ExportEngine, render_export_file};
 
 /// One roll export: every source path with the edit it prints with.
 #[derive(Clone, Debug, PartialEq)]
@@ -29,6 +29,8 @@ pub struct ExportRequest {
 pub struct ExportReport {
     pub written: Vec<PathBuf>,
     pub failed: Vec<String>,
+    /// The engine that wrote each file, in write order.
+    pub engines: Vec<ExportEngine>,
 }
 
 /// The GUI side of the export worker.
@@ -106,7 +108,10 @@ pub fn run_export(request: &ExportRequest, engine: &mut DarkroomEngine) -> Expor
             engine,
             &mut written,
         ) {
-            Ok(written) => report.written.push(written),
+            Ok((written, engine)) => {
+                report.written.push(written);
+                report.engines.push(engine);
+            }
             Err(error) => report.failed.push(error),
         }
     }
@@ -121,7 +126,7 @@ fn export_one(
     user_icc_dir: &Path,
     engine: &mut DarkroomEngine,
     written: &mut std::collections::HashSet<PathBuf>,
-) -> Result<PathBuf, String> {
+) -> Result<(PathBuf, ExportEngine), String> {
     let mut frame = config.clone();
     if let Some(preset) = preset {
         frame.export = preset.clone();
@@ -140,7 +145,7 @@ fn export_one(
         write_sidecar(path, config, 0)
             .map_err(|error| format!("Could not write the sidecar: {error}"))?;
     }
-    Ok(written)
+    Ok((written, render.engine))
 }
 
 #[cfg(test)]
