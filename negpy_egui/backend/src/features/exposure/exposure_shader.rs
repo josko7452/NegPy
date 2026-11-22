@@ -23,8 +23,8 @@ use crate::features::exposure::papers::{
     compose_density_matrices, effective_constants, resolve_print_color, resolve_saturation_matrix,
 };
 use crate::features::exposure::print::{
-    DiffusionPlane, MaskPlane, PrintRenderSettings, paper_dmin_rgb, per_channel_dye_separation,
-    per_channel_toe_shoulder, per_channel_widths, print_settings,
+    DiffusionPlane, MaskPlane, PrintRenderSettings, contrast_mask_coeffs, paper_dmin_rgb,
+    per_channel_dye_separation, per_channel_toe_shoulder, per_channel_widths, print_settings,
 };
 use crate::infrastructure::gpu::device::GpuDevice;
 use crate::infrastructure::gpu::resources::{GpuBuffer, GpuTexture, WORK_FORMAT};
@@ -101,7 +101,125 @@ pub struct ExposureRun<'a> {
     pub key_params: Option<&'a [[f64; 4]]>,
     pub key_alpha: Option<(&'a [f32], usize)>,
     pub grade_deltas: Option<&'a [f32]>,
+    /// The Contrast Mask (r) and Diffusion (gba) planes on one analysis grid.
+    pub grid: Option<(&'a [f32], usize, usize)>,
+    /// The printed frame's origin and span in rotated pixels.
+    pub grid_rect: [f64; 4],
+    /// Whether the bound grid carries a Contrast Mask in red.
+    pub contrast_bound: bool,
     pub black_hold: f64,
+}
+
+/// The GPU planes one exposure pass binds. A `None` plane is a 1x1 zero texture.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ExposurePlanes<'a> {
+    /// Dodge/burn stops, preflash and grade deltas, one plane each.
+    pub local: Option<(&'a [f32], &'a [f32], &'a [f32])>,
+    /// The tone-limited masks' shape alpha, one plane per mask.
+    pub key_alpha: Option<(&'a [f32], usize)>,
+    /// The Contrast Mask (r) and Diffusion (gba) planes on one analysis grid.
+    pub grid: Option<(&'a [f32], usize, usize)>,
+    /// The printed frame's origin and span in rotated pixels.
+    pub grid_rect: [f64; 4],
+    /// The Contrast Mask's value at grey.
+    pub mask_centre: f32,
+    pub diffusion_mix: f32,
+    pub planarity: ExposurePlanarity,
+}
+
+/// The areas of the shader that the bound planes enable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExposurePlanarity {
+    pub local: bool,
+    pub keyed: bool,
+    pub contrast: bool,
+    pub diffusion: bool,
+}
+
+impl ExposurePlanarity {
+    /// Read the flags from the run's bound planes.
+    #[must_use]
+    pub fn of(run: &ExposureRun<'_>) -> Self {
+        Self {
+            local: run.local_exposure.is_some(),
+            keyed: run.key_params.is_some(),
+            contrast: run.mask.is_some(),
+            diffusion: run.diffusion.is_some(),
+        }
+    }
+}
+
+/// The owned analysis-grid texture and local maps of one GPU print.
+#[derive(Clone, Debug, Default)]
+pub struct GpuPlanes {
+    pub local: Option<(Vec<f32>, Vec<f32>, Vec<f32>)>,
+    pub key_alpha: Option<(Vec<f32>, usize)>,
+    pub grid: Option<(Vec<f32>, usize, usize)>,
+    pub grid_rect: [f64; 4],
+    pub mask_centre: f32,
+    pub diffusion_mix: f32,
+    pub planarity: ExposurePlanarity,
+}
+
+impl GpuPlanes {
+    /// The borrowed planes the uniform pack and the pass read.
+    #[must_use]
+    pub fn borrowed(&self) -> ExposurePlanes<'_> {
+        ExposurePlanes {
+            local: self.local.as_ref().map(|(stops, flash, deltas)| {
+                (stops.as_slice(), flash.as_slice(), deltas.as_slice())
+            }),
+            key_alpha: self
+                .key_alpha
+                .as_ref()
+                .map(|(alpha, count)| (alpha.as_slice(), *count)),
+            grid: self
+                .grid
+                .as_ref()
+                .map(|(grid, height, width)| (grid.as_slice(), *height, *width)),
+            grid_rect: self.grid_rect,
+            mask_centre: self.mask_centre,
+            diffusion_mix: self.diffusion_mix,
+            planarity: self.planarity,
+        }
+    }
+
+    /// The run with these planes attached.
+    #[must_use]
+    pub fn attach<'a>(&'a self, run: ExposureRun<'a>) -> ExposureRun<'a> {
+        ExposureRun {
+            mask: self
+                .planarity
+                .contrast
+                .then(|| self.grid.as_ref())
+                .flatten()
+                .map(|(grid, _, _)| MaskPlane {
+                    data: grid,
+                    centre: self.mask_centre,
+                }),
+            diffusion: self
+                .planarity
+                .diffusion
+                .then(|| self.grid.as_ref())
+                .flatten()
+                .map(|(grid, height, width)| DiffusionPlane {
+                    data: grid,
+                    height: *height,
+                    width: *width,
+                    rect: self.grid_rect,
+                }),
+            local_exposure: self.local.as_ref().map(|(stops, _, _)| stops.as_slice()),
+            local_flash: self.local.as_ref().map(|(_, flash, _)| flash.as_slice()),
+            local_grade: self.local.as_ref().map(|(_, _, deltas)| deltas.as_slice()),
+            grid: self
+                .grid
+                .as_ref()
+                .map(|(grid, height, width)| (grid.as_slice(), *height, *width)),
+            grid_rect: self.grid_rect,
+            contrast_bound: self.planarity.contrast,
+            ..run
+        }
+    }
 }
 
 impl<'a> ExposureRun<'a> {
@@ -130,23 +248,41 @@ impl<'a> ExposureRun<'a> {
             key_params: None,
             key_alpha: None,
             grade_deltas: None,
+            grid: None,
+            grid_rect: [0.0, 0.0, 1.0, 1.0],
+            contrast_bound: false,
             black_hold: 0.0,
         }
     }
 
     /// True when every active curve input has a GPU binding.
-    ///
-    /// Local maps and a print LUT still need their own textures, so the engine
-    /// keeps those frames on the CPU until the pass binds them.
+    /// A print LUT still needs its own texture, so the engine keeps it on the CPU.
     #[must_use]
     pub fn gpu_ready(&self, paper_has_lut: bool) -> bool {
         !paper_has_lut
-            && self.mask.is_none()
-            && self.diffusion.is_none()
-            && self.local_exposure.is_none()
-            && self.local_grade.is_none()
-            && self.local_flash.is_none()
-            && self.key_params.is_none()
+    }
+
+    /// The planes this run binds on the device, borrowed from its fields.
+    #[must_use]
+    pub fn borrowed_planes(&self) -> ExposurePlanes<'a> {
+        let local = self
+            .local_exposure
+            .zip(self.local_flash)
+            .zip(self.local_grade)
+            .map(|((stops, flash), grade)| (stops, flash, grade));
+        ExposurePlanes {
+            local,
+            key_alpha: self.key_alpha,
+            grid: self.grid,
+            grid_rect: self.grid_rect,
+            mask_centre: self.mask.map_or(0.5, |mask| mask.centre),
+            diffusion_mix: if self.diffusion.is_some() {
+                crate::features::exposure::print::diffusion_mix(self.config.diffusion) as f32
+            } else {
+                0.0
+            },
+            planarity: ExposurePlanarity::of(self),
+        }
     }
 
     fn settings(&self) -> PrintRenderSettings<'a> {
@@ -189,6 +325,12 @@ impl ExposureUniforms {
     /// Pack the uniforms the print pass reads.
     #[must_use]
     pub fn pack(run: &ExposureRun<'_>) -> Self {
+        Self::pack_with(run, &ExposurePlanes::default())
+    }
+
+    /// Pack the uniforms, including the planes the pass binds.
+    #[must_use]
+    pub fn pack_with(run: &ExposureRun<'_>, planes: &ExposurePlanes<'_>) -> Self {
         let exposure = printed_exposure(run.process, run.config);
         let settings = run.settings();
         let (_, solved, paper) = print_settings(&settings);
@@ -311,6 +453,61 @@ impl ExposureUniforms {
         let ranges = channel_density_ranges(run.bounds);
         let ev_scale = crate::features::exposure::print::local_ev_scale(run.bounds);
         let d_min_rgb = paper_dmin_rgb(d_min, Some(paper));
+        let contrast = run
+            .contrast_bound
+            .then(|| {
+                let offsets = cmy.map(f64::from);
+                contrast_mask_coeffs(
+                    exposure.contrast_mask_strength,
+                    f64::from(planes.mask_centre),
+                    solved.slopes,
+                    solved.pivots,
+                    offsets,
+                    run.density_range.unwrap_or(0.0),
+                )
+            })
+            .flatten();
+        let (mut mask_cap, mut mask_span, mask_tone) =
+            contrast.map_or(([0.0; 4], [0.0; 4], [0.0; 4]), |coeffs| {
+                let rect = planes.grid_rect;
+                (
+                    [
+                        coeffs[6] as f32,
+                        rect[0] as f32,
+                        rect[1] as f32,
+                        planes.diffusion_mix,
+                    ],
+                    [
+                        rect[2] as f32,
+                        rect[3] as f32,
+                        coeffs[2] as f32,
+                        coeffs[3] as f32,
+                    ],
+                    [
+                        coeffs[0] as f32,
+                        coeffs[1] as f32,
+                        coeffs[4] as f32,
+                        coeffs[5] as f32,
+                    ],
+                )
+            });
+        if planes.planarity.diffusion || planes.planarity.contrast {
+            let rect = planes.grid_rect;
+            mask_cap[3] =
+                crate::features::exposure::print::diffusion_mix(run.config.diffusion) as f32;
+            if contrast.is_none() {
+                mask_cap[1] = rect[0] as f32;
+                mask_cap[2] = rect[1] as f32;
+                mask_span[0] = rect[2] as f32;
+                mask_span[1] = rect[3] as f32;
+            }
+        }
+        let mut keyed = [[0.0f32; 4]; 4];
+        if let Some(params) = run.key_params {
+            for (row, param) in keyed.iter_mut().zip(params) {
+                *row = param.map(|value| value as f32);
+            }
+        }
         Self {
             pivots: [
                 solved.pivots[0] as f32,
@@ -391,7 +588,7 @@ impl ExposureUniforms {
                 ev_scale[0],
                 ev_scale[1],
                 ev_scale[2],
-                u32::from(run.local_exposure.is_some()) as f32,
+                u32::from(planes.planarity.local) as f32,
             ],
             split_sh: [
                 solved.shadow_grade[0] as f32,
@@ -411,12 +608,16 @@ impl ExposureUniforms {
                 flash_v as f32,
                 flash_gamma as f32,
             ],
-            mask: [0.0; 4],
-            mask_span: [0.0; 4],
-            mask_tone: [0.0; 4],
-            keyed: [[0.0; 4]; 4],
+            mask: mask_cap,
+            mask_span,
+            mask_tone,
+            keyed,
             key_meta: [
-                run.key_params.map_or(0.0, |params| params.len() as f32),
+                if planes.planarity.keyed {
+                    run.key_params.map_or(0.0, |params| params.len() as f32)
+                } else {
+                    0.0
+                },
                 exposure.grade as f32,
                 c::ISO_R_MIN as f32,
                 c::ISO_R_MAX as f32,
@@ -518,6 +719,39 @@ fn dummy(gpu: &GpuDevice, label: &str) -> GpuTexture {
     texture
 }
 
+fn local_map_rgba(local: (&[f32], &[f32], &[f32])) -> Vec<f32> {
+    let (stops, flash, deltas) = local;
+    let mut rgba = Vec::with_capacity(stops.len() * 4);
+    for index in 0..stops.len() {
+        rgba.extend_from_slice(&[
+            stops[index],
+            flash.get(index).copied().unwrap_or(0.0),
+            deltas.get(index).copied().unwrap_or(0.0),
+            1.0,
+        ]);
+    }
+    rgba
+}
+
+fn key_dims(length: usize, count: usize, width: u32, height: u32) -> (u32, u32) {
+    if count == 0 || length == 0 {
+        (1, 1)
+    } else {
+        (width, height)
+    }
+}
+
+fn key_map_rgba(alpha: &[f32], count: usize, width: u32, height: u32) -> Vec<f32> {
+    let texels = width as usize * height as usize;
+    let mut rgba = vec![0.0; texels * 4];
+    for (index, value) in alpha.iter().enumerate().take(texels * count) {
+        let pixel = index / count;
+        let channel = index % count;
+        rgba[pixel * 4 + channel] = *value;
+    }
+    rgba
+}
+
 /// Run the print pass over the normalized texture.
 pub fn run(
     gpu: &GpuDevice,
@@ -525,6 +759,25 @@ pub fn run(
     source: &GpuTexture,
     output: &GpuTexture,
     uniforms: &ExposureUniforms,
+) {
+    run_with(
+        gpu,
+        loaders,
+        source,
+        output,
+        uniforms,
+        &ExposurePlanes::default(),
+    );
+}
+
+/// Run the print pass with its local maps, mask planes and key alphas.
+pub fn run_with(
+    gpu: &GpuDevice,
+    loaders: &ShaderLoader,
+    source: &GpuTexture,
+    output: &GpuTexture,
+    uniforms: &ExposureUniforms,
+    planes: &ExposurePlanes<'_>,
 ) {
     let module = loaders.load(&gpu.device, "exposure.print", SHADER);
     let uniform_buffer = GpuBuffer::new(
@@ -534,9 +787,32 @@ pub fn run(
         "exposure.uniforms",
     );
     uniform_buffer.upload(&gpu.queue, bytemuck::bytes_of(uniforms));
-    let ev = dummy(gpu, "exposure.ev");
-    let mask = dummy(gpu, "exposure.mask");
-    let key = dummy(gpu, "exposure.key");
+    let ev = planes.local.map_or_else(
+        || dummy(gpu, "exposure.ev"),
+        |local| {
+            let texture = GpuTexture::new(&gpu.device, output.width, output.height, "exposure.ev");
+            texture.upload(&gpu.queue, &local_map_rgba(local), true);
+            texture
+        },
+    );
+    let mask = planes.grid.map_or_else(
+        || dummy(gpu, "exposure.mask"),
+        |(grid, height, width)| {
+            let texture =
+                GpuTexture::new(&gpu.device, width as u32, height as u32, "exposure.mask");
+            texture.upload(&gpu.queue, grid, true);
+            texture
+        },
+    );
+    let key = planes.key_alpha.map_or_else(
+        || dummy(gpu, "exposure.key"),
+        |(alpha, count)| {
+            let (width, height) = key_dims(alpha.len(), count, output.width, output.height);
+            let texture = GpuTexture::new(&gpu.device, width, height, "exposure.key");
+            texture.upload(&gpu.queue, &key_map_rgba(alpha, count, width, height), true);
+            texture
+        },
+    );
     let lut = dummy(gpu, "exposure.lut");
     let bind_layout = layout(gpu);
     let pipeline_layout = gpu

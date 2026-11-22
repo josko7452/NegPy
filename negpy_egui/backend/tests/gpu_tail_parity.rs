@@ -1,6 +1,8 @@
 //! The GPU print chain through CLAHE matches the CPU engine on a cropped frame.
 
-use negpy_backend::domain::models::{AltProcess, GeometryConfig, ProcessMode, WorkspaceConfig};
+use negpy_backend::domain::models::{
+    AltProcess, GeometryConfig, LocalMask, MaskShape, ProcessMode, WorkspaceConfig,
+};
 use negpy_backend::features::exposure::processor::{NormalizationSettings, measure_negative};
 use negpy_backend::features::geometry::processor::{GeometryContext, process};
 use negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -35,6 +37,21 @@ fn config() -> WorkspaceConfig {
     config.lab.chroma_denoise = 0.0;
     config.toning.shadow_tint_strength = 0.3;
     config.toning.shadow_tint_hue = 35.0;
+    config
+}
+
+fn masked_config() -> WorkspaceConfig {
+    let mut config = config();
+    config.exposure.contrast_mask_strength = 0.5;
+    config.exposure.diffusion = 0.4;
+    config.local.masks.push(LocalMask {
+        vertices: vec![[0.2, 0.2], [0.7, 0.2], [0.7, 0.7], [0.2, 0.7]],
+        stops: 0.6,
+        grade: 4.0,
+        flash: 0.0,
+        shape: MaskShape::Polygon,
+        ..LocalMask::default()
+    });
     config
 }
 
@@ -129,6 +146,82 @@ fn a_cropped_print_matches_the_cpu_engine() {
     }
     let fraction = failures as f64 / cpu_image.pixels.len() as f64;
     assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
+}
+
+#[test]
+fn a_masked_print_matches_the_cpu_engine() {
+    let Some(mut gpu) = GpuEngine::new() else {
+        return;
+    };
+    let config = masked_config();
+    let image = frame(96, 72);
+    let geometry = process(
+        &image,
+        &config.geometry,
+        GeometryContext { scale_factor: 1.0 },
+    );
+    let roi = geometry.active_roi;
+    assert!(gpu_eligible(&config, &PipelineContext::new()));
+    let measured = measure_negative(
+        &image.pixels,
+        image.width,
+        image.height,
+        NormalizationSettings {
+            config: &config.process,
+            mode: config.process.process_mode,
+            active_roi: roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: None,
+        },
+    );
+    let base = GpuBase {
+        bounds: measured.final_bounds,
+        norm_density_range: measured.norm_density_range,
+        textural_range: measured.textural_range,
+        shadow_point: measured.shadow_point,
+        highlight_point: measured.highlight_point,
+        anchor: Some(measured.metered_anchor),
+        active_roi: roi.map(|(y1, y2, x1, x2)| {
+            (
+                y1.max(0) as usize,
+                y2.max(0) as usize,
+                x1.max(0) as usize,
+                x2.max(0) as usize,
+            )
+        }),
+    };
+    let gpu_image = render(
+        &mut gpu,
+        &image,
+        &config,
+        "masked",
+        &base,
+        &mut PipelineContext::new(),
+    );
+    let cpu_image = negpy_backend::render_engine::DarkroomEngine::new().process(
+        &image,
+        &config,
+        "masked",
+        &mut PipelineContext::new(),
+    );
+    assert_eq!(
+        (gpu_image.width, gpu_image.height),
+        (cpu_image.width, cpu_image.height)
+    );
+    let failures = gpu_image
+        .pixels
+        .iter()
+        .zip(&cpu_image.pixels)
+        .filter(|(got, expected)| (*got - *expected).abs() > 4e-2)
+        .count();
+    let fraction = failures as f64 / cpu_image.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ");
 }
 
 #[test]

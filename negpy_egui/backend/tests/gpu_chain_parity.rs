@@ -290,7 +290,7 @@ fn a_plain_print_is_gpu_eligible() {
     let mut local = settings.clone();
     local.local.masks.push(Default::default());
     assert!(
-        !negpy_backend::services::rendering::gpu_render::gpu_eligible(
+        negpy_backend::services::rendering::gpu_render::gpu_eligible(
             &local,
             &negpy_backend::render_engine::PipelineContext::new(),
         )

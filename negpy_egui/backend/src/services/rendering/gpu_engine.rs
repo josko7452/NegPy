@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use crate::domain::models::WorkspaceConfig;
 use crate::features::exposure::exposure_shader::{
-    ExposureRun, ExposureUniforms, run as run_exposure,
+    ExposureRun, ExposureUniforms, run_with as run_exposure,
 };
 use crate::features::exposure::histogram_shader::{
     DensityHistogramUniforms, run as run_density_histogram,
@@ -309,12 +309,14 @@ impl GpuEngine {
         let printed = self
             .textures
             .take(&self.gpu.device, out_w as u32, out_h as u32, "printed");
+        let planes = print.borrowed_planes();
         run_exposure(
             &self.gpu,
             &self.loaders,
             normalized,
             &printed,
-            &ExposureUniforms::pack(print),
+            &ExposureUniforms::pack_with(print, &planes),
+            &planes,
         );
 
         let window = roi.unwrap_or((0, out_h as i64, 0, out_w as i64));
@@ -411,12 +413,14 @@ impl GpuEngine {
         let printed = self
             .textures
             .take(&self.gpu.device, out_w as u32, out_h as u32, "printed");
+        let planes = print.borrowed_planes();
         run_exposure(
             &self.gpu,
             &self.loaders,
             normalized,
             &printed,
-            &ExposureUniforms::pack(print),
+            &ExposureUniforms::pack_with(print, &planes),
+            &planes,
         );
         let density_histogram = run_density_histogram(
             &self.gpu,

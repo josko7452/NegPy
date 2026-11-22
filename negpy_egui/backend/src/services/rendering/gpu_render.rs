@@ -6,7 +6,7 @@
 //! finish stage stays on the CPU.
 
 use crate::domain::models::{RenderIntent, WorkspaceConfig};
-use crate::features::exposure::exposure_shader::ExposureRun;
+use crate::features::exposure::exposure_shader::{ExposureRun, GpuPlanes};
 use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::papers::{PrintColor, effective_paper_profile, resolve_print_color};
 use crate::features::finish::processor::{FinishContext, process as finish_process};
@@ -72,7 +72,7 @@ pub fn gpu_eligible(config: &WorkspaceConfig, context: &PipelineContext) -> bool
     {
         return false;
     }
-    if !config.local.masks.is_empty() || config.finish.carrier_width > 0.0 {
+    if config.finish.carrier_width > 0.0 {
         return false;
     }
     // The alt-process passes and the grain measurement are not on the device yet.
@@ -138,6 +138,8 @@ pub fn render(
             config.process.process_mode,
         )
     };
+    let planes = build_planes(image, config, &print, roi);
+    let print = planes.attach(print);
     let (toned, lab_out, density_histogram) = gpu.run_tail_input(
         image,
         config,
@@ -183,4 +185,137 @@ fn finish(config: &WorkspaceConfig, toned: ImageBuffer) -> ImageBuffer {
     );
     let encoded = crate::features::exposure::analysis::working_oetf_encode(&image.pixels);
     ImageBuffer::from_rgb(image.width, image.height, encoded)
+}
+
+/// Build the local maps and shared mask grid a GPU print binds.
+#[must_use]
+pub fn build_planes(
+    image: &ImageBuffer,
+    config: &WorkspaceConfig,
+    print: &ExposureRun<'_>,
+    roi: Option<crate::features::geometry::logic::Roi>,
+) -> GpuPlanes {
+    let mut planes = GpuPlanes {
+        grid_rect: roi
+            .map(|(y1, y2, x1, x2)| {
+                [
+                    x1.max(0) as f64,
+                    y1.max(0) as f64,
+                    (x2 - x1).max(0) as f64,
+                    (y2 - y1).max(0) as f64,
+                ]
+            })
+            .unwrap_or([0.0, 0.0, image.width as f64, image.height as f64]),
+        diffusion_mix: if config.exposure.diffusion > 0.0 {
+            crate::features::exposure::print::diffusion_mix(config.exposure.diffusion) as f32
+        } else {
+            0.0
+        },
+        ..GpuPlanes::default()
+    };
+    let frame_dims = (image.height, image.width);
+    if !config.local.masks.is_empty() {
+        let geometry = crate::features::local::logic::LocalGeometry {
+            rotation: config.geometry.rotation,
+            fine_rotation: config.geometry.fine_rotation,
+            flip_horizontal: config.geometry.flip_horizontal,
+            flip_vertical: config.geometry.flip_vertical,
+            distortion_k1: config.geometry.distortion_k1,
+            converge_v: config.geometry.converge_v,
+            converge_h: config.geometry.converge_h,
+        };
+        let maps = crate::features::local::processor::build(
+            &config.local,
+            frame_dims.0,
+            frame_dims.1,
+            (image.height, image.width),
+            geometry,
+        );
+        planes.local = Some((
+            maps.stops_plane(),
+            maps.flash_plane(),
+            maps.grade_delta_plane(),
+        ));
+        planes.key_alpha = maps.key_alpha();
+    }
+    if config.local.masks.is_empty()
+        && config.exposure.contrast_mask_strength <= 0.0
+        && config.exposure.diffusion <= 0.0
+    {
+        planes.planarity = crate::features::exposure::exposure_shader::ExposurePlanarity::of(print);
+        return planes;
+    }
+    let Some(bounds) = print.bounds else {
+        return planes;
+    };
+    let unmix = crate::features::exposure::metering::effective_crosstalk_matrix(
+        &config.process,
+        Some(config.process.process_mode),
+    );
+    let weights =
+        crate::features::exposure::bw_filter::plane_weights(&config.process, &config.exposure);
+    let geometry = crate::features::exposure::normalization::PlaneGeometry::from_config(
+        &config.geometry,
+        config.geometry.distortion_k1,
+    );
+    let roi_norm = crate::features::exposure::normalization::normalized_roi(roi, frame_dims);
+    let contrast = (config.exposure.contrast_mask_strength > 0.0).then(|| {
+        crate::features::exposure::normalization::contrast_mask_plane(
+            image, bounds, unmix, geometry, roi_norm, weights,
+        )
+    });
+    let diffusion = (config.exposure.diffusion > 0.0)
+        .then(|| {
+            crate::features::exposure::normalization::diffusion_grid(
+                image, unmix, geometry, roi_norm,
+            )
+        })
+        .and_then(|grid| {
+            crate::features::exposure::normalization::diffusion_plane(&grid, bounds, weights)
+        });
+    let dims = contrast
+        .as_ref()
+        .map(|(_, height, width, _)| (*height, *width))
+        .or_else(|| {
+            (config.exposure.diffusion > 0.0).then(|| {
+                let long = image.width.max(image.height);
+                let scale = if long > 1024 {
+                    1024.0 / long as f64
+                } else {
+                    1.0
+                };
+                (
+                    ((image.height as f64 * scale).round() as usize).max(1),
+                    ((image.width as f64 * scale).round() as usize).max(1),
+                )
+            })
+        });
+    let Some((height, width)) = dims else {
+        planes.planarity = crate::features::exposure::exposure_shader::ExposurePlanarity::of(print);
+        return planes;
+    };
+    let mut grid = vec![0.0; height * width * 4];
+    if let Some((plane, _, _, centre)) = contrast {
+        planes.mask_centre = centre;
+        if plane.len() == height * width {
+            planes.planarity.contrast = true;
+            for (texel, value) in grid.chunks_exact_mut(4).zip(plane) {
+                texel[0] = value;
+            }
+        }
+    }
+    if let Some(diffusion) = diffusion.filter(|plane| plane.len() == height * width * 3) {
+        planes.planarity.diffusion = true;
+        for (texel, rgb) in grid.chunks_exact_mut(4).zip(diffusion.chunks_exact(3)) {
+            texel[1..4].copy_from_slice(rgb);
+        }
+    }
+    planes.grid = Some((grid, height, width));
+    planes.planarity = crate::features::exposure::exposure_shader::ExposurePlanarity {
+        local: !config.local.masks.is_empty(),
+        keyed: planes.key_alpha.is_some(),
+        contrast: planes.planarity.contrast,
+        diffusion: planes.planarity.diffusion,
+    };
+    planes
 }
