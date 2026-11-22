@@ -11,7 +11,6 @@ use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::papers::{PrintColor, effective_paper_profile, resolve_print_color};
 use crate::features::finish::processor::{FinishContext, process as finish_process};
 use crate::features::geometry::processor::GeometryContext;
-use crate::features::process::hue::apply_hue_trim;
 use crate::features::process::path::{RenderPath, is_mono, render_path};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::render_engine::PipelineContext;
@@ -194,7 +193,6 @@ pub fn render(
         "histogram_density".to_string(),
         serde_json::to_value(density_histogram).unwrap_or(serde_json::Value::Null),
     );
-    let toned = apply_hue_trim(&toned, config.process.hue_trim);
     finish(config, toned)
 }
 
