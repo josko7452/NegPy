@@ -78,36 +78,66 @@ pub fn channel_traces(bins: &[f64], log: bool) -> Option<Vec<Trace>> {
 }
 
 /// Paint one trace as a filled strip from the bottom edge.
-pub fn paint_trace(ui: &egui::Ui, area: Rect, trace: &Trace) {
+///
+/// The bins can rise and fall, so the fill is a fan of triangles from the baseline
+/// rather than one convex polygon.
+pub fn paint_trace(ui: &egui::Ui, area: Rect, trace: &Trace) -> Option<()> {
+    if trace.values.len() < 2 {
+        return None;
+    }
+    let step = area.width() / (trace.values.len() - 1) as f32;
+    let mut mesh = egui::Mesh::default();
+    mesh.colored_vertex(area.left_bottom(), trace.color);
+    for (index, value) in trace.values.iter().enumerate() {
+        mesh.colored_vertex(
+            egui::pos2(
+                area.left() + index as f32 * step,
+                area.bottom() - value * area.height(),
+            ),
+            trace.color,
+        );
+    }
+    mesh.colored_vertex(area.right_bottom(), trace.color);
+    for index in 1..trace.values.len() {
+        mesh.add_triangle(0, index as u32, index as u32 + 1);
+    }
+    let last = trace.values.len() as u32 + 1;
+    mesh.add_triangle(0, trace.values.len() as u32, last);
+    ui.painter().add(egui::Shape::mesh(mesh));
+    Some(())
+}
+
+/// Paint one trace as an open line along its top.
+pub fn paint_trace_line(ui: &egui::Ui, area: Rect, trace: &Trace, stroke: Stroke) {
     if trace.values.len() < 2 {
         return;
     }
     let step = area.width() / (trace.values.len() - 1) as f32;
-    let mut points = Vec::with_capacity(trace.values.len() + 2);
-    points.push(area.left_bottom());
-    for (index, value) in trace.values.iter().enumerate() {
-        points.push(egui::pos2(
-            area.left() + index as f32 * step,
-            area.bottom() - value * area.height(),
-        ));
-    }
-    points.push(area.right_bottom());
-    ui.painter().add(egui::Shape::convex_polygon(
-        points,
-        trace.color,
-        Stroke::NONE,
-    ));
+    let points: Vec<egui::Pos2> = trace
+        .values
+        .iter()
+        .enumerate()
+        .map(|(index, value)| {
+            egui::pos2(
+                area.left() + index as f32 * step,
+                area.bottom() - value * area.height(),
+            )
+        })
+        .collect();
+    ui.painter().add(egui::Shape::line(points, stroke));
 }
 
-/// Paint the luma or channel traces on an existing rect, with no fill.
+/// Paint the luma and channel traces in a strip: luma filled, channels as lines.
 pub fn paint_strip(ui: &egui::Ui, area: Rect, bins: &[f64], log: bool, channels: bool) {
     if !is_histogram(bins) {
         return;
     }
+    let theme = Theme::default();
     if channels {
         if let Some(traces) = channel_traces(bins, log) {
-            for trace in traces {
-                paint_trace(ui, area, &trace);
+            let strokes = [theme.channel_red, theme.channel_green, theme.channel_blue];
+            for (trace, color) in traces.into_iter().zip(strokes) {
+                paint_trace_line(ui, area, &trace, Stroke::new(1.0_f32, color));
             }
         }
     } else if let Some(trace) = luma_trace(bins, log) {
@@ -126,10 +156,12 @@ pub fn show(ui: &mut egui::Ui, bins: &[f64], log: bool, channels: bool) {
     if !is_histogram(bins) {
         return;
     }
+    let theme = Theme::default();
     if channels {
         if let Some(traces) = channel_traces(bins, log) {
-            for trace in traces {
-                paint_trace(ui, area, &trace);
+            let strokes = [theme.channel_red, theme.channel_green, theme.channel_blue];
+            for (trace, color) in traces.into_iter().zip(strokes) {
+                paint_trace_line(ui, area, &trace, Stroke::new(1.0_f32, color));
             }
         }
     } else if let Some(trace) = luma_trace(bins, log) {
@@ -193,7 +225,22 @@ pub fn paint_clip_marks(ui: &egui::Ui, area: Rect, bins: &[f64]) {
     }
 }
 
-/// Paint the density histogram's luma row along the bottom edge of a chart.
+/// The share of a chart's height the bottom histogram band occupies.
+pub const DENSITY_BAND_FRACTION: f32 = 0.35;
+
+/// The bottom band of a chart: the density and output histograms share it.
+#[must_use]
+pub fn density_band(chart: Rect) -> Rect {
+    Rect::from_min_max(
+        egui::pos2(
+            chart.left() + 4.0,
+            chart.bottom() - chart.height() * DENSITY_BAND_FRACTION,
+        ),
+        egui::pos2(chart.right() - 4.0, chart.bottom() - 4.0),
+    )
+}
+
+/// The density histogram's luma row, density high on the left, as Python maps it.
 pub fn paint_density(ui: &egui::Ui, area: Rect, bins: &[f64], log: bool) {
     if !is_density_histogram(bins) {
         return;
@@ -207,20 +254,21 @@ pub fn paint_density(ui: &egui::Ui, area: Rect, bins: &[f64], log: bool) {
     if peak <= 0.0 {
         return;
     }
-    let mut points = Vec::with_capacity(122);
-    points.push(area.left_bottom());
-    for (index, value) in counts.iter().enumerate() {
-        points.push(egui::pos2(
-            area.left() + index as f32 / 119.0 * area.width(),
-            area.bottom() - (value / peak) as f32 * area.height(),
-        ));
-    }
-    points.push(area.right_bottom());
-    ui.painter().add(egui::Shape::convex_polygon(
-        points,
-        with_alpha(Theme::default().text_hint, 70),
-        Stroke::NONE,
-    ));
+    let trace = Trace {
+        values: counts.iter().map(|value| (value / peak) as f32).collect(),
+        color: with_alpha(Theme::default().text_secondary, 26),
+    };
+    let reversed = Trace {
+        values: trace.values.iter().rev().copied().collect(),
+        color: trace.color,
+    };
+    paint_trace(ui, area, &reversed);
+    paint_trace_line(
+        ui,
+        area,
+        &reversed,
+        Stroke::new(1.0_f32, with_alpha(Theme::default().text_secondary, 120)),
+    );
 }
 
 #[cfg(test)]
@@ -257,6 +305,14 @@ mod tests {
         assert!(luma_trace(&[], false).is_none());
         assert!(channel_traces(&[1.0; 10], false).is_none());
         assert!(normalized_trace(&[], LUMA_ROW, false).is_empty());
+    }
+
+    #[test]
+    fn a_density_band_takes_the_bottom_of_the_chart() {
+        let chart = Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(100.0, 100.0));
+        let band = density_band(chart);
+        assert!(band.top() >= chart.top() + 64.0);
+        assert!(band.bottom() <= chart.bottom());
     }
 
     #[test]

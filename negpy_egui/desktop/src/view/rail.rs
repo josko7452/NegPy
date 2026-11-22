@@ -586,11 +586,15 @@ impl RailState {
                         Stroke::new(1.0_f32, theme.border_primary),
                         egui::StrokeKind::Inside,
                     );
-                    let bottom = chart.bottom() - 34.0;
-                    let band = Rect::from_min_max(
+                    let plot = Rect::from_min_max(
                         egui::pos2(chart.left() + 4.0, chart.top() + 4.0),
-                        egui::pos2(chart.right() - 4.0, bottom),
+                        egui::pos2(chart.right() - 4.0, chart.bottom() - 34.0),
                     );
+                    let band = if self.analysis_view == 0 {
+                        crate::view::widgets::histogram::density_band(plot)
+                    } else {
+                        plot
+                    };
                     match self.analysis_view {
                         1 => crate::view::widgets::scopes::paint_waveform(
                             ui,
@@ -625,19 +629,19 @@ impl RailState {
                                     band,
                                     bins,
                                     self.analysis_log,
-                                    false,
+                                    true,
                                 );
-                                crate::view::widgets::histogram::paint_clip_marks(ui, band, bins);
                             }
                             let points: Vec<egui::Pos2> = self
                                 .metrics
                                 .curve
                                 .iter()
                                 .map(|[x, y]| {
-                                    let t = ((*x + 0.1) / 1.2).clamp(0.0, 1.0) as f32;
+                                    let tx = ((*x + 0.1) / 1.2).clamp(0.0, 1.0) as f32;
+                                    let ty = ((*y + 0.05) / 1.1).clamp(0.0, 1.0) as f32;
                                     egui::pos2(
-                                        chart.left() + 10.0 + t * (chart.width() - 20.0),
-                                        bottom - *y as f32 * (chart.height() - 44.0),
+                                        plot.left() + tx * plot.width(),
+                                        plot.bottom() - ty * plot.height(),
                                     )
                                 })
                                 .collect();
@@ -650,7 +654,7 @@ impl RailState {
                         }
                     }
                     let wedge = Rect::from_min_size(
-                        egui::pos2(chart.left() + 2.0, bottom + 2.0),
+                        egui::pos2(chart.left() + 2.0, plot.bottom() + 2.0),
                         Vec2::new(chart.width() - 4.0, 22.0),
                     );
                     for step in 0..10 {
