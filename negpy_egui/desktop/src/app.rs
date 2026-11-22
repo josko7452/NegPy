@@ -2407,6 +2407,24 @@ const MIN_RAIL_WIDTH: f32 = 320.0;
 /// The canvas width the toolbar and a fit preview need at a narrow window.
 const MIN_CANVAS_WIDTH: f32 = 120.0;
 
+/// The canvas height the photo keeps when a short window squeezes the strip.
+const MIN_CANVAS_HEIGHT: f32 = 120.0;
+
+/// The Film Strip's height when it is open.
+const STRIP_HEIGHT: f32 = 239.0;
+
+/// The canvas toolbar's height.
+const TOOLBAR_HEIGHT: f32 = 52.0;
+
+/// The smallest window that keeps a canvas between the top bar, toolbar and strip.
+#[must_use]
+pub fn minimum_window_size() -> Vec2 {
+    Vec2::new(
+        2.0 * MIN_CANVAS_WIDTH + MIN_RAIL_WIDTH + 16.0,
+        TOP_ROW_HEIGHT + MIN_CANVAS_HEIGHT + TOOLBAR_HEIGHT + STRIP_HEIGHT + 24.0,
+    )
+}
+
 impl eframe::App for NegFeApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.draw(ctx);
@@ -2519,13 +2537,15 @@ fn paint_shell(
         egui::pos2(screen.right() - margin, screen.bottom() - margin),
     );
     let strip_height = if view.strip_open && has_frame {
-        239.0
+        STRIP_HEIGHT
     } else {
         0.0
     };
-    let toolbar_height = 52.0;
     let canvas_width = rail.left() - margin - (screen.left() + margin);
-    let canvas_bottom = screen.bottom() - margin - toolbar_height - strip_height;
+    let room = (screen.bottom() - margin - body_top - TOOLBAR_HEIGHT).max(0.0);
+    // Keep the canvas height before the strip gives way, as Python's splitter does.
+    let strip_height = strip_height.min((room - MIN_CANVAS_HEIGHT).max(0.0));
+    let canvas_bottom = screen.bottom() - margin - TOOLBAR_HEIGHT - strip_height;
     let canvas_rect = Rect::from_min_size(
         egui::pos2(screen.left() + margin, body_top),
         Vec2::new(canvas_width, canvas_bottom - body_top),
@@ -2668,9 +2688,9 @@ fn paint_shell(
     let toolbar = Rect::from_min_size(
         egui::pos2(
             screen.left() + margin,
-            screen.bottom() - margin - toolbar_height,
+            screen.bottom() - margin - TOOLBAR_HEIGHT,
         ),
-        Vec2::new(canvas_width, toolbar_height),
+        Vec2::new(canvas_width, TOOLBAR_HEIGHT),
     );
     painter.rect_filled(toolbar, 0.0, surface());
     painter.line_segment([toolbar.left_top(), toolbar.right_top()], line());
@@ -4079,6 +4099,24 @@ mod tests {
         let hidden = hidden_tabs(6, Some(4), 180.0, 36.0);
         assert!(!hidden.contains(&4));
         assert!(!hidden.is_empty());
+    }
+
+    #[test]
+    fn a_short_window_keeps_the_canvas_height_before_the_strip() {
+        let minimum = minimum_window_size();
+        assert!(minimum.y >= TOP_ROW_HEIGHT + MIN_CANVAS_HEIGHT + TOOLBAR_HEIGHT + 16.0);
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(1920.0, minimum.y));
+        let view = ViewState {
+            strip_open: true,
+            ..ViewState::default()
+        };
+        let rail = rail_rect(screen);
+        let body_top = screen.top() + TOP_ROW_HEIGHT + 8.0;
+        let room = (screen.bottom() - 8.0 - body_top - TOOLBAR_HEIGHT).max(0.0);
+        let strip = STRIP_HEIGHT.min((room - MIN_CANVAS_HEIGHT).max(0.0));
+        assert!(room - strip >= MIN_CANVAS_HEIGHT);
+        assert!(rail.top() >= body_top);
+        assert!(view.strip_open);
     }
 
     #[test]

@@ -29,8 +29,10 @@ fn main() -> eframe::Result {
     app.set_strip(strip);
     app.set_history(&history, &prints);
     app.set_roll_analysis(roll_analysis);
+    let minimum = negpy_desktop::app::minimum_window_size();
     let viewport = ViewportBuilder::default()
         .with_inner_size([1920.0, 1600.0])
+        .with_min_inner_size([minimum.x, minimum.y])
         .with_resizable(true);
     eframe::run_native(
         "NegFe",

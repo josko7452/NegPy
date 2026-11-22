@@ -124,6 +124,11 @@ impl GoldenManifest {
             .map_err(|error| format!("Could not parse {}: {error}", path.display()))
     }
 
+    /// Parse a manifest from `text`.
+    pub fn read_str(text: &str) -> Result<Self, String> {
+        serde_json::from_str(text).map_err(|error| format!("Could not parse the manifest: {error}"))
+    }
+
     /// Check the entries against the manifest's own window and each other.
     pub fn validate(&self) -> Result<(), String> {
         if self.captures.is_empty() {
@@ -313,6 +318,16 @@ mod tests {
         assert_eq!(fixture.fixture.tab, "roll");
         assert_eq!(fixture.fixture.strip.height, 248);
         assert!(fixture.fixture.analysis.log);
+    }
+
+    #[test]
+    fn the_narrow_manifest_covers_a_smaller_window() {
+        let text = include_str!("../../tests/gui/golden/narrow/manifest.json");
+        let manifest = GoldenManifest::read_str(text).unwrap();
+        manifest.validate().unwrap();
+        assert_eq!(manifest.width, 1400);
+        assert_eq!(manifest.height, 900);
+        assert!(manifest.captures.iter().any(|entry| entry.width == 1400));
     }
 
     #[test]
