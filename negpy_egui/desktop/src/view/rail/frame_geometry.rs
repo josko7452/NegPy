@@ -346,9 +346,6 @@ impl GeometryState {
                     .clicked()
                 {
                     self.crop.draw = !self.crop.draw;
-                    if self.crop.draw {
-                        self.crop.has_crop = true;
-                    }
                     changed = true;
                 }
                 if ui
@@ -551,20 +548,16 @@ mod tests {
     }
 
     #[test]
-    fn turning_draw_on_after_auto_crop_keeps_a_manual_rect() {
+    fn turning_draw_on_does_not_store_a_full_frame_crop() {
         let mut state = GeometryState::default();
         let mut edit = FrameEdit::default();
         edit.config = with_auto_crop(edit.config.clone(), true);
         state.load(&edit);
         state.crop.auto_crop = false;
         state.crop.draw = true;
-        state.crop.has_crop = true;
         state.store(&mut edit);
         assert!(!edit.config.geometry.crop_from_auto);
-        assert_eq!(
-            edit.config.geometry.crop_rect.as_deref(),
-            Some(&[0.0, 0.0, 1.0, 1.0][..])
-        );
+        assert!(edit.config.geometry.crop_rect.is_none());
     }
 
     #[test]
