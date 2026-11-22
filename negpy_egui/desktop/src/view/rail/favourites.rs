@@ -120,14 +120,25 @@ impl FavouritesState {
             );
             return changed;
         }
-        for id in self.chosen.clone() {
+        for index in 0..self.chosen.len() {
+            let id = self.chosen[index].clone();
             let Some(favourite) = FAVOURITES.iter().find(|slider| slider.id == id) else {
                 continue;
             };
             let mut slider = slider_for(*favourite, edit);
-            if slider.show(ui, favourite.label).1 {
+            let response = slider.show(ui, favourite.label);
+            if response.1 {
                 store_slider(*favourite, &slider, edit);
                 changed = true;
+            }
+            if self.editing
+                && reorder_buttons(ui, index, self.chosen.len()).is_some_and(|next| {
+                    self.chosen.swap(index, next);
+                    self.status = "Favorites saved.".to_string();
+                    true
+                })
+            {
+                break;
             }
         }
         changed
@@ -199,6 +210,37 @@ fn store_slider(favourite: Favourite, slider: &CompactSlider, edit: &mut FrameEd
     edit.mark_dirty();
 }
 
+fn reorder_buttons(ui: &mut Ui, index: usize, count: usize) -> Option<usize> {
+    let mut next = None;
+    ui.horizontal(|ui| {
+        if ui
+            .add_enabled(
+                index > 0,
+                egui::Button::new(Icon::ArrowUp.glyph())
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::NONE),
+            )
+            .on_hover_text("Move up")
+            .clicked()
+        {
+            next = Some(index - 1);
+        }
+        if ui
+            .add_enabled(
+                index + 1 < count,
+                egui::Button::new(Icon::ArrowDown.glyph())
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::NONE),
+            )
+            .on_hover_text("Move down")
+            .clicked()
+        {
+            next = Some(index + 1);
+        }
+    });
+    next
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -208,6 +250,22 @@ mod tests {
         let mut state = FavouritesState::default();
         state.set_chosen(vec!["density".to_string(), "retired".to_string()]);
         assert_eq!(state.chosen, vec!["density"]);
+    }
+
+    #[test]
+    fn a_saved_order_reports_the_row_that_moves() {
+        let mut state = FavouritesState::default();
+        state.set_chosen(vec![
+            "density".to_string(),
+            "grade".to_string(),
+            "diffusion".to_string(),
+        ]);
+        state.chosen.swap(1, 0);
+        assert_eq!(state.chosen, vec!["grade", "density", "diffusion"]);
+        let mut state = FavouritesState::default();
+        state.set_chosen(vec!["density".to_string(), "grade".to_string()]);
+        state.chosen.swap(0, 1);
+        assert_eq!(state.chosen, vec!["grade", "density"]);
     }
 
     #[test]
