@@ -2493,10 +2493,9 @@ fn paint_shell(
 ) -> (Rect, ShellHits) {
     let painter = ui.painter().clone();
     let margin = 8.0;
-    paint_top_bar_with(&painter, screen, label, recipe);
-
     let body_top = screen.top() + crate::styles::layout::TOP_ROW_HEIGHT + 8.0;
     let rail_width = rail_width(screen.width());
+    paint_top_bar_beside(&painter, screen, rail_width, label, recipe);
     let search = Rect::from_min_max(
         egui::pos2(screen.right() - rail_width - margin, screen.top() + margin),
         egui::pos2(
@@ -2729,6 +2728,17 @@ pub fn paint_top_bar(painter: &egui::Painter, screen: Rect) {
 
 /// Paint the file name and the current recipe over `screen`.
 pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str, recipe: &str) {
+    paint_top_bar_beside(painter, screen, rail_width(screen.width()), frame, recipe);
+}
+
+/// Paint the file name and the recipe beside a rail of `rail_width`.
+pub fn paint_top_bar_beside(
+    painter: &egui::Painter,
+    screen: Rect,
+    rail_width: f32,
+    frame: &str,
+    recipe: &str,
+) {
     let top = top_bar_rect(screen);
     painter.rect_filled(top, 0.0, surface());
     painter.text(
@@ -2739,7 +2749,7 @@ pub fn paint_top_bar_with(painter: &egui::Painter, screen: Rect, frame: &str, re
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
     );
     painter.text(
-        egui::pos2(screen.right() - RAIL_WIDTH - 26.0, top.center().y),
+        egui::pos2(screen.right() - rail_width - 26.0, top.center().y),
         egui::Align2::RIGHT_CENTER,
         recipe,
         egui::FontId::proportional(12.0),
@@ -4050,6 +4060,25 @@ mod tests {
             assert!(layout.needed() <= width, "{width}: {}", layout.needed());
             assert_eq!(layout.overflow, width < 1400.0);
         }
+    }
+
+    #[test]
+    fn the_recipe_follows_a_narrow_rail() {
+        let screen = Rect::from_min_size(egui::Pos2::ZERO, Vec2::new(900.0, 900.0));
+        let wide = rail_width(1920.0);
+        let narrow = rail_width(screen.width());
+        assert!(narrow < wide);
+        assert!(screen.right() - narrow - 26.0 > screen.right() - wide - 26.0);
+    }
+
+    #[test]
+    fn a_narrow_tab_strip_keeps_the_current_tab_and_offers_the_rest() {
+        use crate::view::widgets::overflow_bar::{hidden_tabs, visible_tabs};
+        let visible = visible_tabs(6, Some(4), 180.0, 36.0);
+        assert!(visible.contains(&4));
+        let hidden = hidden_tabs(6, Some(4), 180.0, 36.0);
+        assert!(!hidden.contains(&4));
+        assert!(!hidden.is_empty());
     }
 
     #[test]

@@ -7,6 +7,7 @@ use eframe::egui::{self, Align2, FontId, Rect, Sense, Stroke, Ui, Vec2};
 
 use crate::styles::icons::Icon;
 use crate::styles::theme::Theme;
+use crate::view::widgets::overflow_bar::{OVERFLOW_WIDTH, hidden_tabs, visible_tabs};
 
 const STACKED_ICON: f32 = 21.0;
 const BESIDE_ICON: f32 = 17.0;
@@ -192,7 +193,10 @@ impl PanelTab {
     }
 }
 
-/// A strip of panel tabs in one track, returning the clicked index.
+/// A strip of panel tabs in one track, returning a clicked tab or an overflow pick.
+///
+/// A narrow strip keeps the current tab in view and moves the rest into the »
+/// menu, as Python's `OverflowBar` does.
 pub fn panel_tab_strip(
     ui: &mut Ui,
     tabs: &[PanelTab],
@@ -209,30 +213,86 @@ pub fn panel_tab_strip(
         Stroke::new(1.0_f32, theme.border_primary),
         egui::StrokeKind::Inside,
     );
-    let fixed: f32 = tabs
+    let min_item = tabs
         .iter()
-        .filter(|tab| tab.icon_only)
-        .map(|_| ICON_ONLY_WIDTH)
-        .sum();
-    let share = tabs.iter().filter(|tab| !tab.icon_only).count();
-    let room = (rect.width() - fixed).max(0.0);
-    let shared = if share == 0 { 0.0 } else { room / share as f32 };
+        .map(|tab| {
+            if tab.icon_only {
+                ICON_ONLY_WIDTH
+            } else {
+                tab.stacked_width()
+            }
+        })
+        .fold(0.0_f32, f32::max)
+        .max(36.0);
+    let visible = visible_tabs(tabs.len(), Some(current), rect.width(), min_item);
+    let hidden = hidden_tabs(tabs.len(), Some(current), rect.width(), min_item);
+    let room = rect.width()
+        - if hidden.is_empty() {
+            0.0
+        } else {
+            OVERFLOW_WIDTH
+        };
+    let width = if visible.is_empty() {
+        0.0
+    } else {
+        room / visible.len() as f32
+    };
     let mut x = rect.left();
     let mut picked = None;
-    for (index, tab) in tabs.iter().enumerate() {
-        let width = if tab.icon_only {
+    for index in visible {
+        let width = if tabs[index].icon_only {
             ICON_ONLY_WIDTH
         } else {
-            shared
+            width
         };
         let tab_rect =
             Rect::from_min_size(egui::pos2(x, rect.top()), Vec2::new(width, rect.height()));
-        if tab.show_in(ui, tab_rect, index == current).clicked() {
+        if tabs[index]
+            .show_in(ui, tab_rect, index == current)
+            .clicked()
+        {
             picked = Some(index);
         }
         x += width;
     }
+    if !hidden.is_empty() {
+        let more = Rect::from_min_size(
+            egui::pos2(rect.right() - OVERFLOW_WIDTH, rect.top()),
+            Vec2::new(OVERFLOW_WIDTH, rect.height()),
+        );
+        let response = ui.interact(more, ui.id().with("tab-overflow"), Sense::click());
+        ui.painter().text(
+            more.center(),
+            egui::Align2::CENTER_CENTER,
+            Icon::More.glyph(),
+            FontId::proportional(f32::from(theme.font_size_small)),
+            theme.text_secondary,
+        );
+        if let Some(index) = overflow_menu(&response, tabs, &hidden) {
+            picked = Some(index);
+        }
+    }
     picked
+}
+
+/// The tabs hidden from the strip, one row each.
+fn overflow_menu(response: &egui::Response, tabs: &[PanelTab], hidden: &[usize]) -> Option<usize> {
+    egui::Popup::menu(response)
+        .show(|ui| {
+            ui.set_min_width(170.0);
+            let mut picked = None;
+            for index in hidden {
+                let tab = &tabs[*index];
+                if ui
+                    .button(format!("{} {}", tab.icon.glyph(), tab.label))
+                    .clicked()
+                {
+                    picked = Some(*index);
+                }
+            }
+            picked
+        })
+        .and_then(|response| response.inner)
 }
 
 #[cfg(test)]
