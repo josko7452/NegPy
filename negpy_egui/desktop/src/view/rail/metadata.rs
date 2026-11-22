@@ -142,7 +142,7 @@ impl Default for MetadataState {
             save_preset: None,
             apply_preset: None,
             delete_preset: None,
-            apply_scope: SegmentedChoice::new(&["Frame", "Roll"]),
+            apply_scope: SegmentedChoice::new(&["Frame", "Selection", "Roll"]),
             preset_status: String::new(),
             cards_open: std::collections::BTreeMap::new(),
             gear: GearLibrary::default(),

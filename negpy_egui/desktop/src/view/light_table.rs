@@ -28,6 +28,10 @@ pub enum LightTableAction {
 pub struct LightTableHit {
     pub cell: Option<usize>,
     pub action: Option<LightTableAction>,
+    /// Whether the click held Ctrl or Shift.
+    pub modified: bool,
+    /// Whether the modifier was Shift.
+    pub shift: bool,
 }
 
 /// The grid geometry for `count` frames at `width`.
@@ -64,6 +68,7 @@ pub fn paint(
     screen: Rect,
     strip: &[(egui::TextureId, Vec2)],
     selected: usize,
+    selected_frames: &std::collections::BTreeSet<usize>,
     marks: &[Option<&str>],
 ) -> LightTableHit {
     let theme = Theme::default();
@@ -100,6 +105,8 @@ pub fn paint(
         let hovered = response.hovered();
         if response.clicked() {
             hit.cell = Some(index);
+            hit.modified = ui.input(|input| input.modifiers.command || input.modifiers.shift);
+            hit.shift = ui.input(|input| input.modifiers.shift);
         }
         ui.painter()
             .rect_filled(cell.shrink(1.0), 0.0, Color32::BLACK);
@@ -112,7 +119,7 @@ pub fn paint(
                 Color32::WHITE,
             );
         }
-        let edge = if index == selected {
+        let edge = if index == selected || selected_frames.contains(&index) {
             theme.border_checked
         } else if hovered {
             theme.border_hover
@@ -287,7 +294,14 @@ mod tests {
         let strip = [(egui::TextureId::Managed(0), Vec2::new(200.0, 100.0))];
         let _ = ctx.run(egui::RawInput::default(), |ctx| {
             egui::CentralPanel::default().show(ctx, |ui| {
-                let hit = paint(ui, ui.max_rect(), &strip, 0, &[Some("keeper")]);
+                let hit = paint(
+                    ui,
+                    ui.max_rect(),
+                    &strip,
+                    0,
+                    &std::collections::BTreeSet::new(),
+                    &[Some("keeper")],
+                );
                 assert!(hit.cell.is_none());
             });
         });

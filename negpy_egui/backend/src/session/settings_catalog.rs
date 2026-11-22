@@ -1046,6 +1046,16 @@ pub fn preset_applied_message(name: &str, extra: usize) -> String {
     format!("{name} applied to this frame and {extra} more.")
 }
 
+/// The line a preset apply leaves in its card, for the target scope.
+#[must_use]
+pub fn preset_applied_for_scope(name: &str, scope: &str, extra: usize) -> String {
+    match scope {
+        "Roll" => format!("{name} applied to the roll and {extra} frames."),
+        "Selection" => format!("{name} applied to this frame and {extra} selected."),
+        _ => preset_applied_message(name, extra),
+    }
+}
+
 /// Each row a preset stores, as `(label, formatted value)`.
 #[must_use]
 pub fn preset_values(data: &Map<String, Value>, section: &str) -> Vec<(&'static str, String)> {
