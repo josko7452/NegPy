@@ -126,6 +126,26 @@ pub struct ShellHits {
     pub mask_action: crate::view::canvas::MaskAction,
     /// A manual Dmin or Dmax pick on the photo.
     pub pick: crate::view::canvas::PickAction,
+    /// An action the toolbar overflow menu chose.
+    pub overflow: Option<ToolbarAction>,
+}
+
+/// A toolbar action the overflow menu offers when its control leaves the row.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolbarAction {
+    Previous,
+    Next,
+    Zoom(u32),
+    StickyZoom(bool),
+    RotateLeft,
+    RotateRight,
+    FlipHorizontal,
+    FlipVertical,
+    Tools,
+    Undo,
+    Redo,
+    Print,
+    RollAverage(bool),
 }
 
 /// The whole-window view a manifest entry asks to show.
@@ -1744,6 +1764,9 @@ impl NegFeApp {
                 self.photo_mode = false;
                 ctx.request_repaint();
             }
+            if let Some(action) = hits.overflow {
+                self.apply_toolbar_action(action, ctx);
+            }
             self.apply_canvas_zoom(ctx, hits.photo);
             if let Some(photo) = hits.photo_mode {
                 self.rail.tab = if photo { Tab::Frame } else { Tab::Roll };
@@ -2242,6 +2265,39 @@ impl NegFeApp {
         let _ = repo.save_global_settings(&settings);
     }
 
+    /// Run one action the toolbar overflow menu offered.
+    fn apply_toolbar_action(&mut self, action: ToolbarAction, ctx: &egui::Context) {
+        match action {
+            ToolbarAction::Previous => {
+                self.previous_frame();
+            }
+            ToolbarAction::Next => {
+                self.next_frame();
+            }
+            ToolbarAction::Zoom(percent) => self.zoom_to_percent(percent),
+            ToolbarAction::StickyZoom(on) => self.set_sticky_zoom(on),
+            ToolbarAction::RotateLeft => self.transform_action(0, ctx),
+            ToolbarAction::RotateRight => self.transform_action(1, ctx),
+            ToolbarAction::FlipHorizontal => self.transform_action(2, ctx),
+            ToolbarAction::FlipVertical => self.transform_action(3, ctx),
+            ToolbarAction::Tools => self.open_tools(),
+            ToolbarAction::Undo => self.undo_action(ctx),
+            ToolbarAction::Redo => self.redo_action(ctx),
+            ToolbarAction::Print => {
+                self.rail.tab = Tab::Export;
+                self.rail.export.show_subtab("file");
+                self.view.tab = Tab::Export;
+                self.photo_mode = false;
+            }
+            ToolbarAction::RollAverage(on) => {
+                self.rail.metering.set_all_averages(on, &mut self.edit);
+                self.rail.select_view(&self.view);
+                self.request_render(ctx, false);
+            }
+        }
+        ctx.request_repaint();
+    }
+
     /// Ask for a true-pixel zoom, applied by the next canvas paint.
     pub fn zoom_to_percent(&mut self, percent: u32) {
         self.zoom_percent = Some(percent);
@@ -2644,6 +2700,7 @@ fn paint_shell(
     hits.roll_average = navigation.roll_average;
     hits.tools = navigation.tools;
     hits.print = navigation.print;
+    hits.overflow = navigation.overflow;
     (rail, hits)
 }
 
@@ -2744,6 +2801,119 @@ fn paint_empty_canvas(ui: &mut egui::Ui, area: Rect) -> bool {
     .clicked()
 }
 
+/// The toolbar controls that leave the row as it narrows, first to last, as Python
+/// `_COLLAPSE_ORDER` does.
+const TOOLBAR_COLLAPSE_ORDER: [&str; 11] = [
+    "flip_v",
+    "flip_h",
+    "rot_r",
+    "rot_l",
+    "average",
+    "redo",
+    "undo",
+    "tools",
+    "print",
+    "zoom",
+    "navigation",
+];
+
+/// One control's width on the toolbar row.
+const TOOLBAR_ITEM_WIDTHS: [(&str, f32); 8] = [
+    ("navigation", 172.0),
+    ("zoom", 76.0),
+    ("geometry", 160.0),
+    ("tools", 94.0),
+    ("undo", 36.0),
+    ("redo", 36.0),
+    ("print", 112.0),
+    ("average", 66.0),
+];
+
+const TOOLBAR_MODE_WIDTH: f32 = 146.0;
+const TOOLBAR_PRIMARY_WIDTH: f32 = 154.0;
+const TOOLBAR_TRAILING_WIDTH: f32 = 108.0;
+const TOOLBAR_OVERFLOW_WIDTH: f32 = 36.0;
+const TOOLBAR_GAP: f32 = 8.0;
+const TOOLBAR_TRACK_PAD: f32 = 4.0;
+const TOOLBAR_TRANSFORM_WIDTH: f32 = 36.0;
+
+/// What the row shows at a given width.
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ToolbarLayout {
+    visible: [bool; 8],
+    transforms: [bool; 4],
+    overflow: bool,
+}
+
+impl ToolbarLayout {
+    /// Show every control at a wide width.
+    fn all() -> Self {
+        Self {
+            visible: [true; 8],
+            transforms: [true; 4],
+            overflow: false,
+        }
+    }
+
+    fn transform_count(&self) -> usize {
+        self.transforms.iter().filter(|shown| **shown).count()
+    }
+
+    fn needed(&self) -> f32 {
+        let mut width = TOOLBAR_MODE_WIDTH + TOOLBAR_GAP;
+        for (index, (_, item_width)) in TOOLBAR_ITEM_WIDTHS.iter().enumerate() {
+            if self.visible[index] {
+                let width_if = if TOOLBAR_ITEM_WIDTHS[index].0 == "geometry" {
+                    self.transform_count() as f32 * TOOLBAR_TRANSFORM_WIDTH
+                        + 2.0 * TOOLBAR_TRACK_PAD
+                } else {
+                    *item_width
+                };
+                width += width_if + TOOLBAR_GAP;
+            }
+        }
+        width
+            + TOOLBAR_PRIMARY_WIDTH
+            + 6.0
+            + TOOLBAR_TRAILING_WIDTH
+            + if self.overflow {
+                TOOLBAR_OVERFLOW_WIDTH + TOOLBAR_GAP
+            } else {
+                0.0
+            }
+    }
+
+    fn hide(&mut self, key: &str) {
+        match key {
+            "flip_v" => self.transforms[3] = false,
+            "flip_h" => self.transforms[2] = false,
+            "rot_r" => self.transforms[1] = false,
+            "rot_l" => self.transforms[0] = false,
+            other => {
+                if let Some(index) = TOOLBAR_ITEM_WIDTHS
+                    .iter()
+                    .position(|(name, _)| *name == other)
+                {
+                    self.visible[index] = false;
+                }
+            }
+        }
+        self.overflow = true;
+    }
+}
+
+/// Fit the toolbar controls to `available` width, hiding in the Python order.
+fn toolbar_layout(available: f32) -> ToolbarLayout {
+    let mut layout = ToolbarLayout::all();
+    for key in TOOLBAR_COLLAPSE_ORDER {
+        if layout.needed() <= available {
+            break;
+        }
+        layout.hide(key);
+    }
+    layout
+}
+
 fn paint_toolbar(
     ui: &mut egui::Ui,
     painter: &egui::Painter,
@@ -2765,6 +2935,7 @@ fn paint_toolbar(
     painter.rect_filled(toolbar, 0.0, surface());
     let row_height = BAR_BUTTON_HEIGHT;
     let top = toolbar.top() + (toolbar.height() - row_height) / 2.0;
+    let layout = toolbar_layout(toolbar.width());
     let mut x = toolbar.left() + 8.0;
 
     let flat = |painter: &egui::Painter, rect: Rect, icon: Icon, color: Color32| {
@@ -2843,134 +3014,167 @@ fn paint_toolbar(
     }
     x = mode.right() + 8.0;
 
-    let navigation = Rect::from_min_size(egui::pos2(x, top), Vec2::new(172.0, row_height));
-    track(painter, navigation);
-    let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
-    let previous = Rect::from_min_size(inner.min, Vec2::splat(BAR_TRACK_BUTTON_HEIGHT));
-    let next = Rect::from_min_size(
-        egui::pos2(inner.right() - BAR_TRACK_BUTTON_HEIGHT, inner.top()),
-        Vec2::splat(BAR_TRACK_BUTTON_HEIGHT),
-    );
-    flat(painter, previous, Icon::ChevronLeft, theme.text_secondary);
-    let previous = ui.interact(previous, ui.id().with("previous-frame"), Sense::click());
-    painter.text(
-        inner.center(),
-        egui::Align2::CENTER_CENTER,
-        &format!("{} / {}", selected + 1, frames.max(selected + 1)),
-        egui::FontId::proportional(13.0),
-        theme.text_secondary,
-    );
-    flat(painter, next, Icon::ChevronRight, theme.text_secondary);
-    let next = ui.interact(next, ui.id().with("next-frame"), Sense::click());
-    x = navigation.right() + 8.0;
-
-    let zoom = Rect::from_min_size(egui::pos2(x, top), Vec2::new(76.0, row_height));
-    track(painter, zoom);
-    painter.text(
-        zoom.center() - Vec2::new(6.0, 0.0),
-        egui::Align2::CENTER_CENTER,
-        &format!("{zoom_percent}%"),
-        egui::FontId::proportional(13.0),
-        theme.text_secondary,
-    );
-    flat(
-        painter,
-        Rect::from_min_size(
-            egui::pos2(zoom.right() - 26.0, zoom.top()),
-            Vec2::new(24.0, row_height),
-        ),
-        Icon::ChevronDown,
-        theme.text_secondary,
-    );
-    let zoom_hit = ui.interact(zoom, ui.id().with("toolbar-zoom"), Sense::click());
-    if let Some(picked) = zoom_menu(zoom_hit, sticky_zoom) {
-        match picked {
-            ZoomPick::Percent(percent) => hits.zoom = Some(percent),
-            ZoomPick::StickyZoom(on) => hits.sticky_zoom = Some(on),
-        }
-    }
-    x = zoom.right() + 8.0;
-
-    let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(160.0, row_height));
-    track(painter, geometry);
-    for (index, icon) in [
-        Icon::RotateLeft,
-        Icon::RotateRight,
-        Icon::LockSimple,
-        Icon::LockOpen,
-    ]
-    .iter()
-    .enumerate()
-    {
-        let button = Rect::from_min_size(
-            egui::pos2(
-                geometry.left()
-                    + BAR_TRACK_PAD
-                    + index as f32 * (geometry.width() - 2.0 * BAR_TRACK_PAD) / 4.0,
-                geometry.top() + BAR_TRACK_PAD,
-            ),
-            Vec2::new(
-                (geometry.width() - 2.0 * BAR_TRACK_PAD) / 4.0,
-                BAR_TRACK_BUTTON_HEIGHT,
-            ),
+    if layout.visible[0] {
+        let navigation = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[0].1, row_height),
         );
-        if index == 3 {
-            painter.rect_filled(button, 4.0, theme.bg_checked);
-        }
+        track(painter, navigation);
+        let inner = navigation.shrink2(Vec2::new(BAR_TRACK_PAD, BAR_TRACK_PAD));
+        let previous = Rect::from_min_size(inner.min, Vec2::splat(BAR_TRACK_BUTTON_HEIGHT));
+        let next = Rect::from_min_size(
+            egui::pos2(inner.right() - BAR_TRACK_BUTTON_HEIGHT, inner.top()),
+            Vec2::splat(BAR_TRACK_BUTTON_HEIGHT),
+        );
+        flat(painter, previous, Icon::ChevronLeft, theme.text_secondary);
+        let previous = ui.interact(previous, ui.id().with("previous-frame"), Sense::click());
+        painter.text(
+            inner.center(),
+            egui::Align2::CENTER_CENTER,
+            &format!("{} / {}", selected + 1, frames.max(selected + 1)),
+            egui::FontId::proportional(13.0),
+            theme.text_secondary,
+        );
+        flat(painter, next, Icon::ChevronRight, theme.text_secondary);
+        let next = ui.interact(next, ui.id().with("next-frame"), Sense::click());
+        hits.previous = previous.clicked();
+        hits.next = next.clicked();
+        x = navigation.right() + TOOLBAR_GAP;
+    }
+
+    if layout.visible[1] {
+        let zoom = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[1].1, row_height),
+        );
+        track(painter, zoom);
+        painter.text(
+            zoom.center() - Vec2::new(6.0, 0.0),
+            egui::Align2::CENTER_CENTER,
+            &format!("{zoom_percent}%"),
+            egui::FontId::proportional(13.0),
+            theme.text_secondary,
+        );
         flat(
             painter,
-            button,
-            *icon,
-            if index == 3 {
-                theme.text_primary
-            } else {
-                theme.text_secondary
-            },
+            Rect::from_min_size(
+                egui::pos2(zoom.right() - 26.0, zoom.top()),
+                Vec2::new(24.0, row_height),
+            ),
+            Icon::ChevronDown,
+            theme.text_secondary,
         );
-        let hit = ui.interact(
-            button,
-            ui.id().with(("toolbar-transform", index)),
-            Sense::click(),
-        );
-        if hit.clicked() {
-            hits.transform = Some(index);
-        }
-    }
-    x = geometry.right() + 8.0;
-
-    for (icon, width) in [(Icon::Wrench, 94.0), (Icon::Undo, 36.0), (Icon::Redo, 36.0)] {
-        let button = Rect::from_min_size(egui::pos2(x, top), Vec2::new(width, row_height));
-        track(painter, button);
-        if icon == Icon::Wrench {
-            flat(
-                painter,
-                Rect::from_min_size(button.min, Vec2::new(30.0, row_height)),
-                icon,
-                theme.text_primary,
-            );
-            painter.text(
-                button.left_center() + Vec2::new(34.0, 0.0),
-                egui::Align2::LEFT_CENTER,
-                "Tools",
-                egui::FontId::proportional(13.0),
-                theme.text_primary,
-            );
-            flat(
-                painter,
-                Rect::from_min_size(
-                    egui::pos2(button.right() - 26.0, button.top()),
-                    Vec2::new(24.0, row_height),
-                ),
-                Icon::ChevronDown,
-                theme.text_secondary,
-            );
-            let hit = ui.interact(button, ui.id().with("toolbar-tools"), Sense::click());
-            if hit.clicked() {
-                hits.tools = true;
+        let zoom_hit = ui.interact(zoom, ui.id().with("toolbar-zoom"), Sense::click());
+        if let Some(picked) = zoom_menu(zoom_hit, sticky_zoom) {
+            match picked {
+                ZoomPick::Percent(percent) => hits.zoom = Some(percent),
+                ZoomPick::StickyZoom(on) => hits.sticky_zoom = Some(on),
             }
-            x = button.right() + 8.0;
+        }
+        x = zoom.right() + TOOLBAR_GAP;
+    }
+
+    if layout.transform_count() > 0 {
+        let width =
+            layout.transform_count() as f32 * TOOLBAR_TRANSFORM_WIDTH + 2.0 * TOOLBAR_TRACK_PAD;
+        let geometry = Rect::from_min_size(egui::pos2(x, top), Vec2::new(width, row_height));
+        track(painter, geometry);
+        let count = layout.transform_count();
+        for (slot, index) in layout
+            .transforms
+            .iter()
+            .enumerate()
+            .filter(|(_, shown)| **shown)
+            .map(|(index, _)| index)
+            .enumerate()
+        {
+            let icon = [
+                Icon::RotateLeft,
+                Icon::RotateRight,
+                Icon::LockSimple,
+                Icon::LockOpen,
+            ][index];
+            let button = Rect::from_min_size(
+                egui::pos2(
+                    geometry.left()
+                        + BAR_TRACK_PAD
+                        + slot as f32 * (geometry.width() - 2.0 * BAR_TRACK_PAD) / count as f32,
+                    geometry.top() + BAR_TRACK_PAD,
+                ),
+                Vec2::new(
+                    (geometry.width() - 2.0 * BAR_TRACK_PAD) / count as f32,
+                    BAR_TRACK_BUTTON_HEIGHT,
+                ),
+            );
+            if index == 3 {
+                painter.rect_filled(button, 4.0, theme.bg_checked);
+            }
+            flat(
+                painter,
+                button,
+                icon,
+                if index == 3 {
+                    theme.text_primary
+                } else {
+                    theme.text_secondary
+                },
+            );
+            let hit = ui.interact(
+                button,
+                ui.id().with(("toolbar-transform", index)),
+                Sense::click(),
+            );
+            if hit.clicked() {
+                hits.transform = Some(index);
+            }
+        }
+        x = geometry.right() + TOOLBAR_GAP;
+    }
+
+    if layout.visible[3] {
+        let button = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[3].1, row_height),
+        );
+        track(painter, button);
+        flat(
+            painter,
+            Rect::from_min_size(button.min, Vec2::new(30.0, row_height)),
+            Icon::Wrench,
+            theme.text_primary,
+        );
+        painter.text(
+            button.left_center() + Vec2::new(34.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            "Tools",
+            egui::FontId::proportional(13.0),
+            theme.text_primary,
+        );
+        flat(
+            painter,
+            Rect::from_min_size(
+                egui::pos2(button.right() - 26.0, button.top()),
+                Vec2::new(24.0, row_height),
+            ),
+            Icon::ChevronDown,
+            theme.text_secondary,
+        );
+        let hit = ui.interact(button, ui.id().with("toolbar-tools"), Sense::click());
+        if hit.clicked() {
+            hits.tools = true;
+        }
+        x = button.right() + TOOLBAR_GAP;
+    }
+
+    for (index, icon) in [(4, Icon::Undo), (5, Icon::Redo)] {
+        if !layout.visible[index] {
             continue;
         }
+        let button = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[index].1, row_height),
+        );
+        track(painter, button);
         flat(
             painter,
             button,
@@ -2994,74 +3198,99 @@ fn paint_toolbar(
         x = button.right() + 6.0;
     }
 
-    let print = Rect::from_min_size(egui::pos2(x, top), Vec2::new(112.0, row_height));
-    track(painter, print);
-    flat(
-        painter,
-        Rect::from_min_size(print.min, Vec2::new(34.0, row_height)),
-        Icon::Print,
-        theme.text_secondary,
-    );
-    painter.text(
-        print.left_center() + Vec2::new(38.0, 0.0),
-        egui::Align2::LEFT_CENTER,
-        "Print",
-        egui::FontId::proportional(13.0),
-        theme.text_secondary,
-    );
-    flat(
-        painter,
-        Rect::from_min_size(
-            egui::pos2(print.right() - 26.0, print.top()),
-            Vec2::new(24.0, row_height),
-        ),
-        Icon::ChevronDown,
-        theme.text_secondary,
-    );
-    let print_hit = ui.interact(print, ui.id().with("toolbar-print"), Sense::click());
-    if print_hit.clicked() {
-        hits.print = true;
-    }
-    x = print.right() + 6.0;
-
-    let roll_average = Rect::from_min_size(egui::pos2(x, top), Vec2::new(66.0, row_height));
-    track(painter, roll_average);
-    if averages_on {
-        painter.rect_filled(roll_average, 4.0, theme.bg_checked);
-        painter.rect_stroke(
-            roll_average,
-            4.0,
-            egui::Stroke::new(1.0_f32, theme.border_checked),
-            egui::StrokeKind::Inside,
+    if layout.visible[6] {
+        let print = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[6].1, row_height),
         );
+        track(painter, print);
+        flat(
+            painter,
+            Rect::from_min_size(print.min, Vec2::new(34.0, row_height)),
+            Icon::Print,
+            theme.text_secondary,
+        );
+        painter.text(
+            print.left_center() + Vec2::new(38.0, 0.0),
+            egui::Align2::LEFT_CENTER,
+            "Print",
+            egui::FontId::proportional(13.0),
+            theme.text_secondary,
+        );
+        flat(
+            painter,
+            Rect::from_min_size(
+                egui::pos2(print.right() - 26.0, print.top()),
+                Vec2::new(24.0, row_height),
+            ),
+            Icon::ChevronDown,
+            theme.text_secondary,
+        );
+        let print_hit = ui.interact(print, ui.id().with("toolbar-print"), Sense::click());
+        if print_hit.clicked() {
+            hits.print = true;
+        }
+        x = print.right() + 6.0;
     }
-    flat(
-        painter,
-        roll_average,
-        Icon::Film,
+
+    if layout.visible[7] {
+        let roll_average = Rect::from_min_size(
+            egui::pos2(x, top),
+            Vec2::new(TOOLBAR_ITEM_WIDTHS[7].1, row_height),
+        );
+        track(painter, roll_average);
         if averages_on {
-            theme.text_primary
-        } else {
-            theme.text_secondary
-        },
-    );
-    if ui
-        .interact(
+            painter.rect_filled(roll_average, 4.0, theme.bg_checked);
+            painter.rect_stroke(
+                roll_average,
+                4.0,
+                egui::Stroke::new(1.0_f32, theme.border_checked),
+                egui::StrokeKind::Inside,
+            );
+        }
+        flat(
+            painter,
             roll_average,
-            ui.id().with("toolbar-roll-average"),
-            Sense::click(),
-        )
-        .clicked()
-    {
-        hits.roll_average = Some(!averages_on);
+            Icon::Film,
+            if averages_on {
+                theme.text_primary
+            } else {
+                theme.text_secondary
+            },
+        );
+        if ui
+            .interact(
+                roll_average,
+                ui.id().with("toolbar-roll-average"),
+                Sense::click(),
+            )
+            .clicked()
+        {
+            hits.roll_average = Some(!averages_on);
+        }
     }
-    x = roll_average.right() + 6.0;
 
     let trailing = Rect::from_min_size(
-        egui::pos2(toolbar.right() - 8.0 - 108.0, top),
-        Vec2::new(108.0, row_height),
+        egui::pos2(toolbar.right() - 8.0 - TOOLBAR_TRAILING_WIDTH, top),
+        Vec2::new(TOOLBAR_TRAILING_WIDTH, row_height),
     );
-    let primary = Rect::from_min_size(egui::pos2(x, top), Vec2::new(154.0, row_height));
+    if layout.overflow {
+        let more = Rect::from_min_size(
+            egui::pos2(trailing.left() - TOOLBAR_GAP - TOOLBAR_OVERFLOW_WIDTH, top),
+            Vec2::new(TOOLBAR_OVERFLOW_WIDTH, row_height),
+        );
+        track(painter, more);
+        flat(painter, more, Icon::More, theme.text_secondary);
+        let response = ui.interact(more, ui.id().with("toolbar-overflow"), Sense::click());
+        hits.overflow = show_toolbar_overflow(&response, &layout, sticky_zoom, averages_on);
+    }
+    let primary = Rect::from_min_size(
+        egui::pos2(
+            toolbar.right() - 8.0 - TOOLBAR_TRAILING_WIDTH - 6.0 - TOOLBAR_PRIMARY_WIDTH,
+            top,
+        ),
+        Vec2::new(TOOLBAR_PRIMARY_WIDTH, row_height),
+    );
     painter.rect_filled(primary, 4.0, theme.bg_primary);
     painter.rect_stroke(
         primary,
@@ -3128,9 +3357,83 @@ fn paint_toolbar(
             );
         }
     }
-    hits.previous = previous.clicked();
-    hits.next = next.clicked();
     hits
+}
+
+/// The overflow menu's actions, one per control the row had to drop.
+fn show_toolbar_overflow(
+    response: &egui::Response,
+    layout: &ToolbarLayout,
+    sticky_zoom: bool,
+    averages_on: bool,
+) -> Option<ToolbarAction> {
+    egui::Popup::menu(response)
+        .show(|ui| {
+            ui.set_min_width(190.0);
+            let mut picked = None;
+            if !layout.visible[0] {
+                ui.horizontal(|ui| {
+                    if ui.button("Previous").clicked() {
+                        picked = Some(ToolbarAction::Previous);
+                    }
+                    if ui.button("Next").clicked() {
+                        picked = Some(ToolbarAction::Next);
+                    }
+                });
+            }
+            if !layout.visible[1] {
+                for percent in [25, 50, 100, 200, 400] {
+                    if ui.button(format!("{percent}%")).clicked() {
+                        picked = Some(ToolbarAction::Zoom(percent));
+                    }
+                }
+                let label = if sticky_zoom {
+                    "Sticky Zoom: On"
+                } else {
+                    "Sticky Zoom: Off"
+                };
+                if ui.button(label).clicked() {
+                    picked = Some(ToolbarAction::StickyZoom(!sticky_zoom));
+                }
+                ui.separator();
+            }
+            if !layout.transforms[0] && ui.button("Rotate CCW").clicked() {
+                picked = Some(ToolbarAction::RotateLeft);
+            }
+            if !layout.transforms[1] && ui.button("Rotate CW").clicked() {
+                picked = Some(ToolbarAction::RotateRight);
+            }
+            if !layout.transforms[2] && ui.button("Flip Horizontal").clicked() {
+                picked = Some(ToolbarAction::FlipHorizontal);
+            }
+            if !layout.transforms[3] && ui.button("Flip Vertical").clicked() {
+                picked = Some(ToolbarAction::FlipVertical);
+            }
+            if !layout.visible[3] && ui.button("Tools").clicked() {
+                picked = Some(ToolbarAction::Tools);
+            }
+            if !layout.visible[4] && ui.button("Undo").clicked() {
+                picked = Some(ToolbarAction::Undo);
+            }
+            if !layout.visible[5] && ui.button("Redo").clicked() {
+                picked = Some(ToolbarAction::Redo);
+            }
+            if !layout.visible[6] && ui.button("Print").clicked() {
+                picked = Some(ToolbarAction::Print);
+            }
+            if !layout.visible[7] {
+                let label = if averages_on {
+                    "Roll Average: On"
+                } else {
+                    "Roll Average: Off"
+                };
+                if ui.button(label).clicked() {
+                    picked = Some(ToolbarAction::RollAverage(!averages_on));
+                }
+            }
+            picked
+        })
+        .and_then(|response| response.inner)
 }
 
 /// What a click on the toolbar zoom readout selected.
@@ -3711,6 +4014,42 @@ mod tests {
         assert!(app.crop_drag.is_none());
         assert!(!app.rail.geometry.crop.draw);
         assert!(!app.rail.exposure.local.draw);
+    }
+
+    #[test]
+    fn the_toolbar_hides_controls_in_the_python_order() {
+        let wide = toolbar_layout(1400.0);
+        assert_eq!(wide, ToolbarLayout::all());
+        let narrow = toolbar_layout(1180.0);
+        assert!(!narrow.transforms[3], "Flip Vertical leaves first");
+        assert!(!narrow.transforms[2], "Flip Horizontal leaves next");
+        assert!(narrow.transforms[0], "Rotate CCW stays while it fits");
+        assert!(narrow.visible[7], "Roll Average stays while it fits");
+    }
+
+    #[test]
+    fn every_hidden_toolbar_control_is_in_the_overflow_menu() {
+        let layout = toolbar_layout(700.0);
+        assert!(layout.overflow);
+        for (index, shown) in layout.visible.iter().enumerate() {
+            if !shown {
+                assert!(
+                    TOOLBAR_COLLAPSE_ORDER.contains(&TOOLBAR_ITEM_WIDTHS[index].0),
+                    "{} has an overflow entry",
+                    TOOLBAR_ITEM_WIDTHS[index].0
+                );
+            }
+        }
+        assert!(layout.transforms.iter().any(|shown| !shown));
+    }
+
+    #[test]
+    fn a_narrow_toolbar_fits_its_visible_controls() {
+        for width in [700.0, 1024.0, 1400.0] {
+            let layout = toolbar_layout(width);
+            assert!(layout.needed() <= width, "{width}: {}", layout.needed());
+            assert_eq!(layout.overflow, width < 1400.0);
+        }
     }
 
     #[test]

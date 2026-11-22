@@ -59,6 +59,7 @@ pub enum Icon {
     ArrowsVertical,
     ListDashes,
     Crosshair,
+    More,
 }
 
 impl Icon {
@@ -116,6 +117,7 @@ impl Icon {
             Self::ArrowsVertical => phosphor::ARROWS_VERTICAL,
             Self::ListDashes => phosphor::LIST_DASHES,
             Self::Crosshair => phosphor::CROSSHAIR,
+            Self::More => phosphor::DOTS_THREE,
         }
     }
 }
