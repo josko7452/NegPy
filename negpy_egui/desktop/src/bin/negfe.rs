@@ -29,6 +29,7 @@ fn main() -> eframe::Result {
     app.set_strip(strip);
     app.set_history(&history, &prints);
     app.set_roll_analysis(roll_analysis);
+    app.start_render_now();
     let minimum = negpy_desktop::app::minimum_window_size();
     let viewport = ViewportBuilder::default()
         .with_inner_size([1920.0, 1600.0])

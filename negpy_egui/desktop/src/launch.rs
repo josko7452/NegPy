@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use crate::edit::FrameEdit;
 use crate::fixture::{GoldenManifest, ReferenceFixture};
 use crate::frame_source::{
-    FrameImage, frame_path, load_display_frame, load_frame_with_source, load_strip, stored_history,
+    FrameImage, frame_path, load_display_frame, load_linear_source, load_strip, stored_history,
 };
 use negpy_backend::kernel::system::paths::default_user_dir;
 use negpy_backend::session::startup::prepare_user_directory_with_probe;
@@ -145,12 +145,11 @@ pub fn load_manual_state(
         );
     };
     let current = frame_path(Some(folder.clone()), &reference.fixture.frame);
-    let (frame, source) = current
+    let source = current
         .as_deref()
-        .and_then(|path| load_frame_with_source(path, profile, 1600).ok())
-        .map_or((FrameImage::empty(), None), |(frame, source)| {
-            (frame, Some(source))
-        });
+        .and_then(|path| load_linear_source(path, profile, 1600).ok())
+        .map(|(source, _)| source);
+    let frame = FrameImage::empty();
     let strip = load_strip(&folder, current.as_deref(), profile, 320, 12);
     let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
@@ -323,7 +322,47 @@ mod tests {
             folder: Some(dir.path().to_path_buf()),
         };
         let (frame, source, ..) = load_manual_state(&options, None, &fixture);
-        assert!(frame.is_rgb());
+        assert!(!frame.is_rgb(), "launch must not paint a CPU frame");
+        assert!(source.is_some());
+    }
+
+    #[test]
+    fn a_launched_frame_waits_for_the_render_worker() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("frame.tif");
+        let mut encoder =
+            tiff::encoder::TiffEncoder::new(std::fs::File::create(&path).unwrap()).unwrap();
+        let samples: Vec<u8> = (0..8 * 6 * 3).map(|value| (value % 32) as u8 * 8).collect();
+        encoder
+            .write_image::<tiff::encoder::colortype::RGB8>(8, 6, &samples)
+            .unwrap();
+        let fixture = ReferenceFixture {
+            name: "reference".to_string(),
+            window: crate::fixture::ReferenceWindow {
+                width: 1920,
+                height: 1600,
+                scale: 1.0,
+            },
+            fixture: crate::fixture::ReferenceState {
+                frame: "frame.tif".to_string(),
+                tab: "roll".to_string(),
+                analysis: crate::fixture::ReferenceAnalysis {
+                    open: true,
+                    log: true,
+                },
+                strip: crate::fixture::ReferenceStrip {
+                    open: true,
+                    height: 248,
+                },
+                canvas: crate::fixture::ReferenceCanvas { fit: true },
+            },
+        };
+        let options = LaunchOptions {
+            profile: None,
+            folder: Some(dir.path().to_path_buf()),
+        };
+        let (frame, source, ..) = load_manual_state(&options, None, &fixture);
+        assert!(!frame.is_rgb());
         assert!(source.is_some());
     }
 

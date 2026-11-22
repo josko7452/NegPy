@@ -454,8 +454,20 @@ impl NegFeApp {
 
     /// Submit one render when the config differs from the frame on the canvas.
     fn request_render(&mut self, ctx: &egui::Context, interactive: bool) {
+        if self.submit_render() {
+            ctx.request_repaint();
+        }
+        let _ = interactive;
+    }
+
+    /// Submit the first render without an event loop.
+    pub fn start_render_now(&mut self) {
+        self.submit_render();
+    }
+
+    fn submit_render(&mut self) -> bool {
         let Some(source) = self.source.clone() else {
-            return;
+            return false;
         };
         let request = crate::render_worker::RenderRequest {
             generation: self.generation + 1,
@@ -469,13 +481,12 @@ impl NegFeApp {
         if self.rendered.as_deref() == Some(hash.as_str())
             || self.requested.as_deref() == Some(hash.as_str())
         {
-            return;
+            return false;
         }
         self.generation += 1;
         self.requested = Some(hash);
         self.renderer.submit(request);
-        ctx.request_repaint();
-        let _ = interactive;
+        true
     }
 
     /// Show the newest finished preview.
