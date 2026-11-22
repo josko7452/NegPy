@@ -635,7 +635,13 @@ impl NegFeApp {
         self.strip
             .iter()
             .enumerate()
-            .filter(|(index, _)| !self.sheet.left_out.contains(index))
+            .filter(|(index, frame)| {
+                !self.sheet.left_out.contains(index)
+                    && !frame.path.as_deref().is_some_and(|path| {
+                        crate::frame_source::stored_mark(profile.as_deref(), path).as_deref()
+                            == Some("excluded")
+                    })
+            })
             .filter_map(|(_, frame)| {
                 let path = frame.path.clone()?;
                 let tile = crate::frame_source::load_thumbnail(&path, profile.as_deref(), 480)?;
@@ -1617,6 +1623,9 @@ impl NegFeApp {
                         if actions.export {
                             self.request_sheet(ctx, true);
                         }
+                        if let Some(index) = actions.tile {
+                            self.select_frame(index);
+                        }
                         if actions.close {
                             self.view.contact_sheet = false;
                         }
@@ -1865,6 +1874,18 @@ impl NegFeApp {
             self.request_crop_all(ctx);
             self.apply_roll_analysis(ctx);
             if self.rail.export.take_contact_sheet_request() {
+                let excluded: Vec<bool> = self
+                    .strip
+                    .iter()
+                    .map(|frame| {
+                        frame.path.as_deref().is_some_and(|path| {
+                            crate::frame_source::stored_mark(self.profile.as_deref(), path)
+                                .as_deref()
+                                == Some("excluded")
+                        })
+                    })
+                    .collect();
+                self.sheet.seed_excluded(&excluded);
                 self.view.contact_sheet = true;
                 self.view.view = "contact_sheet_dialog".to_string();
                 self.sheet.page = 0;

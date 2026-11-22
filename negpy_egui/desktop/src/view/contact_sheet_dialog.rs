@@ -20,6 +20,8 @@ pub struct SheetActions {
     pub close: bool,
     pub export: bool,
     pub refresh: bool,
+    /// The open frame a tile click asked for.
+    pub tile: Option<usize>,
 }
 
 /// The live dialog's state.
@@ -105,7 +107,64 @@ impl ContactSheetDialog {
             egui::StrokeKind::Inside,
         );
         self.show_navigation(ui, canvas, &theme);
-        self.show_controls(ui, panel, &theme)
+        let mut actions = self.show_controls(ui, panel, &theme);
+        actions.tile = self.tile_click(ui, canvas);
+        actions
+    }
+
+    /// Start the picker with the scan's rejected frames left out.
+    pub fn seed_excluded(&mut self, excluded: &[bool]) {
+        for (index, set) in excluded.iter().enumerate() {
+            if *set {
+                self.left_out.insert(index);
+            } else {
+                self.left_out.remove(&index);
+            }
+        }
+    }
+
+    /// The included frames, in strip order.
+    fn visible_frame_indices(&self) -> Vec<usize> {
+        (0..self.frames.len())
+            .filter(|index| !self.left_out.contains(index))
+            .collect()
+    }
+
+    /// Read a click on one of the preview's tiles as a frame index.
+    fn tile_click(&self, ui: &mut egui::Ui, canvas: Rect) -> Option<usize> {
+        let paper = paper_rect(
+            canvas,
+            self.settings.paper_width as f32,
+            self.settings.paper_height as f32,
+        );
+        let inner = paper.shrink(14.0);
+        let columns = 3;
+        let gap = 8.0;
+        let tile_w = (inner.width() - gap * (columns as f32 - 1.0)) / columns as f32;
+        let tile_h = (inner.height() * 0.45 - gap) / 2.0;
+        let mut picked = None;
+        for index in self.visible_frame_indices().into_iter().take(5) {
+            let column = index % columns;
+            let row = index / columns;
+            let tile = Rect::from_min_size(
+                egui::pos2(
+                    inner.left() + column as f32 * (tile_w + gap),
+                    inner.top() + row as f32 * (tile_h + gap),
+                ),
+                Vec2::new(tile_w, tile_h),
+            );
+            if ui
+                .interact(
+                    tile,
+                    ui.id().with(("sheet-tile", index)),
+                    egui::Sense::click(),
+                )
+                .clicked()
+            {
+                picked = Some(index);
+            }
+        }
+        picked
     }
 
     fn show_navigation(&mut self, ui: &mut egui::Ui, canvas: Rect, theme: &Theme) {
@@ -237,6 +296,7 @@ impl ContactSheetDialog {
             close: button(ui, cancel, "Cancel"),
             export: primary_button(ui, export, "Export"),
             refresh: self.changed,
+            tile: None,
         }
     }
 }
@@ -336,6 +396,25 @@ mod tests {
             });
         });
         assert_eq!(state.page, 1);
+    }
+
+    #[test]
+    fn a_left_out_frame_is_not_a_visible_tile() {
+        let mut state = ContactSheetDialog::default();
+        state.frames = vec!["a".into(), "b".into(), "c".into()];
+        state.left_out.insert(1);
+        assert_eq!(state.visible_frame_indices(), vec![0, 2]);
+    }
+
+    #[test]
+    fn left_out_starts_from_the_rejected_marks() {
+        let mut state = ContactSheetDialog::default();
+        state.left_out.extend([0, 2]);
+        state.seed_excluded(&[true, false, true]);
+        assert_eq!(
+            state.left_out.iter().copied().collect::<Vec<_>>(),
+            vec![0, 2]
+        );
     }
 
     #[test]
