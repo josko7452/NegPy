@@ -810,7 +810,14 @@ fn run_stage(
     run: impl FnOnce(&ImageBuffer, &mut PipelineContext) -> StageOutcome,
 ) -> (ImageBuffer, bool) {
     if !context.cache_stages {
-        return (run(image, context).image, true);
+        let outcome = run(image, context);
+        for (name, value) in &outcome.metrics {
+            context.metrics.insert(name.clone(), value.clone());
+        }
+        if outcome.active_roi.is_some() {
+            context.active_roi = outcome.active_roi;
+        }
+        return (outcome.image, true);
     }
     let entry = match field {
         "base" => cache.base.as_ref(),

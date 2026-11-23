@@ -91,6 +91,21 @@ fn an_uncached_render_leaves_no_checkpoint() {
     assert!(engine.cache.base.is_none());
 }
 
+#[test]
+fn an_uncached_render_reports_its_metrics_and_crop() {
+    let image = negative(80, 60);
+    let mut engine = DarkroomEngine::new();
+    let mut context = PipelineContext::new();
+    context.cache_stages = false;
+    let mut config = settings();
+    config.geometry.crop_rect = Some(vec![0.25, 0.25, 0.75, 0.75]);
+    let out = engine.process(&image, &config, "source-a", &mut context);
+    assert!(context.metrics.contains_key("final_bounds"));
+    assert!(context.active_roi.is_some());
+    assert!(out.width < image.width);
+    assert!(out.height < image.height);
+}
+
 fn textured_negative(width: usize, height: usize) -> ImageBuffer {
     let mut pixels = Vec::with_capacity(width * height * 3);
     for y in 0..height {

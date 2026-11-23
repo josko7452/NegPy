@@ -83,7 +83,6 @@ fn an_export_without_a_gpu_reports_the_cpu_fallback() {
 }
 
 #[test]
-#[ignore = "G1-4: full-resolution GPU export still differs from the CPU"]
 fn a_full_resolution_gpu_export_matches_the_cpu() {
     let Some(path) = fixture() else {
         return;
