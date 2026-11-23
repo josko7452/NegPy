@@ -199,6 +199,7 @@ pub fn render_export_file_gpu(
             )
         }),
     };
+    base.metrics(&mut context);
     let source_hash = format!(
         "{}{}",
         crate::services::rendering::source_identity::source_token(config, None),

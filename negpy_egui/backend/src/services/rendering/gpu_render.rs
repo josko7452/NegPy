@@ -29,7 +29,8 @@ pub struct GpuBase {
 }
 
 impl GpuBase {
-    fn metrics(&self, context: &mut PipelineContext) {
+    /// Record the measured values the later stages read from the context.
+    pub fn metrics(&self, context: &mut PipelineContext) {
         context.active_roi = self.active_roi;
         context.metrics.insert(
             "norm_density_range".to_string(),
