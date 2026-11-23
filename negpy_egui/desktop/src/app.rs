@@ -304,6 +304,8 @@ pub struct NegFeApp {
     pub zoom_percent: Option<u32>,
     /// Whether preview renders may use the GPU chain. Startup applies `override.toml`.
     pub gpu_enabled: bool,
+    /// The milliseconds the last frame open took, from the click to the bound state.
+    pub last_frame_open_ms: f64,
     /// The Find field state the shell passes to the painter.
     pub find: FindState,
     /// Whether the Tools menu should open under the pointer.
@@ -351,6 +353,7 @@ impl NegFeApp {
             sticky_zoom: false,
             zoom_percent: None,
             gpu_enabled: true,
+            last_frame_open_ms: 0.0,
             find: FindState::default(),
             tools_open: false,
         }
@@ -396,6 +399,7 @@ impl NegFeApp {
             sticky_zoom: false,
             zoom_percent: None,
             gpu_enabled: true,
+            last_frame_open_ms: 0.0,
             find: FindState::default(),
             tools_open: false,
         }
@@ -1588,6 +1592,7 @@ impl NegFeApp {
             self.zoom_percent = None;
         }
         self.selected = report.index;
+        self.last_frame_open_ms = report.elapsed_ms;
         self.set_history(&report.history, &report.prints);
         self.set_roll_analysis(report.roll_analysis);
     }
@@ -4329,6 +4334,67 @@ mod tests {
             assert!(std::time::Instant::now() < deadline);
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
+    }
+
+    #[test]
+    #[test]
+    #[ignore = "times the golden roll; run with NEGPY_GUI_FOLDER set"]
+    fn the_golden_roll_measures_a_frame_switch() {
+        let Some(folder) = std::env::var_os("NEGPY_GUI_FOLDER").map(std::path::PathBuf::from)
+        else {
+            return;
+        };
+        if !folder.is_dir() {
+            return;
+        }
+        let mut paths = crate::frame_source::roll_paths(&folder);
+        paths.retain(|path| {
+            path.extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("orf"))
+        });
+        paths.truncate(3);
+        if paths.len() < 2 {
+            return;
+        }
+        let profile = std::env::var_os("NEGPY_GUI_PROFILE").map(std::path::PathBuf::from);
+        let mut app = NegFeApp::for_capture("frame", "tone", "", "canvas", 0.0);
+        app.set_profile(profile.as_deref());
+        let strip: Vec<FrameImage> = paths
+            .iter()
+            .map(|path| FrameImage {
+                name: path.file_name().unwrap().to_string_lossy().to_string(),
+                path: Some(path.clone()),
+                width: 1,
+                height: 1,
+                pixels: vec![0; 3],
+            })
+            .collect();
+        app.set_strip(strip);
+        let ctx = egui::Context::default();
+        let mut first = 0.0;
+        for index in 1..paths.len() {
+            let started = std::time::Instant::now();
+            assert!(app.select_frame(index));
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+            loop {
+                app.receive_frame(&ctx);
+                if !app.processing() && app.frame.is_some() {
+                    break;
+                }
+                assert!(std::time::Instant::now() < deadline, "frame open timed out");
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            let elapsed = started.elapsed().as_secs_f64() * 1000.0;
+            if index == 1 {
+                first = elapsed;
+            }
+            assert!(app.last_frame_open_ms > 0.0);
+        }
+        eprintln!(
+            "first switch {first:.1} ms (open {:.1} ms)",
+            app.last_frame_open_ms
+        );
     }
 
     #[test]

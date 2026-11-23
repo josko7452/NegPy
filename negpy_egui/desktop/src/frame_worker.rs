@@ -30,6 +30,8 @@ pub struct FrameOpenReport {
     pub index: usize,
     pub frame: FrameImage,
     pub source: crate::render_worker::SourceFrame,
+    /// Milliseconds this open took, from the request to the bound state.
+    pub elapsed_ms: f64,
     pub edit: FrameEdit,
     pub history: Vec<negpy_backend::session::workspace::HistoryRow>,
     pub prints: Vec<String>,
@@ -39,6 +41,7 @@ pub struct FrameOpenReport {
 /// Decode one frame and read the state its panels show.
 #[must_use]
 pub fn open(request: &FrameOpenRequest) -> Result<FrameOpenReport, String> {
+    let started = std::time::Instant::now();
     let (frame, source) = crate::frame_source::load_frame_with_source(
         &request.path,
         request.profile.as_deref(),
@@ -61,6 +64,7 @@ pub fn open(request: &FrameOpenRequest) -> Result<FrameOpenReport, String> {
         index: request.index,
         frame,
         source,
+        elapsed_ms: started.elapsed().as_secs_f64() * 1000.0,
         edit,
         history,
         prints,
