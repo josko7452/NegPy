@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-23 09:50 | **Last Commit:** `a4efac3f finish: test the rebate tone table on the device`
+**Last Updated:** 2026-11-23 09:50 | **Last Commit:** `f1f5e662 canvas: clear the busy line on a failed open`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. This batch bound the carrier tables,
@@ -27,6 +27,7 @@ findings here, then run `cargo check --workspace` and
 5. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (This Batch)
+- `f1f5e662` canvas: a failed open clears the busy line.
 - `a4efac3f` finish: the rebate tone table matches the core carrier.
 - `c785ca94` tests: the narrow Rust capture set is tracked.
 - `30374e1b` canvas: a processing line shows while a frame waits.

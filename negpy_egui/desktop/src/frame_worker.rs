@@ -76,7 +76,7 @@ struct Slot {
 /// The GUI side of the frame-open worker.
 pub struct FrameWorker {
     slot: Arc<(Mutex<Slot>, Condvar)>,
-    results: Receiver<Result<FrameOpenReport, String>>,
+    results: Receiver<Result<FrameOpenReport, (u64, String)>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -106,7 +106,8 @@ impl FrameWorker {
                     }
                     slot.pending.take().expect("a pending frame request")
                 };
-                let report = open(&request);
+                let generation = request.generation;
+                let report = open(&request).map_err(|error| (generation, error));
                 if sender.send(report).is_err() {
                     break;
                 }
@@ -129,7 +130,7 @@ impl FrameWorker {
 
     /// Take every finished frame without blocking.
     #[must_use]
-    pub fn drain(&self) -> Vec<Result<FrameOpenReport, String>> {
+    pub fn drain(&self) -> Vec<Result<FrameOpenReport, (u64, String)>> {
         let mut reports = Vec::new();
         loop {
             match self.results.try_recv() {

@@ -1593,9 +1593,15 @@ impl NegFeApp {
     /// Show the newest finished frame open, dropping a superseded one.
     fn receive_frame(&mut self, ctx: &egui::Context) {
         for report in self.frame_worker.drain() {
-            let Ok(report) = report else {
-                self.rail.library.set_status("Could not open the frame.");
-                continue;
+            let report = match report {
+                Ok(report) => report,
+                Err((generation, _)) => {
+                    if generation == self.frame_generation {
+                        self.processing = false;
+                    }
+                    self.rail.library.set_status("Could not open the frame.");
+                    continue;
+                }
             };
             if report.generation != self.frame_generation {
                 continue;
@@ -4361,6 +4367,27 @@ mod tests {
         app.set_source(Some(source));
         app.begin_processing();
         assert!(app.processing());
+    }
+
+    #[test]
+    fn a_failed_frame_open_clears_the_processing_line() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut app = NegFeApp::for_capture("roll", "", "geometry", "canvas", 0.0);
+        app.set_strip(two_frame_strip(dir.path()));
+        std::fs::remove_file(dir.path().join("b.tif")).unwrap();
+        assert!(app.select_frame(1));
+        assert!(app.processing);
+        let ctx = egui::Context::default();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while app.processing {
+            app.receive_frame(&ctx);
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the failure must answer"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(app.rail.library.status(), "Could not open the frame.");
     }
 
     #[test]
