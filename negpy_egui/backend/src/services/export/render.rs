@@ -12,6 +12,8 @@ use crate::features::retouch::processor::detect_dust;
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
 use crate::render_engine::{DarkroomEngine, PipelineContext};
 use crate::services::export::print::{apply_layout, effective_border_color};
+use crate::services::rendering::gpu_engine::GpuEngine;
+use crate::services::rendering::gpu_render::{self, GpuBase};
 use crate::services::rendering::import::{import_source, precorrect_source};
 use crate::services::rendering::lens::flatfield_source;
 use crate::services::rendering::retouch::IrPlane;
@@ -120,6 +122,118 @@ fn render_export_file_with(
         content_rect,
         engine: ExportEngine::Cpu("full-resolution export".to_string()),
     })
+}
+
+/// Decode and render one file at full resolution on the GPU.
+///
+/// Returns the CPU reason when the chain cannot paint the frame or no device opens.
+pub fn render_export_file_gpu(
+    path: &Path,
+    config: &WorkspaceConfig,
+    color_space: Option<&str>,
+    gpu: &mut GpuEngine,
+) -> Result<ExportRender, String> {
+    let entry = load_flatfield(config);
+    let imported = import_source(path, config, entry.as_ref(), &[])?;
+    let (baked, retouch_tokens) = crate::services::rendering::retouch::bake_with_tokens(
+        &imported.image,
+        config,
+        imported.ir.as_deref().map(|samples| IrPlane {
+            samples,
+            width: imported.ir_width,
+            height: imported.ir_height,
+        }),
+        1600.0,
+    );
+    let mut context = PipelineContext {
+        cache_stages: false,
+        readback_metrics: false,
+        wants_uv_grid: false,
+        crop_preview_full: false,
+        film_base: imported.base_log,
+        source_base_log: imported.base_log,
+        ..PipelineContext::default()
+    };
+    if let Some(reason) = gpu_render::gpu_rejection(config, &context) {
+        return Err(reason.to_string());
+    }
+    let roi = crate::features::geometry::processor::process(
+        &baked,
+        &config.geometry,
+        crate::features::geometry::processor::GeometryContext {
+            scale_factor: render_scale_factor(baked.height, baked.width),
+        },
+    )
+    .active_roi;
+    let measured = crate::features::exposure::processor::measure_negative(
+        &baked.pixels,
+        baked.width,
+        baked.height,
+        crate::features::exposure::processor::NormalizationSettings {
+            config: &config.process,
+            mode: config.process.process_mode,
+            active_roi: roi.map(|(y1, y2, x1, x2)| {
+                (
+                    y1.max(0) as usize,
+                    y2.max(0) as usize,
+                    x1.max(0) as usize,
+                    x2.max(0) as usize,
+                )
+            }),
+            base_log: imported.base_log,
+        },
+    );
+    let base = GpuBase {
+        bounds: measured.final_bounds,
+        norm_density_range: measured.norm_density_range,
+        textural_range: measured.textural_range,
+        shadow_point: measured.shadow_point,
+        highlight_point: measured.highlight_point,
+        anchor: Some(measured.metered_anchor),
+        active_roi: roi.map(|(y1, y2, x1, x2)| {
+            (
+                y1.max(0) as usize,
+                y2.max(0) as usize,
+                x1.max(0) as usize,
+                x2.max(0) as usize,
+            )
+        }),
+    };
+    let source_hash = format!(
+        "{}{}",
+        crate::services::rendering::source_identity::source_token(config, None),
+        retouch_tokens
+    );
+    let buffer = gpu_render::render(gpu, &baked, config, &source_hash, &base, &mut context);
+    let border_color = effective_border_color(&config.finish, &config.toning);
+    let layout = apply_layout(
+        &buffer,
+        &config.export,
+        config.finish.border_size,
+        &border_color,
+        &config.finish,
+    );
+    let content_rect = layout.content_rect;
+    let image = if sharpens_after_resize(config) {
+        sharpen_rect(&layout.image, content_rect, &config.lab)
+    } else {
+        layout.image
+    };
+    Ok(ExportRender {
+        image,
+        color_space: color_space
+            .map(str::to_string)
+            .or(imported.color_space)
+            .unwrap_or_else(|| {
+                crate::infrastructure::display::color_mgmt::WORKING_COLOR_SPACE.to_string()
+            }),
+        content_rect,
+        engine: ExportEngine::Gpu,
+    })
+}
+
+fn render_scale_factor(height: usize, width: usize) -> f64 {
+    height.max(width) as f64 / 4000.0
 }
 
 /// The flat-field profile the source decode bakes, when the config names one.
