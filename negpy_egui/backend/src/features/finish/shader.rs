@@ -156,29 +156,29 @@ pub fn run_with_tables(
         "finish.uniforms",
     );
     uniform_buffer.upload(&gpu.queue, bytemuck::bytes_of(uniforms));
-    let profile_buffer = GpuBuffer::new(
-        &gpu.device,
-        4,
-        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        "finish.profile",
-    );
     let profile_values: Vec<f32> = if profile.is_empty() {
         vec![0.0]
     } else {
         profile.to_vec()
     };
-    profile_buffer.upload(&gpu.queue, bytemuck::cast_slice(profile_values.as_slice()));
-    let tone_buffer = GpuBuffer::new(
+    let profile_buffer = GpuBuffer::new(
         &gpu.device,
-        12,
+        std::mem::size_of_val(profile_values.as_slice()) as u64,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-        "finish.tone",
+        "finish.profile",
     );
+    profile_buffer.upload(&gpu.queue, bytemuck::cast_slice(profile_values.as_slice()));
     let tone_values: Vec<f32> = if tone.is_empty() {
         vec![0.0; 3]
     } else {
         tone.iter().flatten().copied().collect()
     };
+    let tone_buffer = GpuBuffer::new(
+        &gpu.device,
+        std::mem::size_of_val(tone_values.as_slice()) as u64,
+        wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+        "finish.tone",
+    );
     tone_buffer.upload(&gpu.queue, bytemuck::cast_slice(tone_values.as_slice()));
     let bind_layout = layout(gpu);
     let pipeline_layout = gpu

@@ -1,8 +1,8 @@
 //! The GPU vignette matches the core finish kernel.
 
 use negpy_backend::domain::models::FinishConfig;
-use negpy_backend::features::finish::logic::apply_vignette;
-use negpy_backend::features::finish::shader::{FinishUniforms, run};
+use negpy_backend::features::finish::logic::{apply_carrier, apply_vignette, carrier_profiles};
+use negpy_backend::features::finish::shader::{FinishUniforms, run, run_with_tables};
 use negpy_backend::infrastructure::gpu::device::device;
 use negpy_backend::infrastructure::gpu::resources::GpuTexture;
 use negpy_backend::infrastructure::gpu::shader_loader::ShaderLoader;
@@ -58,4 +58,61 @@ fn the_gpu_vignette_matches_the_core_kernel() {
     }
     let fraction = failures as f64 / want.pixels.len() as f64;
     assert!(fraction < 0.01, "{failures} samples differ, worst {worst}");
+}
+
+#[test]
+fn the_gpu_carrier_matches_the_core_kernel() {
+    let Some(gpu) = device() else {
+        return;
+    };
+    let (width, height) = (40, 28);
+    let image = frame(width, height);
+    let config = FinishConfig {
+        carrier_width: 2.0,
+        carrier_rough: 0.25,
+        carrier_flare: 0.5,
+        carrier_corner: 0.25,
+        ..FinishConfig::default()
+    };
+    let width_px = negpy_backend::features::finish::processor::carrier_width_px(
+        config.carrier_width,
+        30.0,
+        width.max(height) as f64,
+    );
+    let paper = [1.0; 3];
+    let want = apply_carrier(
+        &image,
+        width_px,
+        config.carrier_rough,
+        config.carrier_flare,
+        config.carrier_corner,
+        paper,
+        None,
+    );
+    let uniforms =
+        FinishUniforms::from_config(&config, width, height, paper).with_carrier(width_px as f32);
+    let source = GpuTexture::new(&gpu.device, width as u32, height as u32, "source");
+    source.upload(&gpu.queue, &image.pixels, false);
+    let output = GpuTexture::new(&gpu.device, width as u32, height as u32, "finish");
+    run_with_tables(
+        &gpu,
+        &ShaderLoader::default(),
+        &source,
+        &output,
+        &uniforms,
+        &carrier_profiles(),
+        &negpy_backend::features::finish::logic::linear_carrier_tone(),
+    );
+    let read = output.readback(&gpu);
+    let mut failures = 0usize;
+    let mut worst = 0.0f32;
+    for (index, expected) in want.pixels.iter().enumerate() {
+        let got = read[index / 3 * 4 + index % 3];
+        worst = worst.max((got - expected).abs());
+        if (got - expected).abs() > 3e-3 {
+            failures += 1;
+        }
+    }
+    let fraction = failures as f64 / want.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
 }
