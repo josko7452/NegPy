@@ -207,8 +207,8 @@ pub fn load_linear_source(
 ) -> Result<(crate::render_worker::SourceFrame, WorkspaceConfig), String> {
     let config = stored_config(profile, path);
     let loaded = match factory::load_binned_preview(path) {
-        Some(loaded) => loaded,
-        None => factory::load(
+        Some(loaded) if uses_bounded_preview(&config) => loaded,
+        _ => factory::load(
             path,
             LoadOptions {
                 linear_raw: config.process.linear_raw,
@@ -436,6 +436,24 @@ mod tests {
     fn a_missing_thumbnail_is_empty() {
         assert!(load_thumbnail(Path::new("/missing/frame.orf"), None, 320).is_none());
     }
+
+    #[test]
+    fn a_frame_with_ir_removal_reads_the_full_decode() {
+        let path = Path::new("/home/bruno/WORK/svetovy_vylet/skeny/vv9/P5080635.ORF");
+        if !path.is_file() {
+            return;
+        }
+        assert!(factory::load_binned_preview(path).is_some());
+        let mut ir = WorkspaceConfig::default();
+        ir.retouch.ir_dust_remove = true;
+        assert!(!uses_bounded_preview(&ir));
+        assert!(uses_bounded_preview(&WorkspaceConfig::default()));
+    }
+}
+
+/// Whether the preview decode can skip the full sensor read for this edit.
+fn uses_bounded_preview(config: &WorkspaceConfig) -> bool {
+    !config.retouch.ir_dust_remove
 }
 
 /// Resize a one-band plane with area averaging to a target size.
