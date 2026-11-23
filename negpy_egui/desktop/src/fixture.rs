@@ -327,6 +327,8 @@ mod tests {
         manifest.validate().unwrap();
         assert_eq!(manifest.width, 1400);
         assert_eq!(manifest.height, 900);
+        assert!(manifest.frame_folder().is_some());
+        assert!(manifest.profile_dir().is_some());
         assert!(manifest.captures.iter().any(|entry| entry.width == 1400));
     }
 
