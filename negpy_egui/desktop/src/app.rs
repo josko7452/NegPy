@@ -533,6 +533,12 @@ impl NegFeApp {
         self.submit_render();
     }
 
+    /// Whether a source is bound and no render for its config is pending.
+    #[must_use]
+    pub fn needs_render(&self) -> bool {
+        self.source.is_some() && self.requested.is_none()
+    }
+
     fn submit_render(&mut self) -> bool {
         let Some(source) = self.source.clone() else {
             return false;

@@ -4,9 +4,7 @@ use std::path::PathBuf;
 
 use crate::edit::FrameEdit;
 use crate::fixture::{GoldenManifest, ReferenceFixture};
-use crate::frame_source::{
-    FrameImage, frame_path, load_display_frame, load_linear_source, load_strip, stored_history,
-};
+use crate::frame_source::{FrameImage, frame_path, load_linear_source, load_strip, stored_history};
 use negpy_backend::kernel::system::paths::default_user_dir;
 use negpy_backend::session::startup::prepare_user_directory_with_probe;
 
@@ -197,15 +195,22 @@ pub fn load_manifest_state(
     reference: &ReferenceFixture,
 ) -> (
     FrameImage,
+    Option<crate::render_worker::SourceFrame>,
     Vec<FrameImage>,
     Vec<negpy_backend::session::workspace::HistoryRow>,
     Vec<String>,
     crate::view::rail::roll_analysis::RollAnalysisState,
 ) {
     let profile = manifest.profile_dir();
-    let frame = frame_path(manifest.frame_folder(), &reference.fixture.frame)
+    let current = manifest
+        .frame_folder()
+        .and_then(|folder| frame_path(Some(folder), &reference.fixture.frame));
+    let source = current
         .as_deref()
-        .and_then(|path| load_display_frame(path, profile.as_deref(), 1600).ok())
+        .and_then(|path| load_linear_source(path, profile.as_deref(), 1600).ok());
+    let frame = source
+        .as_ref()
+        .map(|(source, _)| FrameImage::from_source(source))
         .unwrap_or_else(FrameImage::empty);
     let strip = manifest.frame_folder().map_or_else(
         || vec![frame.clone()],
@@ -219,9 +224,6 @@ pub fn load_manifest_state(
             }
         },
     );
-    let current = manifest
-        .frame_folder()
-        .and_then(|folder| frame_path(Some(folder), &reference.fixture.frame));
     let history = current.as_deref().map_or_else(
         || (Vec::new(), Vec::new()),
         |path| stored_history(profile.as_deref(), path),
@@ -236,7 +238,14 @@ pub fn load_manifest_state(
             )
         },
     );
-    (frame, strip, history.0, history.1, roll_analysis)
+    (
+        frame,
+        source.map(|(source, _)| source),
+        strip,
+        history.0,
+        history.1,
+        roll_analysis,
+    )
 }
 
 #[cfg(test)]

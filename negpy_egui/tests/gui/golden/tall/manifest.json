@@ -212,5 +212,7 @@
     "frame": "P5080635.ORF",
     "rig": "Camera, White Light"
   },
-  "fixture": "../../reference_roll.json"
+  "fixture": "../../reference_roll.json",
+  "source_folder": "/home/bruno/WORK/svetovy_vylet/skeny/vv9",
+  "source_profile": "/home/bruno/Dokumenty/NegPy"
 }

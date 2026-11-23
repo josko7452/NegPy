@@ -38,7 +38,8 @@ fn main() -> eframe::Result {
         std::process::exit(2);
     });
     std::fs::create_dir_all(&options.output).unwrap();
-    let (frame, strip, history, prints, roll_analysis) = load_manifest_state(&manifest, &reference);
+    let (frame, source, strip, history, prints, roll_analysis) =
+        load_manifest_state(&manifest, &reference);
     let edit = load_manifest_edit(&manifest, &reference);
     let viewport = ViewportBuilder::default()
         .with_inner_size([manifest.width as f32, manifest.height as f32])
@@ -60,6 +61,7 @@ fn main() -> eframe::Result {
                 reference,
                 options.output,
                 frame,
+                source,
                 strip,
                 history,
                 prints,
@@ -88,6 +90,7 @@ impl CaptureApp {
         reference: ReferenceFixture,
         output: PathBuf,
         frame: FrameImage,
+        source: Option<negpy_desktop::render_worker::SourceFrame>,
         strip: Vec<FrameImage>,
         history: Vec<negpy_backend::session::workspace::HistoryRow>,
         prints: Vec<String>,
@@ -103,6 +106,7 @@ impl CaptureApp {
         );
         app.set_profile(manifest.profile_dir().as_deref());
         app.set_frame(frame.clone());
+        app.set_source(source);
         app.set_strip(strip.clone());
         app.set_history(&history, &prints);
         app.set_roll_analysis(roll_analysis.clone());
@@ -194,7 +198,14 @@ impl eframe::App for CaptureApp {
             ctx.request_repaint();
             return;
         }
+        if self.app.needs_render() {
+            self.app.start_render_now();
+        }
         self.app.draw(ctx);
+        if self.app.processing() {
+            ctx.request_repaint();
+            return;
+        }
         if let Some(image) = capture::take_screenshot(ctx) {
             let image = if expected.accepts(&image) {
                 image

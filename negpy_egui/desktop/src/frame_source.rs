@@ -55,6 +55,18 @@ impl FrameImage {
         }
     }
 
+    /// A placeholder for a source the render worker paints.
+    #[must_use]
+    pub fn from_source(source: &crate::render_worker::SourceFrame) -> Self {
+        Self {
+            name: source.name.clone(),
+            path: None,
+            width: 0,
+            height: 0,
+            pixels: Vec::new(),
+        }
+    }
+
     /// The same frame bound to its source file.
     #[must_use]
     pub fn with_path(mut self, path: &Path) -> Self {
