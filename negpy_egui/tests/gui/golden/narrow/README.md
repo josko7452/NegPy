@@ -7,13 +7,16 @@ The tall set stays the Python reference. A layout change compares against this
 set only for the narrow window, so a fault that appears after the window shrinks
 still fails.
 
+The captures come from the linear source, so the tone and Analysis cards show
+the rendered histogram. The layout gate is 0.80.
+
 Regenerate them with the empty fixture in `manifest.json`:
 
 ```sh
 cd negpy_egui
 cargo run --release --bin negfe-capture -- \
   --golden tests/gui/golden/narrow \
-  --output-dir tests/gui/golden/narrow
+  --output tests/gui/golden/narrow
 ```
 
 The capture binary needs the profile and folder that produced the last set.
