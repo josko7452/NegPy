@@ -1,12 +1,11 @@
 # Development Ledger
-**Last Updated:** 2026-11-23 09:50 | **Last Commit:** `gpu: cover the measured bounds context`
+**Last Updated:** 2026-11-23 14:30 | **Last Commit:** `90d7310d docs: keep the tall set as the Python reference`
 
 ## Current Goal
-Port `negpy/` to Rust in `negpy_egui/`. This batch bound the carrier tables,
-added a GPU export seam and its parity oracle, shows a processing line, tracks
-the narrow capture set and tests the rebate tone table. The next task measures
-why a frame switch is slower than in NegPy. The plan is the active register;
-completed history is in `MIGRATION_PLAN_ARCHIVE.md`.
+Port `negpy/` to Rust in `negpy_egui/`. This batch moved finish and carrier onto
+the GPU tail, made export prefer the GPU seam, fixed uncached render metrics,
+added a bounded RAW preview, and refreshed both capture sets with real render
+data. The next task is the memory-bounded tiled GPU export.
 
 ## Batch Protocol
 After commit #10, run the source audit in `MIGRATION_PLAN.md`. Write its
@@ -15,38 +14,34 @@ findings here. Run targeted tests for the changed code and
 audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
-1. [ ] Export: close the remaining full-resolution GPU/CPU parity gap and add
-   the tiled GPU path (G1-4). The ignored oracle is
-   `a_full_resolution_gpu_export_matches_the_cpu`.
-2. [ ] Frame switch speed (P2-S1): first measure NegPy against NegFe over the
-   golden "test" roll. Then find the slower stage and fix it. Do not change the
-   worker before the measurement.
-3. [ ] Finish: call the carrier-capable finish shader from the GPU tail and keep
-   the CPU fallback until its parity holds (G1-5).
-4. [ ] Evidence: decide whether the tall set follows the narrow set (H1-6,
-   D1-4). The narrow Rust set is tracked in `golden/narrow/`.
-5. [ ] Camera capture: blocked until a human picks the hardware target.
+1. [ ] Tiled export (G1-4): add Python's memory-bounded tile path. The
+   un-tiled GPU export already matches the CPU oracle on the golden fixture.
+2. [ ] Frame switch speed (P2-S1): record the NegPy number on the golden roll
+   and compare it with the release NegFe test. The bounded preview halved the
+   NegFe open time; do not change the worker before that comparison.
+3. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (This Batch)
-- `gpu: cover the measured bounds context`: the measured-bounds context has a direct test.
-- `a23ce8d0` canvas: a failed open clears the busy line.
-- `a4efac3f` finish: the rebate tone table matches the core carrier.
-- `c785ca94` tests: the narrow Rust capture set is tracked.
-- `30374e1b` canvas: a processing line shows while a frame waits.
-- `aca27397` gpu: measured bounds reach the export context.
-- `69186ffc` export: a GPU render entry point and its ignored parity oracle.
-- `7174a9ca` finish: the carrier tables size from their input.
-- `2ca989c7` finish: the shader runner accepts carrier tables.
+- `53a6b516` capture: the golden frame renders from its linear source.
+- `9b5e8b35` tests: the narrow guard set is refreshed from its source.
+- `90d7310d` docs: the tall set stays the Python reference.
+- `b4affaef` frame: IR removal keeps the full decode.
+- `533d6bab` loaders: a RAW preview bins without a full demosaic.
+- `db89aa4d` frame: the golden roll switch is measured.
+- `601c0741` gpu: the print finish runs on the device.
+- `4fa64f0d` export: the GPU chain is preferred when a device opens.
+- `7ec50bce` engine: an uncached render keeps its metrics and crop.
 
 ## Verification
-- Targeted tests pass for finish tables and carrier parity, export reporting,
-  the narrow capture manifest, and the processing state.
-- `cargo build --release --bin negfe` passes after the batch. The full workspace
-  suite is not part of the batch check.
-- The export parity oracle is ignored until G1-4 is fixed.
+- Targeted tests pass for the capture fixture/launch path, the bounded RAW
+  preview, the finish/carrier GPU parity, export reporting and the render
+  engine's uncached metrics.
+- `cargo build --release --bin negfe` passes after the batch.
+- The refreshed narrow captures pass the 0.80 layout gate; tone and finish
+  measure 0.879 and 0.884 against the previous tracked set.
+- The full-resolution GPU export oracle passes on the golden fixture. The
+  tiled path remains open.
 - Clippy remains blocked by existing lints, not by this batch.
-- The narrow Rust set is tracked under `tests/gui/golden/narrow/`. The tall
-  Python set remains the binding reference.
 
 ## Constraints / Gotchas
 - Never edit `negpy/`; `negpy_core` stays its own workspace.
@@ -59,11 +54,10 @@ audit does not authorize an 11th commit.
   chart uses the bottom band and RGB lines.
 - Local masks, Contrast Mask and Diffusion bind real GPU planes. The masked
   tail and masked exposure parity tests pass.
-- The GPU chain reads CPU-measured bounds and runs the finish stage on the CPU.
-- Export still uses the CPU writer. The GPU seam exists, but its full-resolution
-  oracle is ignored until the remaining pixel gap closes.
-- A frame switch in NegFe is slower than in NegPy. The next session measures it
-  over the golden "test" roll before changing the worker.
+- The GPU tail runs finish and carrier; carrier and vignette chain parity pass.
+- Export prefers the GPU per frame and falls back to the CPU with a reason.
+- A frame switch in NegFe is slower than in NegPy; the bounded preview halves
+  the decode. Measure NegPy before changing the worker again.
 - Detect groups only the axes the worker returned.
 - Contact Sheet left-out seeds from `excluded` marks when the dialog opens.
 - `GpuTexture::readback` waits on the queue; no pipelining or stage cache exists.
@@ -72,8 +66,8 @@ audit does not authorize an 11th commit.
 - The local mask tool returns before it claims a drag when its mode is `Off`.
 - Bounds picks still sample the processed image; see the plan before trusting a
   pick on a cropped frame.
-- The capture manifest records `source_folder` and `source_profile`; the narrow
-  set needs both to regenerate.
+- The capture manifest records `source_folder` and `source_profile`; both are
+  needed to regenerate either set.
 - Generated captures stay untracked under `tests/gui/actual/`.
 - Session batches are 10 commits; this ledger stays under 120 lines.
 - `negpy_egui/AGENTS.md` still says 5 commits and 60 ledger lines. A human must
