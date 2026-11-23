@@ -285,6 +285,8 @@ pub struct NegFeApp {
     /// The request hash in flight, and the config hash that painted the canvas.
     requested: Option<String>,
     rendered: Option<String>,
+    /// The frame decode or preview render the canvas is waiting for.
+    processing: bool,
     generation: u64,
     texture: Option<TextureHandle>,
     strip_textures: Vec<TextureHandle>,
@@ -338,6 +340,7 @@ impl NegFeApp {
             sheet_request: 0,
             requested: None,
             rendered: None,
+            processing: false,
             generation: 0,
             texture: None,
             strip_textures: Vec::new(),
@@ -382,6 +385,7 @@ impl NegFeApp {
             sheet_request: 0,
             requested: None,
             rendered: None,
+            processing: false,
             generation: 0,
             texture: None,
             strip_textures: Vec::new(),
@@ -501,6 +505,17 @@ impl NegFeApp {
         self.rendered = None;
     }
 
+    /// Whether the canvas waits for a frame decode or a preview render.
+    #[must_use]
+    pub fn processing(&self) -> bool {
+        self.processing
+    }
+
+    /// Mark the canvas busy for a request this app is about to issue.
+    pub fn begin_processing(&mut self) {
+        self.processing = true;
+    }
+
     /// Submit one render when the config differs from the frame on the canvas.
     fn request_render(&mut self, ctx: &egui::Context, interactive: bool) {
         if self.submit_render() {
@@ -534,6 +549,7 @@ impl NegFeApp {
         }
         self.generation += 1;
         self.requested = Some(hash);
+        self.processing = true;
         self.renderer.submit(request);
         true
     }
@@ -1206,6 +1222,7 @@ impl NegFeApp {
                 continue;
             }
             self.rendered = Some(output.config_hash);
+            self.processing = false;
             self.freeze_autocrop(&output.metrics);
             self.store_measured_bounds(&output.metrics);
             self.rail
@@ -1523,6 +1540,7 @@ impl NegFeApp {
         self.selected_frames.clear();
         self.selected_frames.insert(index);
         self.frame_generation += 1;
+        self.processing = true;
         self.frame_worker
             .submit(crate::frame_worker::FrameOpenRequest {
                 generation: self.frame_generation,
@@ -1583,6 +1601,7 @@ impl NegFeApp {
                 continue;
             }
             self.show_frame(report);
+            self.processing = false;
             ctx.request_repaint();
         }
     }
@@ -1877,6 +1896,7 @@ impl NegFeApp {
                 self.photo_mode,
                 &mut self.mask_drag,
                 self.rail.metering.pick != crate::view::rail::metering::MeteringPick::Off,
+                self.processing,
                 retouch_tool,
                 &mut self.retouch_drag,
                 self.zoom,
@@ -2610,6 +2630,9 @@ const STRIP_HEIGHT: f32 = 239.0;
 /// The canvas toolbar's height.
 const TOOLBAR_HEIGHT: f32 = 52.0;
 
+/// The line the canvas shows while a frame decode or render runs.
+pub const PROCESSING: &str = "Processing…";
+
 /// The smallest window that keeps a canvas between the top bar, toolbar and strip.
 #[must_use]
 pub fn minimum_window_size() -> Vec2 {
@@ -2695,6 +2718,7 @@ fn paint_shell(
     photo_mode: bool,
     mask_drag: &mut crate::view::canvas::MaskDrag,
     pick_active: bool,
+    processing: bool,
     retouch_tool: crate::view::canvas::RetouchTool,
     retouch_drag: &mut crate::view::canvas::RetouchDrag,
     zoom: f32,
@@ -2802,6 +2826,7 @@ fn paint_shell(
     } else {
         hits.import = paint_empty_canvas(ui, photo);
     }
+    paint_processing(painter.clone(), photo, processing);
 
     if strip_height > 0.0 {
         let strip = Rect::from_min_size(
@@ -2968,6 +2993,21 @@ pub fn paint_top_bar_beside(
         recipe,
         egui::FontId::proportional(12.0),
         Color32::from_rgb(0xbc, 0xbc, 0xbc),
+    );
+}
+
+/// Paint the busy line over the picture while a frame decode or render runs.
+fn paint_processing(painter: egui::Painter, photo: Rect, processing: bool) {
+    if !processing {
+        return;
+    }
+    let theme = Theme::default();
+    painter.text(
+        egui::pos2(photo.center().x, photo.top() + f32::from(theme.space_xl)),
+        egui::Align2::CENTER_TOP,
+        PROCESSING,
+        egui::FontId::proportional(f32::from(theme.font_size_small)),
+        theme.text_hint,
     );
 }
 
@@ -4290,8 +4330,10 @@ mod tests {
         app.set_strip(two_frame_strip(dir.path()));
         app.zoom = 2.5;
         assert!(app.select_frame(1));
+        assert!(app.processing(), "the canvas waits for the decode");
         assert!(app.frame.is_none(), "the click must not decode inline");
         wait_for_frame(&mut app);
+        assert!(!app.processing(), "the decoded frame ends the wait");
         assert!((app.zoom - 1.0).abs() < 1e-6);
         app.set_sticky_zoom(true);
         app.zoom = 2.5;
@@ -4299,6 +4341,26 @@ mod tests {
         assert!(app.select_frame(0));
         wait_for_frame(&mut app);
         assert!((app.zoom - 2.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_render_request_marks_the_canvas_busy() {
+        let mut app = NegFeApp::for_capture("frame", "tone", "", "canvas", 0.0);
+        let source = crate::render_worker::SourceFrame {
+            name: "frame.orf".to_string(),
+            hash: "busy".to_string(),
+            image: negpy_backend::infrastructure::loaders::image_buffer::ImageBuffer::from_rgb(
+                8,
+                6,
+                vec![0.2; 8 * 6 * 3],
+            ),
+            ir: None,
+            ir_width: 0,
+            ir_height: 0,
+        };
+        app.set_source(Some(source));
+        app.begin_processing();
+        assert!(app.processing());
     }
 
     #[test]
