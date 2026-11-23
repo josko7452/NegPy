@@ -42,6 +42,17 @@ pub fn is_camera_raw(path: &Path) -> bool {
     select_loader(path) == LoaderKind::CameraRaw
 }
 
+/// Decode a camera RAW at half resolution for an automatic preview.
+///
+/// A finished image, or a RAW this decoder cannot bin, returns `None` so the caller
+/// falls back to the full decode.
+#[must_use]
+pub fn load_binned_preview(path: &Path) -> Option<LoadedImage> {
+    is_camera_raw(path)
+        .then(|| crate::infrastructure::loaders::raw_decoder::decode_binned_preview(path))
+        .flatten()
+}
+
 /// Decode `path` with the loader its extension and contents select.
 pub fn load(path: &Path, options: LoadOptions) -> Result<LoadedImage, String> {
     let decoded = match select_loader(path) {

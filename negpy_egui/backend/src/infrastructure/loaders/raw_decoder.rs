@@ -6,7 +6,11 @@
 use std::path::Path;
 
 use rawler::imgop::develop::{Intermediate, ProcessingStep, RawDevelop};
+use rawler::imgop::sensor::Demosaic;
+use rawler::imgop::sensor::bayer::superpixel::Superpixel3Channel;
 use rawler::imgop::xyz::Illuminant;
+use rawler::imgop::{Dim2, Point, Rect};
+use rawler::rawimage::RawPhotometricInterpretation;
 
 use crate::infrastructure::loaders::helpers::read_orientation;
 use crate::infrastructure::loaders::image_buffer::{ImageBuffer, LoadedImage};
@@ -92,6 +96,54 @@ impl RawDecoder for RawlerDecoder {
             ..LoadedImage::default()
         })
     }
+}
+
+/// Decode a camera RAW at half resolution by binning each 2x2 CFA cell.
+///
+/// The unpack reads the sensor once. The binning keeps one RGB triplet per cell,
+/// so a preview never runs the full demosaic. The caller still fits the result to
+/// its own edge and applies orientation, as the display path does.
+#[must_use]
+pub fn decode_binned_preview(path: &Path) -> Option<LoadedImage> {
+    if unsupported_raw_reason(path).is_some() {
+        return None;
+    }
+    let mut raw = rawler::decode_file(path).ok()?;
+    let RawPhotometricInterpretation::Cfa(config) = &raw.photometric else {
+        return None;
+    };
+    if config.sensor != rawler::imgop::sensor::SensorType::Bayer {
+        return None;
+    }
+    let (cfa, colors) = (config.cfa.clone(), config.colors.clone());
+    raw.apply_scaling().ok()?;
+    let area = raw.crop_area.or(raw.active_area)?;
+    let (width, height) = (raw.width, raw.height);
+    let pixels = rawler::pixarray::PixF32::new_with(raw.data.as_f32().into_owned(), width, height);
+    let roi = Rect::new(
+        Point::new(area.p.x, area.p.y),
+        Dim2::new(area.d.w & !1, area.d.h & !1),
+    );
+    let binned = Superpixel3Channel::new().demosaic(&pixels, &cfa, &colors, roi);
+    let gains = white_balance(&raw.wb_coeffs);
+    let mut out = Vec::with_capacity(binned.width * binned.height * 3);
+    for pixel in binned.pixels() {
+        let rgb = gains.map_or(*pixel, |[red, green, blue]| {
+            [
+                (pixel[0] * red).clamp(0.0, 1.0),
+                (pixel[1] * green).clamp(0.0, 1.0),
+                (pixel[2] * blue).clamp(0.0, 1.0),
+            ]
+        });
+        out.extend_from_slice(&rgb);
+    }
+    let mut image = ImageBuffer::from_rgb(binned.width, binned.height, out);
+    image.rgb_xyz_matrix = camera_matrix(&raw);
+    Some(LoadedImage {
+        image: Some(image),
+        orientation: read_orientation(path),
+        ..LoadedImage::default()
+    })
 }
 
 fn white_balance(coeffs: &[f32; 4]) -> Option<[f32; 3]> {

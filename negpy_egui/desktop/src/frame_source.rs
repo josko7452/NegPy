@@ -206,14 +206,17 @@ pub fn load_linear_source(
     max_edge: usize,
 ) -> Result<(crate::render_worker::SourceFrame, WorkspaceConfig), String> {
     let config = stored_config(profile, path);
-    let loaded = factory::load(
-        path,
-        LoadOptions {
-            linear_raw: config.process.linear_raw,
-            positive_decode: None,
-            load_ir: true,
-        },
-    )?;
+    let loaded = match factory::load_binned_preview(path) {
+        Some(loaded) => loaded,
+        None => factory::load(
+            path,
+            LoadOptions {
+                linear_raw: config.process.linear_raw,
+                positive_decode: None,
+                load_ir: true,
+            },
+        )?,
+    };
     let decoded = loaded
         .image
         .ok_or_else(|| format!("Could not decode {}.", path.display()))?;
