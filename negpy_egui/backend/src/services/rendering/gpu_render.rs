@@ -126,6 +126,43 @@ mod rejection_tests {
     }
 }
 
+#[cfg(test)]
+mod metrics_tests {
+    use super::*;
+
+    #[test]
+    fn a_base_records_the_measured_values_for_the_tail() {
+        let base = GpuBase {
+            bounds: LogNegativeBounds::new([-1.5, -1.4, -1.3], [-0.2, -0.1, -0.05]),
+            norm_density_range: 1.25,
+            textural_range: 0.8,
+            shadow_point: -1.2,
+            highlight_point: -0.3,
+            anchor: Some(-0.75),
+            active_roi: Some((2, 20, 3, 30)),
+        };
+        let mut context = PipelineContext::new();
+        base.metrics(&mut context);
+        assert_eq!(context.active_roi, Some((2, 20, 3, 30)));
+        assert_eq!(
+            context
+                .metrics
+                .get("norm_density_range")
+                .and_then(|v| v.as_f64()),
+            Some(1.25)
+        );
+        assert_eq!(
+            context
+                .metrics
+                .get("metered_anchor")
+                .and_then(|v| v.as_f64()),
+            Some(-0.75)
+        );
+        assert!(context.metrics.contains_key("final_bounds"));
+        assert!(context.metrics.contains_key("pre_trim_bounds"));
+    }
+}
+
 /// Run the base, exposure, CLAHE, Lab and toning stages on the GPU, then finish.
 #[must_use]
 pub fn render(

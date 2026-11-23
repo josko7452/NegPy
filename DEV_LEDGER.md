@@ -1,5 +1,5 @@
 # Development Ledger
-**Last Updated:** 2026-11-23 09:50 | **Last Commit:** `f1f5e662 canvas: clear the busy line on a failed open`
+**Last Updated:** 2026-11-23 09:50 | **Last Commit:** `gpu: cover the measured bounds context`
 
 ## Current Goal
 Port `negpy/` to Rust in `negpy_egui/`. This batch bound the carrier tables,
@@ -27,7 +27,8 @@ findings here, then run `cargo check --workspace` and
 5. [ ] Camera capture: blocked until a human picks the hardware target.
 
 ## Completed (This Batch)
-- `f1f5e662` canvas: a failed open clears the busy line.
+- `gpu: cover the measured bounds context`: the measured-bounds context has a direct test.
+- `a23ce8d0` canvas: a failed open clears the busy line.
 - `a4efac3f` finish: the rebate tone table matches the core carrier.
 - `c785ca94` tests: the narrow Rust capture set is tracked.
 - `30374e1b` canvas: a processing line shows while a frame waits.
@@ -40,8 +41,10 @@ findings here, then run `cargo check --workspace` and
 - `cargo check --workspace` passes after the batch.
 - Targeted tests pass for finish tables and carrier parity, export reporting,
   the narrow capture manifest, and the processing state.
-- `cargo test --workspace` has not been rerun since the batch closed; the export
-  parity oracle is ignored until G1-4 is fixed.
+- `cargo test -p negpy-backend --lib` passes: 359 tests. `cargo test -p
+  negpy-desktop --lib` passes: 372 tests. The uncached workspace integration
+  link stalled in `rust-lld`, so the integration suites were not rerun.
+- The export parity oracle is ignored until G1-4 is fixed.
 - Clippy remains blocked by existing lints, not by this batch.
 - The narrow Rust set is tracked under `tests/gui/golden/narrow/`. The tall
   Python set remains the binding reference.
