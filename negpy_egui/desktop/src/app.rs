@@ -869,6 +869,7 @@ impl NegFeApp {
             preset_exports: vec![None; count],
             color_space: self.edit.config.export.export_color_space.clone(),
             user_icc_dir: std::path::PathBuf::from(app.user_icc_dir),
+            gpu_enabled: self.gpu_enabled,
         });
         ctx.request_repaint();
     }
@@ -929,6 +930,7 @@ impl NegFeApp {
             preset_exports,
             color_space: preset.export_color_space.clone(),
             user_icc_dir: std::path::PathBuf::from(app.user_icc_dir),
+            gpu_enabled: self.gpu_enabled,
         });
         ctx.request_repaint();
     }
