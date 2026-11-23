@@ -2,6 +2,7 @@
 
 use negpy_backend::domain::models::FinishConfig;
 use negpy_backend::features::finish::logic::{apply_carrier, apply_vignette, carrier_profiles};
+use negpy_backend::features::finish::processor::{RebateMetrics, rebate_tone};
 use negpy_backend::features::finish::shader::{FinishUniforms, run, run_with_tables};
 use negpy_backend::infrastructure::gpu::device::device;
 use negpy_backend::infrastructure::gpu::resources::GpuTexture;
@@ -115,4 +116,66 @@ fn the_gpu_carrier_matches_the_core_kernel() {
     }
     let fraction = failures as f64 / want.pixels.len() as f64;
     assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
+}
+
+#[test]
+fn a_rebate_tone_table_matches_the_core_carrier() {
+    let Some(gpu) = device() else {
+        return;
+    };
+    let (width, height) = (40, 28);
+    let image = frame(width, height);
+    let mut settings = negpy_backend::domain::models::WorkspaceConfig::default();
+    settings.finish.carrier_width = 2.0;
+    settings.finish.carrier_rough = 0.25;
+    settings.finish.carrier_flare = 0.5;
+    settings.finish.carrier_corner = 0.25;
+    let bounds = negpy_backend::features::exposure::normalization::LogNegativeBounds::new(
+        [-1.8, -1.7, -1.6],
+        [-0.2, -0.1, -0.05],
+    );
+    let tone = rebate_tone(
+        &settings,
+        RebateMetrics {
+            final_bounds: Some(bounds),
+        },
+    );
+    let paper = negpy_backend::services::export::print::effective_paper_linear(
+        &settings.finish,
+        &settings.toning,
+    );
+    let width_px = negpy_backend::features::finish::processor::carrier_width_px(
+        settings.finish.carrier_width,
+        30.0,
+        width.max(height) as f64,
+    );
+    let want = apply_carrier(
+        &image,
+        width_px,
+        settings.finish.carrier_rough,
+        settings.finish.carrier_flare,
+        settings.finish.carrier_corner,
+        paper,
+        Some(&tone),
+    );
+    let uniforms = FinishUniforms::from_config(&settings.finish, width, height, paper)
+        .with_carrier(width_px as f32);
+    let source = GpuTexture::new(&gpu.device, width as u32, height as u32, "source");
+    source.upload(&gpu.queue, &image.pixels, false);
+    let output = GpuTexture::new(&gpu.device, width as u32, height as u32, "finish");
+    run_with_tables(
+        &gpu,
+        &ShaderLoader::default(),
+        &source,
+        &output,
+        &uniforms,
+        &carrier_profiles(),
+        &tone,
+    );
+    let read = output.readback(&gpu);
+    let failures = (0..want.pixels.len())
+        .filter(|index| (read[index / 3 * 4 + index % 3] - want.pixels[*index]).abs() > 1e-2)
+        .count();
+    let fraction = failures as f64 / want.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ");
 }
