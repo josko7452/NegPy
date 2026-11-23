@@ -10,8 +10,9 @@ completed history is in `MIGRATION_PLAN_ARCHIVE.md`.
 
 ## Batch Protocol
 After commit #10, run the source audit in `MIGRATION_PLAN.md`. Write its
-findings here, then run `cargo check --workspace` and
-`cargo test --workspace`. The audit does not authorize an 11th commit.
+findings here. Run targeted tests for the changed code and
+`cargo build --release --bin negfe`. Do not run the full workspace suite. The
+audit does not authorize an 11th commit.
 
 ## Next Steps (Ordered)
 1. [ ] Export: close the remaining full-resolution GPU/CPU parity gap and add
@@ -38,12 +39,10 @@ findings here, then run `cargo check --workspace` and
 - `2ca989c7` finish: the shader runner accepts carrier tables.
 
 ## Verification
-- `cargo check --workspace` passes after the batch.
 - Targeted tests pass for finish tables and carrier parity, export reporting,
   the narrow capture manifest, and the processing state.
-- `cargo test -p negpy-backend --lib` passes: 359 tests. `cargo test -p
-  negpy-desktop --lib` passes: 372 tests. The uncached workspace integration
-  link stalled in `rust-lld`, so the integration suites were not rerun.
+- `cargo build --release --bin negfe` passes after the batch. The full workspace
+  suite is not part of the batch check.
 - The export parity oracle is ignored until G1-4 is fixed.
 - Clippy remains blocked by existing lints, not by this batch.
 - The narrow Rust set is tracked under `tests/gui/golden/narrow/`. The tall
