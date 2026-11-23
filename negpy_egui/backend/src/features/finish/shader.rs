@@ -1,8 +1,7 @@
 //! The vignette and carrier pass over `shaders/finish.wgsl`.
 //!
-//! The pass reads scene-linear pixels and writes the finished frame. The carrier
-//! stays off until its profile and tone tables are bound, so a frame that asks
-//! for one renders on the CPU.
+//! The pass reads scene-linear pixels and writes the finished frame. Its carrier
+//! uses the same profile and tone tables as `negpy_core::finish`.
 
 use bytemuck::{Pod, Zeroable};
 use wgpu::{
@@ -65,6 +64,13 @@ impl FinishUniforms {
             paper_b: paper[2],
         }
     }
+
+    /// Turn the carrier on at a width in pixels.
+    #[must_use]
+    pub fn with_carrier(mut self, width_px: f32) -> Self {
+        self.carrier_width_px = width_px;
+        self
+    }
 }
 
 fn layout(gpu: &GpuDevice) -> wgpu::BindGroupLayout {
@@ -119,13 +125,28 @@ fn layout(gpu: &GpuDevice) -> wgpu::BindGroupLayout {
         })
 }
 
-/// Run the vignette pass. Carrier bindings are empty dummies.
+/// Run the finish pass with the vignette only.
 pub fn run(
     gpu: &GpuDevice,
     loaders: &ShaderLoader,
     source: &GpuTexture,
     output: &GpuTexture,
     uniforms: &FinishUniforms,
+) {
+    run_with_tables(gpu, loaders, source, output, uniforms, &[], &[]);
+}
+
+/// Run the finish pass with a carrier profile and tone table.
+///
+/// An empty table binds one zero so the shader layout stays complete.
+pub fn run_with_tables(
+    gpu: &GpuDevice,
+    loaders: &ShaderLoader,
+    source: &GpuTexture,
+    output: &GpuTexture,
+    uniforms: &FinishUniforms,
+    profile: &[f32],
+    tone: &[[f32; 3]],
 ) {
     let module = loaders.load(&gpu.device, "finish.vignette", SHADER);
     let uniform_buffer = GpuBuffer::new(
@@ -135,20 +156,30 @@ pub fn run(
         "finish.uniforms",
     );
     uniform_buffer.upload(&gpu.queue, bytemuck::bytes_of(uniforms));
-    let profile = GpuBuffer::new(
+    let profile_buffer = GpuBuffer::new(
         &gpu.device,
         4,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         "finish.profile",
     );
-    profile.upload(&gpu.queue, &[0.0f32].map(f32::to_ne_bytes).concat());
-    let tone = GpuBuffer::new(
+    let profile_values: Vec<f32> = if profile.is_empty() {
+        vec![0.0]
+    } else {
+        profile.to_vec()
+    };
+    profile_buffer.upload(&gpu.queue, bytemuck::cast_slice(profile_values.as_slice()));
+    let tone_buffer = GpuBuffer::new(
         &gpu.device,
         12,
         wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
         "finish.tone",
     );
-    tone.upload(&gpu.queue, &[0.0f32; 3].map(f32::to_ne_bytes).concat());
+    let tone_values: Vec<f32> = if tone.is_empty() {
+        vec![0.0; 3]
+    } else {
+        tone.iter().flatten().copied().collect()
+    };
+    tone_buffer.upload(&gpu.queue, bytemuck::cast_slice(tone_values.as_slice()));
     let bind_layout = layout(gpu);
     let pipeline_layout = gpu
         .device
@@ -185,11 +216,11 @@ pub fn run(
             },
             BindGroupEntry {
                 binding: 3,
-                resource: profile.buffer.as_entire_binding(),
+                resource: profile_buffer.buffer.as_entire_binding(),
             },
             BindGroupEntry {
                 binding: 4,
-                resource: tone.buffer.as_entire_binding(),
+                resource: tone_buffer.buffer.as_entire_binding(),
             },
         ],
     });
