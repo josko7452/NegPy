@@ -1,5 +1,5 @@
 {
-  "profile": "copied NegPy user directory",
+  "profile": "tracked Rust reference",
   "folder": "reference roll folder",
   "frame": "P5080635.ORF",
   "width": 1400,
@@ -206,11 +206,12 @@
       "view": "contact_sheet_dialog"
     }
   ],
+  "source_folder": "/home/bruno/WORK/svetovy_vylet/skeny/vv9",
+  "source_profile": "/home/bruno/Dokumenty/NegPy",
   "source": {
     "profile": "a copied NegPy user directory",
     "folder": "the reference roll folder",
     "frame": "P5080635.ORF",
     "rig": "Camera, White Light"
-  },
-  "fixture": "../../reference_roll.json"
+  }
 }
