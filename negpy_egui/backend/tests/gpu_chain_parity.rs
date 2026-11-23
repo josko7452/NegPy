@@ -298,7 +298,7 @@ fn a_plain_print_is_gpu_eligible() {
     let mut carrier = settings.clone();
     carrier.finish.carrier_width = 1.0;
     assert!(
-        !negpy_backend::services::rendering::gpu_render::gpu_eligible(
+        negpy_backend::services::rendering::gpu_render::gpu_eligible(
             &carrier,
             &negpy_backend::render_engine::PipelineContext::new(),
         )

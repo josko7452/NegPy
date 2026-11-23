@@ -9,7 +9,6 @@ use crate::domain::models::{RenderIntent, WorkspaceConfig};
 use crate::features::exposure::exposure_shader::{ExposureRun, GpuPlanes};
 use crate::features::exposure::normalization::LogNegativeBounds;
 use crate::features::exposure::papers::{PrintColor, effective_paper_profile, resolve_print_color};
-use crate::features::finish::processor::{FinishContext, process as finish_process};
 use crate::features::geometry::processor::GeometryContext;
 use crate::features::process::path::{RenderPath, is_mono, render_path};
 use crate::infrastructure::loaders::image_buffer::ImageBuffer;
@@ -79,9 +78,6 @@ pub fn gpu_rejection(config: &WorkspaceConfig, context: &PipelineContext) -> Opt
     }
     if context.crop_preview_full {
         return Some("full-frame crop preview");
-    }
-    if config.finish.carrier_width > 0.0 {
-        return Some("carrier");
     }
     // The alt-process passes and the grain measurement are not on the device yet.
     if config.altproc.alt_process != crate::domain::models::AltProcess::None
@@ -231,7 +227,7 @@ pub fn render(
         "histogram_density".to_string(),
         serde_json::to_value(density_histogram).unwrap_or(serde_json::Value::Null),
     );
-    finish(config, toned)
+    toned
 }
 
 fn to_metrics(context: &mut PipelineContext, lab: &crate::features::lab::lab_shader::LabOutput) {
@@ -240,24 +236,6 @@ fn to_metrics(context: &mut PipelineContext, lab: &crate::features::lab::lab_sha
             .metrics
             .insert("auto_masking".to_string(), serde_json::json!(share));
     }
-}
-
-fn finish(config: &WorkspaceConfig, toned: ImageBuffer) -> ImageBuffer {
-    let image = finish_process(
-        &toned,
-        &config.finish,
-        FinishContext {
-            print_size_cm: 30.0,
-            paper: crate::services::export::print::effective_paper_linear(
-                &config.finish,
-                &config.toning,
-            ),
-            crop_preview_full: false,
-        },
-        None,
-    );
-    let encoded = crate::features::exposure::analysis::working_oetf_encode(&image.pixels);
-    ImageBuffer::from_rgb(image.width, image.height, encoded)
 }
 
 /// Build the local maps and shared mask grid a GPU print binds.

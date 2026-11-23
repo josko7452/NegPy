@@ -351,7 +351,7 @@ impl GpuEngine {
     ///
     /// The full frame is kept through CLAHE and Lab, whose grids span the
     /// rotated frame; the toning pass reads the crop window. The finish stage
-    /// reads the cropped, display-encoded frame.
+    /// reads the cropped, scene-linear frame.
     #[must_use]
     pub fn run_tail_input(
         &mut self,
@@ -484,13 +484,52 @@ impl GpuEngine {
         );
         self.textures.put(labbed);
 
-        let rgba = toned.readback(&self.gpu);
+        let finished = self
+            .textures
+            .take(&self.gpu.device, crop_w, crop_h, "finished");
+        let paper =
+            crate::services::export::print::effective_paper_linear(&config.finish, &config.toning);
+        let mut uniforms = crate::features::finish::shader::FinishUniforms::from_config(
+            &config.finish,
+            crop_w as usize,
+            crop_h as usize,
+            paper,
+        );
+        if config.finish.carrier_width > 0.0 {
+            uniforms = uniforms.with_carrier(crate::features::finish::processor::carrier_width_px(
+                config.finish.carrier_width,
+                30.0,
+                crop_w.max(crop_h) as f64,
+            ) as f32);
+        }
+        let tone = crate::features::finish::processor::rebate_tone(
+            config,
+            crate::features::finish::processor::RebateMetrics {
+                final_bounds: Some(print.bounds.unwrap_or_else(|| {
+                    crate::features::exposure::normalization::LogNegativeBounds::new(
+                        [-1.0; 3], [0.0; 3],
+                    )
+                })),
+            },
+        );
+        crate::features::finish::shader::run_with_tables(
+            &self.gpu,
+            &self.loaders,
+            &toned,
+            &finished,
+            &uniforms,
+            &crate::features::finish::logic::carrier_profiles(),
+            &tone,
+        );
+        self.textures.put(toned);
+        let rgba = finished.readback(&self.gpu);
         let mut pixels = Vec::with_capacity(crop_w as usize * crop_h as usize * 3);
         for texel in rgba.chunks_exact(4) {
             pixels.extend_from_slice(&texel[..3]);
         }
-        let (width, height) = (toned.width as usize, toned.height as usize);
-        self.textures.put(toned);
+        let (width, height) = (finished.width as usize, finished.height as usize);
+        self.textures.put(finished);
+        let pixels = crate::features::exposure::analysis::working_oetf_encode(&pixels);
         (
             ImageBuffer::from_rgb(width, height, pixels),
             lab_out,

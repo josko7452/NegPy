@@ -308,6 +308,51 @@ fn a_hue_trim_matches_the_cpu_engine() {
 }
 
 #[test]
+fn a_vignette_matches_the_cpu_engine() {
+    let mut config = config();
+    config.finish.vignette_stops = 1.2;
+    config.finish.vignette_size = 0.35;
+    config.finish.vignette_roundness = 0.7;
+    let Some((gpu_image, cpu_image)) = run_both(&config) else {
+        return;
+    };
+    let failures = gpu_image
+        .pixels
+        .iter()
+        .zip(&cpu_image.pixels)
+        .filter(|(got, expected)| (*got - *expected).abs() > 4e-2)
+        .count();
+    let fraction = failures as f64 / cpu_image.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ");
+}
+
+#[test]
+fn a_carrier_matches_the_cpu_engine() {
+    let mut config = config();
+    config.finish.carrier_width = 2.0;
+    config.finish.carrier_rough = 0.25;
+    config.finish.carrier_flare = 0.5;
+    config.finish.carrier_corner = 0.25;
+    let Some((gpu_image, cpu_image)) = run_both(&config) else {
+        return;
+    };
+    assert_eq!(
+        (gpu_image.width, gpu_image.height),
+        (cpu_image.width, cpu_image.height)
+    );
+    let mut failures = 0usize;
+    let mut worst = 0.0f32;
+    for (got, expected) in gpu_image.pixels.iter().zip(&cpu_image.pixels) {
+        worst = worst.max((got - expected).abs());
+        if (got - expected).abs() > 4e-2 {
+            failures += 1;
+        }
+    }
+    let fraction = failures as f64 / cpu_image.pixels.len() as f64;
+    assert!(fraction < 0.02, "{failures} samples differ, worst {worst}");
+}
+
+#[test]
 fn a_bw_print_matches_the_cpu_engine() {
     let Some(mut gpu) = GpuEngine::new() else {
         return;
